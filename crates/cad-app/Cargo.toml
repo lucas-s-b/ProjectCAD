@@ -2,6 +2,8 @@
 name = "cad-app"
 edition.workspace = true
 version.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
 cad-document = { version = "0.1.0", path = "../cad-document" }

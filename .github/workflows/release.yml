@@ -1,0 +1,39 @@
+name: Release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: linux-x86_64
+            bin: cad-app
+          - os: windows-latest
+            name: windows-x86_64
+            bin: cad-app.exe
+          - os: macos-latest
+            name: macos-arm64
+            bin: cad-app
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Linux GUI deps
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev libxcb1-dev
+      - run: cargo build --release -p cad-app
+      - name: Package
+        shell: bash
+        run: |
+          mkdir dist
+          cp target/release/${{ matrix.bin }} LICENSE README.md dist/
+          7z a ProjectCAD-${{ github.ref_name }}-${{ matrix.name }}.zip ./dist/* || zip -j ProjectCAD-${{ github.ref_name }}-${{ matrix.name }}.zip dist/*
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: ProjectCAD-*.zip
+          generate_release_notes: true

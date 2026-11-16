@@ -2,6 +2,8 @@
 name = "cad-document"
 edition.workspace = true
 version.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
 cad-constraints = { version = "0.1.0", path = "../cad-constraints" }

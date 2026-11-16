@@ -8,7 +8,7 @@ A small CAD program written in Rust. Draw 2D sketches, make 3D models from them,
 2. Get the code and run:
 
 ```bash
-git clone <this-repo-url>
+git clone https://github.com/lucas-s-b/ProjectCAD.git
 cd ProjectCAD
 cargo run --release -p cad-app
 ```
