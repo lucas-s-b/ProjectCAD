@@ -1,1 +1,19 @@
-/target
+
+# Rust build artifacts
+/target/
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# IDE configuration
+.idea/
+.vscode/
+
+# Operating system files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Temporary files
+*.tmp
+*.log
