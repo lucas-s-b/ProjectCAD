@@ -1,0 +1,261 @@
+use crate::app::{CadApp, Pending, SideTab, ViewMode};
+use crate::widgets as w;
+use crate::{constraints_panel, layers_panel, model_panel, properties_panel};
+use cad_document::{Command, EntityId, Units};
+use eframe::egui::{self, Button, Key, Modifiers};
+
+#[derive(Clone, Copy)]
+enum Action {
+    New,
+    Open,
+    Import,
+    Save,
+    Undo,
+    Redo,
+    Delete,
+    Fit,
+    Duplicate,
+}
+
+fn run(app: &mut CadApp, ctx: &egui::Context, action: Action) {
+    match action {
+        Action::New => app.request(ctx, Pending::New),
+        Action::Open => app.request(ctx, Pending::Open),
+        Action::Import => app.request(ctx, Pending::Import),
+        Action::Save => {
+            app.save();
+        }
+        Action::Undo => app.undo(),
+        Action::Redo => app.redo(),
+        Action::Delete => app.delete_selection(),
+        Action::Fit => app.fit_active(),
+        Action::Duplicate => app.duplicate_selection(),
+    }
+}
+
+pub fn shortcuts(app: &mut CadApp, ctx: &egui::Context) {
+    let plain_keys_ok = !ctx.egui_wants_keyboard_input();
+    let mut actions = Vec::new();
+    let mut toggles = (false, false);
+    ctx.input_mut(|i| {
+        let ctrl = Modifiers::COMMAND;
+        // Shift variants first: consume_key ignores extra Shift.
+        if i.consume_key(ctrl | Modifiers::SHIFT, Key::Z) || i.consume_key(ctrl, Key::Y) {
+            actions.push(Action::Redo);
+        }
+        if i.consume_key(ctrl, Key::Z) {
+            actions.push(Action::Undo);
+        }
+        if i.consume_key(ctrl, Key::N) {
+            actions.push(Action::New);
+        }
+        if i.consume_key(ctrl, Key::O) {
+            actions.push(Action::Open);
+        }
+        if i.consume_key(ctrl, Key::S) {
+            actions.push(Action::Save);
+        }
+        if i.consume_key(ctrl, Key::D) {
+            actions.push(Action::Duplicate);
+        }
+        if plain_keys_ok && i.consume_key(Modifiers::NONE, Key::F3) {
+            toggles.0 = true;
+        }
+        if plain_keys_ok && i.consume_key(Modifiers::NONE, Key::F9) {
+            toggles.1 = true;
+        }
+        if plain_keys_ok && i.consume_key(Modifiers::NONE, Key::Delete) {
+            actions.push(Action::Delete);
+        }
+        if plain_keys_ok && i.consume_key(Modifiers::NONE, Key::F) {
+            actions.push(Action::Fit);
+        }
+    });
+    app.osnap ^= toggles.0;
+    app.grid_snap ^= toggles.1;
+    for a in actions {
+        run(app, ctx, a);
+    }
+}
+
+fn menu_item(ui: &mut egui::Ui, enabled: bool, label: &str, shortcut: &str) -> bool {
+    let clicked = w::add_enabled(ui, enabled, label, Button::new(label).shortcut_text(shortcut)).clicked();
+    if clicked {
+        ui.close();
+    }
+    clicked
+}
+
+pub fn menu_bar(app: &mut CadApp, ui: &mut egui::Ui) {
+    let ctx = ui.ctx().clone();
+    egui::Panel::top("menu").show(ui, |ui| {
+        egui::MenuBar::new().ui(ui, |ui| {
+            w::menu_button(ui, "File", |ui| {
+                if menu_item(ui, true, "New", "Ctrl+N") {
+                    run(app, &ctx, Action::New);
+                }
+                if menu_item(ui, true, "Open...", "Ctrl+O") {
+                    run(app, &ctx, Action::Open);
+                }
+                if menu_item(ui, true, "Import DXF...", "") {
+                    run(app, &ctx, Action::Import);
+                }
+                if menu_item(ui, true, "Save", "Ctrl+S") {
+                    run(app, &ctx, Action::Save);
+                }
+                if menu_item(ui, true, "Save As...", "") {
+                    app.save_as();
+                }
+                if menu_item(ui, true, "Export SVG...", "") {
+                    app.export_dialog("svg");
+                }
+                if menu_item(ui, true, "Export DXF...", "") {
+                    app.export_dialog("dxf");
+                }
+                if menu_item(ui, true, "Export STL...", "") {
+                    app.export_dialog("stl");
+                }
+                if menu_item(ui, true, "Export OBJ...", "") {
+                    app.export_dialog("obj");
+                }
+            });
+            w::menu_button(ui, "Edit", |ui| {
+                if menu_item(ui, app.history.can_undo(), "Undo", "Ctrl+Z") {
+                    run(app, &ctx, Action::Undo);
+                }
+                if menu_item(ui, app.history.can_redo(), "Redo", "Ctrl+Y") {
+                    run(app, &ctx, Action::Redo);
+                }
+                if menu_item(ui, !app.selection.is_empty(), "Delete", "Del") {
+                    run(app, &ctx, Action::Delete);
+                }
+            });
+            w::menu_button(ui, "View", |ui| {
+                if menu_item(ui, true, "2D", "") {
+                    app.view = ViewMode::TwoD;
+                }
+                if menu_item(ui, true, "3D", "") {
+                    app.view = ViewMode::ThreeD;
+                }
+                if menu_item(ui, true, "Fit", "F") {
+                    run(app, &ctx, Action::Fit);
+                }
+            });
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                w::selectable_value(ui, &mut app.side_tab, SideTab::Model, "Model");
+                w::selectable_value(ui, &mut app.side_tab, SideTab::Sketch, "Sketch");
+            });
+        });
+    });
+}
+
+pub fn right_panel(app: &mut CadApp, ui: &mut egui::Ui) {
+    let ctx = ui.ctx().clone();
+    egui::Panel::right("side").resizable(false).exact_size(240.0).show(ui, |ui| {
+        units_row(app, ui);
+        ui.separator();
+        if app.side_tab == SideTab::Model {
+            egui::ScrollArea::vertical().id_salt("model_side").show(ui, |ui| model_panel::show(app, ui));
+            return;
+        }
+        ui.heading("Objects");
+        let items: Vec<(EntityId, String, bool)> =
+            app.doc.entities_in(app.sketch).map(|e| (e.id, e.name.clone(), app.pickable(e))).collect();
+        egui::ScrollArea::vertical().id_salt("objects").max_height(ui.available_height() / 2.0).show(ui, |ui| {
+            for (id, name, pickable) in items {
+                let selected = app.selection.contains(&id);
+                if w::selectable(ui, selected, &name).clicked() && pickable {
+                    if ui.input(|i| i.modifiers.shift) {
+                        let mut ids = app.selection.clone();
+                        if !ids.remove(&id) {
+                            ids.insert(id);
+                        }
+                        app.set_selection(ids);
+                    } else {
+                        app.set_selection([id]);
+                    }
+                }
+            }
+        });
+        ui.separator();
+        egui::ScrollArea::vertical().id_salt("side_rest").show(ui, |ui| {
+            layers_panel::layers_section(app, ui);
+            ui.separator();
+            ui.heading("Properties");
+            properties_panel::properties(app, ui, &ctx);
+            ui.separator();
+            constraints_panel::show(app, ui, &ctx);
+        });
+    });
+}
+
+fn units_row(app: &mut CadApp, ui: &mut egui::Ui) {
+    let mut s = *app.doc.settings();
+    let (old_units, old_precision) = (s.units, s.precision);
+    ui.horizontal(|ui| {
+        ui.label("Units");
+        w::combo(ui, "Units", egui::ComboBox::from_id_salt("units").selected_text(s.units.suffix()).width(50.0), |ui| {
+            for u in Units::ALL {
+                w::selectable_value(ui, &mut s.units, u, u.suffix());
+            }
+        });
+        ui.label("Decimals");
+        w::add(ui, "Decimals", egui::DragValue::new(&mut s.precision).range(0..=8));
+    });
+    if s.units != old_units {
+        app.exec_merged(vec![Command::SetSettings(s)], u64::MAX - 1);
+    } else if s.precision != old_precision {
+        app.exec_merged(vec![Command::SetSettings(s)], u64::MAX - 2);
+    }
+}
+
+pub fn status_bar(app: &mut CadApp, ui: &mut egui::Ui) {
+    egui::Panel::bottom("status").show(ui, |ui| {
+        ui.horizontal(|ui| {
+            crate::coord_input::show(app, ui);
+            ui.label(if app.status.is_empty() && app.rebuilding() { "Rebuilding..." } else { &app.status });
+            ui.separator();
+            let (s, c) = (app.doc.settings(), app.cursor_world);
+            ui.label(format!("X {}  Y {} {}", s.format_length(c.x), s.format_length(c.y), s.units.suffix()));
+            ui.separator();
+            ui.label(format!("Entities: {}", app.doc.len()));
+            ui.label(format!("Selected: {}", app.selection.len()));
+            ui.separator();
+            ui.label(format!("{}{}", app.doc.name, if app.is_dirty() { "*" } else { "" }));
+        });
+    });
+}
+
+pub fn update_title(app: &mut CadApp, ctx: &egui::Context) {
+    let file = app.path.as_ref().and_then(|p| p.file_name()).map_or("Untitled".to_string(), |n| n.to_string_lossy().into_owned());
+    let prefix = if app.mcp.is_some() { "ProjectCAD (MCP)" } else { "ProjectCAD" };
+    let title = format!("{prefix} - {file}{}", if app.is_dirty() { "*" } else { "" });
+    if title != app.last_title {
+        ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
+        app.last_title = title;
+    }
+}
+
+pub fn confirm_dialog(app: &mut CadApp, ctx: &egui::Context) {
+    let Some(pending) = app.confirm else { return };
+    let mut choice = None;
+    egui::Window::new("Unsaved changes")
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+        .show(ctx, |ui| {
+            ui.label("The project has unsaved changes.");
+            ui.horizontal(|ui| {
+                for (label, c) in [("Save", 0), ("Discard", 1), ("Cancel", 2)] {
+                    if w::button(ui, label).clicked() {
+                        choice = Some(c);
+                    }
+                }
+            });
+        });
+    let Some(choice) = choice else { return };
+    app.confirm = None;
+    if choice == 1 || (choice == 0 && app.save()) {
+        app.perform(ctx, pending);
+    }
+}

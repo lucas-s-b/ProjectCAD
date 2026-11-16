@@ -1,0 +1,16 @@
+[package]
+name = "cad-boolean-spike"
+edition.workspace = true
+version.workspace = true
+publish = false
+
+[dependencies]
+boolmesh = { version = "0.2.2", optional = true }
+csgrs = { version = "0.20.1", path = "vendor/csgrs", default-features = false, features = ["delaunay", "f64"], optional = true }
+manifold-rust = { version = "0.19.2", optional = true }
+nalgebra = { version = "0.33", optional = true }
+
+[features]
+boolmesh = ["dep:boolmesh"]
+manifold-rust = ["dep:manifold-rust"]
+csgrs = ["dep:csgrs", "dep:nalgebra"]

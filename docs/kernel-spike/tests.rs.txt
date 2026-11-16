@@ -1,0 +1,241 @@
+use super::*;
+use truck_stepio::out;
+
+fn ok_or<T>(o: Option<T>, m: &str) -> std::result::Result<T, String> { o.ok_or_else(|| m.to_string()) }
+
+#[test]
+fn e01_rect() {
+    run("1 rect 40x20x10", || {
+        let s = extrude(rect_wire(0.0, 0.0, 40.0, 20.0), 10.0);
+        Ok(report(&s, 0.01, 8000.0))
+    });
+}
+
+#[test]
+fn e02_circle() {
+    for tol in [0.1, 0.01, 0.001] {
+        run(&format!("2 circle r10 h30 tol{tol}"), || {
+            let s = extrude(circle_wire(0.0, 0.0, 0.0, 10.0), 30.0);
+            Ok(report(&s, tol, PI * 100.0 * 30.0))
+        });
+    }
+}
+
+#[test]
+fn e03_rounded() {
+    run("3 rounded rect", || {
+        let s = extrude(rounded_rect_wire(40.0, 20.0, 5.0), 10.0);
+        Ok(report(&s, 0.01, (800.0 - (4.0 - PI) * 25.0) * 10.0))
+    });
+}
+
+#[test]
+fn e04_hole() {
+    let exact = (800.0 - 25.0 * PI) * 10.0;
+    for (name, flip) in [("inner same orientation", false), ("inner inverted", true)] {
+        run(&format!("4 hole ({name})"), || {
+            let outer = rect_wire(-20.0, -10.0, 40.0, 20.0);
+            let mut inner = circle_wire(0.0, 0.0, 0.0, 5.0);
+            if flip { inner.invert(); }
+            let f = builder::try_attach_plane(&[outer, inner]).map_err(|e| format!("{e:?}"))?;
+            let s = builder::tsweep(&f, Vector3::new(0.0, 0.0, 10.0));
+            Ok(report(&s, 0.01, exact))
+        });
+    }
+}
+
+#[test]
+fn e05_revolve() {
+    let pts = |_: ()| {
+        let v: Vec<_> = [(10.0, 0.0), (20.0, 0.0), (20.0, 5.0), (10.0, 5.0)]
+            .iter().map(|&(x, z)| builder::vertex(Point3::new(x, 0.0, z))).collect();
+        Wire::from(vec![
+            builder::line(&v[0], &v[1]), builder::line(&v[1], &v[2]),
+            builder::line(&v[2], &v[3]), builder::line(&v[3], &v[0]),
+        ])
+    };
+    let full = PI * 300.0 * 5.0;
+    for (name, ang, ex) in [("360", 2.0 * PI, full), ("360 face-inverted", -1.0, full), ("360 (Rad(7))", 7.0, full), ("90", PI / 2.0, full / 4.0)] {
+        run(&format!("5 revolve {name}"), || {
+            let mut f = builder::try_attach_plane(&[pts(())]).map_err(|e| format!("{e:?}"))?;
+            let ang = if ang < 0.0 { f.invert(); 2.0 * PI } else { ang };
+            let s = builder::rsweep(&f, Point3::origin(), Vector3::unit_z(), Rad(ang));
+            // 90deg result is an open shell? rsweep of a face gives a Solid either way
+            Ok(report(&s, 0.01, ex))
+        });
+    }
+}
+
+fn bool_case(name: &str, exact: f64, mk: impl Fn(f64) -> Option<Solid>) {
+    for tol in [0.05, 0.005] {
+        run(&format!("{name} tol{tol}"), || {
+            let s = ok_or(mk(tol), "boolean returned None")?;
+            Ok(report(&s, 0.01, exact))
+        });
+    }
+}
+
+fn box20() -> Solid { cuboid([-10.0, -10.0, 0.0], [20.0, 20.0, 10.0]) }
+
+#[test]
+fn e06a() {
+    let a = cuboid([0.0; 3], [10.0; 3]);
+    let b = cuboid([5.0; 3], [10.0; 3]);
+    bool_case("6a union boxes", 1875.0, |t| truck_shapeops::or(&a, &b, t));
+}
+
+#[test]
+fn e06b() {
+    let b = box20();
+    let c = cylinder_z(0.0, 0.0, -5.0, 4.0, 20.0);
+    bool_case("6b box-cyl", 4000.0 - 160.0 * PI, |t| diff(&b, &c, t));
+}
+
+#[test]
+fn e06c() {
+    let b = cuboid([-10.0; 3], [20.0; 3]);
+    let sp = sphere(12.0);
+    println!("sphere solid faces={} sphere mesh={}", face_count(&sp), report(&sp, 0.01, 4.0 / 3.0 * PI * 1728.0));
+    // Monte Carlo: fixed-seed xorshift64*, points in [-10,10]^3, inside sphere r12
+    let mut s: u64 = 0x9E3779B97F4A7C15;
+    let mut next = || { s ^= s >> 12; s ^= s << 25; s ^= s >> 27; (s.wrapping_mul(0x2545F4914F6CDD1D) >> 11) as f64 / (1u64 << 53) as f64 };
+    let n = 1_000_000;
+    let mut hit = 0;
+    for _ in 0..n {
+        let (x, y, z) = (next() * 20.0 - 10.0, next() * 20.0 - 10.0, next() * 20.0 - 10.0);
+        if x * x + y * y + z * z <= 144.0 { hit += 1; }
+    }
+    let mc = 8000.0 * hit as f64 / n as f64;
+    println!("6c monte-carlo estimate = {mc:.2} (1e6 pts, fixed seed)");
+    bool_case("6c cube^sphere", mc, |t| truck_shapeops::and(&b, &sp, t));
+}
+
+#[test]
+fn e06d() {
+    let a = cylinder_x([0.0; 3], 5.0, 30.0);
+    let b = cylinder_y([0.0; 3], 5.0, 30.0);
+    let exact = 2.0 * PI * 25.0 * 30.0 - 16.0 / 3.0 * 125.0;
+    bool_case("6d cyl|cyl", exact, |t| truck_shapeops::or(&a, &b, t));
+}
+
+#[test]
+fn e06e() {
+    let a = cuboid([0.0; 3], [10.0; 3]);
+    let b = cuboid([0.0; 3], [5.0; 3]);
+    bool_case("6e coplanar corner", 875.0, |t| diff(&a, &b, t));
+}
+
+#[test]
+fn e06f() {
+    let a = cuboid([0.0; 3], [10.0; 3]);
+    let b = cuboid([10.0, 0.0, 0.0], [10.0; 3]);
+    bool_case("6f touching union", 2000.0, |t| truck_shapeops::or(&a, &b, t));
+}
+
+#[test]
+fn e06g() {
+    let b = box20();
+    let c1 = cylinder_z(0.0, 0.0, -5.0, 4.0, 20.0);
+    let c2 = cylinder_z(5.9, 5.9, -5.0, 4.0, 20.0);
+    bool_case("6g chained", 4000.0 - 320.0 * PI, |t| {
+        let first = diff(&b, &c1, t)?;
+        diff(&first, &c2, t)
+    });
+}
+
+#[test]
+fn e07_fillet() {
+    println!("RESULT 7 fillet/chamfer/shell/offset: see grep in report (no API in truck-* 0.4-0.6 sources)");
+}
+
+#[test]
+fn e08_step() {
+    run("8 step export/import", || {
+        let s = extrude(rect_wire(0.0, 0.0, 40.0, 20.0), 10.0);
+        let c = s.compress();
+        let step = out::CompleteStepDisplay::new(
+            out::StepModel::from(&c),
+            out::StepHeaderDescriptor { organization_system: "spike".to_owned(), ..Default::default() },
+        )
+        .to_string();
+        let t = truck_stepio::r#in::Table::from_step(&step).ok_or("Table::from_step None")?;
+        let shells: Vec<_> = t.shell.values().collect();
+        let mut fc = vec![];
+        for sh in &shells {
+            let cs = t.to_compressed_shell(sh).map_err(|e| format!("{e:?}"))?;
+            fc.push(cs.faces.len());
+        }
+        Ok(format!("step_len={} shells_read={} faces_per_shell={:?}", step.len(), shells.len(), fc))
+    });
+}
+
+#[test]
+fn e09_serde() {
+    run("9 serde_json", || {
+        let s = extrude(circle_wire(0.0, 0.0, 0.0, 10.0), 30.0);
+        let j = serde_json::to_string(&s).map_err(|e| e.to_string())?;
+        let back: Solid = serde_json::from_str(&j).map_err(|e| format!("deserialize: {e}"))?;
+        let v = mesh_stats(&tessellate(&back, 0.01)).volume;
+        Ok(format!("json_bytes={} roundtrip_faces={} roundtrip_vol={:.4}", j.len(), face_count(&back), v))
+    });
+}
+
+#[test]
+fn e10_perf() {
+    run("10a 200x rounded-rect extrude+tess0.01", || {
+        let t = Instant::now();
+        let mut tris = 0;
+        for _ in 0..200 {
+            let s = extrude(rounded_rect_wire(40.0, 20.0, 5.0), 10.0);
+            tris += tessellate(&s, 0.01).faces().len();
+        }
+        Ok(format!("total={:.1}ms per={:.3}ms tris_total={}", t.elapsed().as_secs_f64() * 1e3, t.elapsed().as_secs_f64() * 1e3 / 200.0, tris))
+    });
+    run("10b 6b avg of 10", || {
+        let b = box20();
+        let c = cylinder_z(0.0, 0.0, -5.0, 4.0, 20.0);
+        let t = Instant::now();
+        for _ in 0..10 { ok_or(diff(&b, &c, 0.05), "None")?; }
+        Ok(format!("avg={:.2}ms (build solids excluded, tol 0.05, bool only)", t.elapsed().as_secs_f64() * 1e3 / 10.0))
+    });
+}
+
+#[test]
+fn e06d2_unequal_cyl() {
+    // extra: radii 5 and 4 (non-degenerate crossing), compare with Monte Carlo of the union
+    let a = cylinder_x([0.0; 3], 5.0, 30.0);
+    let b = cylinder_y([0.0; 3], 4.0, 30.0);
+    let mut s: u64 = 0x1234567890ABCDEF;
+    let mut next = || { s ^= s >> 12; s ^= s << 25; s ^= s >> 27; (s.wrapping_mul(0x2545F4914F6CDD1D) >> 11) as f64 / (1u64 << 53) as f64 };
+    let (n, mut hit) = (1_000_000, 0);
+    for _ in 0..n {
+        let (x, y, z) = (next() * 30.0 - 15.0, next() * 30.0 - 15.0, next() * 10.0 - 5.0);
+        if y * y + z * z <= 25.0 || x * x + z * z <= 16.0 { hit += 1; }
+    }
+    let mc = 30.0 * 30.0 * 10.0 * hit as f64 / n as f64;
+    println!("6d2 MC union r5/r4 = {mc:.2}");
+    bool_case("6d2 cyl r5 | cyl r4", mc, |t| truck_shapeops::or(&a, &b, t));
+}
+
+#[test]
+fn e06c2_sphere_shifted() {
+    // extra: sphere centre shifted off axes (0.3,0.2,0.1), and rotated sphere
+    let b = cuboid([-10.0; 3], [20.0; 3]);
+    let mut sp = sphere(12.0);
+    sp = builder::translated(&sp, Vector3::new(0.3, 0.2, 0.1));
+    let mut s: u64 = 0x9E3779B97F4A7C15;
+    let mut next = || { s ^= s >> 12; s ^= s << 25; s ^= s >> 27; (s.wrapping_mul(0x2545F4914F6CDD1D) >> 11) as f64 / (1u64 << 53) as f64 };
+    let (n, mut hit) = (1_000_000, 0);
+    for _ in 0..n {
+        let (x, y, z) = (next() * 20.0 - 10.0, next() * 20.0 - 10.0, next() * 20.0 - 10.0);
+        if (x - 0.3).powi(2) + (y - 0.2).powi(2) + (z - 0.1).powi(2) <= 144.0 { hit += 1; }
+    }
+    let mc = 8000.0 * hit as f64 / n as f64;
+    println!("6c2 MC = {mc:.2}");
+    for tol in [0.05, 0.01] {
+        run(&format!("6c2 cube^shifted sphere tol{tol}"), || {
+            let s = ok_or(truck_shapeops::and(&b, &sp, tol), "None")?;
+            Ok(report(&s, 0.01, mc))
+        });
+    }
+}

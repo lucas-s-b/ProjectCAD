@@ -1,0 +1,75 @@
+//! Runs the solid rebuild on its own thread so a slow model never blocks the UI.
+use cad_document::{Document, RebuildResult, Rebuilder};
+use eframe::egui;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc::{self, Receiver, Sender};
+
+enum Msg {
+    Rebuild { epoch: u64, revision: u64, doc: Box<Document> },
+    Reset,
+}
+
+type Finished = (u64, u64, RebuildResult);
+
+pub struct RebuildWorker {
+    tx: Sender<Msg>,
+    rx: Receiver<Finished>,
+    /// Bumped by `reset`; results of an older epoch belong to a replaced document and are dropped.
+    epoch: AtomicU64,
+    _thread: std::thread::JoinHandle<()>,
+}
+
+impl RebuildWorker {
+    pub fn spawn(ctx: egui::Context) -> Self {
+        let (tx, jobs) = mpsc::channel::<Msg>();
+        let (done, rx) = mpsc::channel::<Finished>();
+        let thread = std::thread::spawn(move || run(&ctx, &jobs, &done));
+        Self { tx, rx, epoch: AtomicU64::new(0), _thread: thread }
+    }
+
+    pub fn request(&self, revision: u64, doc: Document) {
+        let epoch = self.epoch.load(Ordering::Relaxed);
+        let _ = self.tx.send(Msg::Rebuild { epoch, revision, doc: Box::new(doc) });
+    }
+
+    /// The newest finished result, if any.
+    pub fn poll(&self) -> Option<(u64, RebuildResult)> {
+        let epoch = self.epoch.load(Ordering::Relaxed);
+        self.rx.try_iter().filter(|(e, ..)| *e == epoch).last().map(|(_, rev, r)| (rev, r))
+    }
+
+    /// Drops the cache; call when the document is replaced.
+    pub fn reset(&self) {
+        self.epoch.fetch_add(1, Ordering::Relaxed);
+        let _ = self.tx.send(Msg::Reset);
+    }
+}
+
+fn run(ctx: &egui::Context, jobs: &Receiver<Msg>, done: &Sender<Finished>) {
+    let mut rebuilder = Rebuilder::default();
+    // Blocks on the channel; ends when the sender is dropped.
+    while let Ok(first) = jobs.recv() {
+        let mut latest = None;
+        for msg in std::iter::once(first).chain(jobs.try_iter()) {
+            match msg {
+                // Older queued requests are stale.
+                Msg::Rebuild { epoch, revision, doc } => latest = Some((epoch, revision, doc)),
+                Msg::Reset => {
+                    rebuilder = Rebuilder::default();
+                    latest = None;
+                }
+            }
+        }
+        if let Some((epoch, revision, doc)) = latest {
+            let result = rebuilder.rebuild(&doc);
+            if done.send((epoch, revision, result)).is_err() {
+                return;
+            }
+            ctx.request_repaint();
+        }
+    }
+}
+
+#[cfg(test)]
+#[path = "rebuild_worker_tests.rs"]
+mod tests;

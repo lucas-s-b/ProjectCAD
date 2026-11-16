@@ -1,0 +1,135 @@
+# Roadmap
+
+Each phase ends with a buildable app, passing tests and an updated `DESIGN.md`. Nothing is marked done
+until it works in the running app.
+
+## Phase 1: Core foundation (done; every item checked in the running app through MCP)
+- [x] Workspace: `cad-geometry`, `cad-document`, `cad-renderer`, `cad-app`
+- [x] Shapes: line, circle, rectangle, box, cylinder, sphere; tolerance and validation
+- [x] Document, commands, atomic undo/redo
+- [x] Native `.cadproj` format: new, open, save, save as
+- [x] 2D viewport: pan, zoom, fit, grid
+- [x] 3D viewport (wgpu): orbit, pan, zoom, fit, shaded solids, edges
+- [x] Selection in both viewports, move, numeric edit, delete
+- [x] Draw tools: line, circle, rectangle; add box, cylinder, sphere
+- [x] Tests: geometry, document, file round trip, camera, shader validation
+
+## Phase 2: Advanced 2D CAD (core done; leftovers listed below)
+Milestone 1 (done; checked in the running app through MCP):
+- [x] Layers: colour, visibility, lock, current layer, add; file format version 2 (version 1 still loads)
+- [x] Layers: rename, delete, colour edit with merged undo, entity layer change
+- [x] Snapping: endpoint, midpoint, centre, intersection
+- [x] Grid snap, Shift polar constraint, snap while moving
+- [x] Entities: arc, polyline
+- [x] Rotate, mirror, duplicate; scale
+
+Milestone 2 (built; each tool checked in the running app through the MCP mode on lines, other curve types unit-tested):
+- [x] Trim (line, arc, circle, polyline, rectangle) against any visible curve
+- [x] Extend (line, arc, open polyline) to the first boundary
+- [x] Offset (line, arc, circle, rectangle, polyline with mitre joins and no self-intersection cleanup)
+- [x] Fillet and chamfer between two lines
+
+Milestone 3 (done; tools and export checked in the running app through MCP):
+- [x] Text entity and aligned linear dimension (2D view draws them fully; the 3D view shows outlines only)
+- [x] Units (mm, cm, m, in, ft) and decimal precision for displayed lengths; file format version 3
+- [x] SVG export and DXF R12 export (`cad-import-export`); DXF read back with the `dxf` crate in tests
+- [ ] Units and decimals controls, File > Export menu items (built, not exercised in the app)
+- [ ] Exported DXF opened in an external CAD program; exported SVG rendered in a viewer
+
+Milestone 4 (done; solver unit-tested, UI checked in the running app through MCP):
+- [x] `cad-constraints`: 15 constraint types on lines, circles and arcs; Levenberg-Marquardt solver
+- [x] Under-, fully and over-constrained reporting (degrees of freedom, redundant equations); inconsistent sets are rejected
+- [x] Document solves after every change inside one undo step; file format version 4
+- [x] Constraint buttons by selection, constraints list, driving values (edit a Distance and the geometry follows)
+- [ ] Trim, extend, fillet on constrained entities; undo while a value edit is pending (not exercised)
+
+Milestone 5 (done; checked in the running app through MCP unless noted):
+- [x] Layer line types (continuous, dashed, hidden, center) and line weights in the 2D view, SVG and DXF; file format version 5
+- [x] Ellipse and spline entities; polygon tool
+- [x] Perpendicular and tangent snap
+- [x] Typed coordinates: `x,y`, `@dx,dy`, `@d<a`
+- [x] Rectangular array (checked) and polar array (unit-tested only)
+
+Milestone 6 (done; checked in the running app through MCP unless noted):
+- [x] Hatch (parallel lines in a closed boundary), leader, radial and angular dimensions
+- [x] DXF import with a skip report (`import_project`); round trip through our own export checked
+- [x] Benchmark baseline: `docs/BENCHMARKS.md` (`cargo run --release -p cad-bench`)
+- [ ] File menu items with native dialogs (Export, Import): cannot be driven through MCP, not exercised
+- [ ] DXF opened in an external CAD program; SVG rendered in a viewer
+
+What the baseline says (see `docs/BENCHMARKS.md`):
+- Snap over 100 000 lines takes about 1 ms and picking about 11 ms: no spatial index is needed yet.
+- The solver takes about 0.22 s for a 150-line chain: the dense numeric Jacobian is the first thing to replace (Phase 3, before the feature graph relies on it).
+- A 100 000-line project is 31 MB of JSON and saves in about 80 ms: a binary format is not urgent.
+
+Leftovers from the brief's 2D scope (not built; picked up when their phase needs them):
+1. Blocks, groups and object metadata (with Phase 3 components)
+2. Construction and infinite lines; split, join, stretch, align, distribute; transforms with a picked base point
+3. Trim, extend, offset and intersections for ellipse and spline; fillet with arcs; hatch patterns and islands
+4. Constraints: glyphs on the canvas, point-on-curve, rectangle and polyline, pinned dragging, Symmetric in the UI
+5. Associative dimensions and hatches; true DXF DIMENSION entities; SVG import; PDF export
+6. Parallel snap, user coordinate systems, line types and annotation text in the 3D view
+7. (done) MCP scripts click widgets by name (`click_widget`, `set_text`, `widgets`) and use no sleeps; 3D picks still use pixels
+
+## Phase 3: Geometry and parametric modeling (in progress)
+Kernel decisions, both from measured spikes: truck rejected (`docs/KERNEL_EVAL.md`), own B-Rep kernel;
+`manifold-rust` chosen for booleans (`docs/BOOLEAN_EVAL.md`).
+
+Done (unit-tested; the plate-with-hole flow checked in the running app through MCP):
+- [x] `cad-params`: parameter expressions with units, functions, conditionals, dependency order, cycle detection
+- [x] `cad-geometry::profile`: closed profiles with holes from lines, arcs, circles, rectangles, polylines
+- [x] `cad-topology`: B-Rep (vertex, edge, coedge, loop, face; plane, cylinder, cone, sphere, torus) with validation
+- [x] `cad-modeler`: extrude, revolve, watertight tessellation, volume, area, centroid
+- [x] Bodies and booleans (union, difference, intersection) with the analytic surface kept per triangle
+- [x] Feature history in the document: extrude and revolve with add / cut / intersect, suppress, reorder, edit, undo
+- [x] Incremental rebuild: only features whose inputs changed are recomputed; a failed feature does not stop the rest
+- [x] Model tab: parameters, features, body properties; the body in the 3D view
+- [x] Sketches on XY, XZ, YZ planes with offset expressions; sketch on a picked planar face (a snapshot of the plane)
+- [x] Several bodies: New body, targets (auto, all, one body), flip for cuts into the material; file format version 7
+- [x] 2D view per active sketch with the bodies as grey reference edges; sketches placed on their planes in 3D
+- [x] Faces on the same surface merged; body edges (line, circle, other; convex, concave, smooth)
+- [x] Fillet and chamfer features on straight edges and on circular rims, made with booleans; edges picked in the 3D view
+- [x] STL (binary) and OBJ export of the bodies, units mm; files read back in tests and compared by volume
+- [x] Sweep along line and arc paths (mitred corners, open or closed) and ruled loft through sections; a `Faceted` surface kind for free-form faces; file format version 9
+- [x] Shell feature: hollow a body, optionally open on a picked planar face (Minkowski erosion in manifold-rust); file format version 10
+- [x] Rebuild runs on a worker thread; the window stays responsive and shows "Rebuilding..."
+- [x] Linear pattern, circular pattern and mirror features (of a feature or of all bodies); pattern of a pattern gives a grid; count is an expression; file format version 8
+- [ ] Built, not exercised in the app: Circular pattern and Mirror feature buttons, Revolve button, Intersect, Target other than Auto, reorder and delete buttons, feature editor fields other than distance, parameter and sketch delete, non-planar face pick, Re-pick edges, the highlight of picked edges
+
+Limits of this slice (state them wherever results are shown):
+- Booleans run on the tessellation (0.02 mm): curved faces take part as facets, intersection curves are polylines.
+  Volumes of curved bodies are approximate and labelled so in the UI.
+- A sketch on a face stores the plane as it was when picked; it does not follow later changes of the body.
+- The feature history is linear: changing an early feature recomputes everything after it.
+- Ellipse and spline cannot be part of a profile. Crossing profile loops are not detected.
+- Shell: the offset tool is a faceted sphere, so walls next to curved or slanted faces are slightly thicker than asked; an open shell needs a thickness of at most about a quarter of the body depth along the opening direction.
+- A panic in the rebuild worker is not handled: the UI would stay on "Rebuilding...".
+- Fillets and chamfers: no blending at corners where filleted edges meet; a stored edge is a picked point, so a
+  feature reports "edge not found" when earlier features move that edge. A rim fillet on a round hole carries a
+  few percent volume error at the 0.02 mm body tolerance (mesh slivers between facets and the true circle).
+
+Remaining:
+1. Face references that survive rebuilds (needs trimmed faces); a dependency graph between sketches, features and bodies instead of the linear history
+2. Trimmed B-Rep faces rebuilt from boolean results; analytic intersection curves (plane with cylinder first)
+3. Smooth loft through three or more sections, loft sections with holes, self-intersection checks, draft; corner blending where filleted edges meet; fillets on other edge types
+4. NURBS curves and surfaces
+5. Parameters in sketch constraints and dimensions; analytic sparse Jacobian for the solver
+6. 3D gizmo, face and edge selection, section planes, BVH picking
+7. STEP export (truck writer as a reference)
+8. Handle a rebuild worker panic; cancel a running rebuild when a newer request arrives
+
+## Phase 4: Architectural CAD
+Walls with automatic joins, doors, windows, floors, roofs, stairs, room detection and areas,
+multi-floor projects, BIM metadata designed for later IFC export.
+
+## Phase 5: Mechanical CAD
+Parametric generators (gears, shafts, bearings, springs, fasteners, threads), assemblies, joints,
+collision and interference checks (parry), exploded views, bill of materials.
+
+## Phase 6: Advanced engineering
+Mass properties, kinematics, static structural analysis, FEA infrastructure. Every result is labelled
+approximate or validated; unvalidated results are never presented as certified.
+
+## Phase 7: Optimization and production
+Profiling-driven work: instancing, culling, LOD, mesh caches, binary cache format, parallel tessellation.
+STEP, IGES, STL, OBJ, 3MF, glTF, PDF, IFC. Plugin API. Docking, themes, command search. Documentation.

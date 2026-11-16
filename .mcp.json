@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "projectcad": {
+      "command": "D:\Documents\Projects\Claude\ProjectCAD\target\debug\cad-app.exe",
+      "args": ["--mcp"]
+    }
+  }
+}

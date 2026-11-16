@@ -1,0 +1,174 @@
+#![cfg(any(feature = "boolmesh", feature = "manifold-rust", feature = "csgrs"))]
+use cad_boolean_spike::cand::{boolean, NAME};
+use cad_boolean_spike::*;
+use std::time::Instant;
+
+/// Run `f` in a big-stack thread with catch_unwind; print one ROW line.
+fn run(id: &str, reference: f64, tol_rel: f64, f: impl FnOnce() -> R + Send + 'static + std::panic::UnwindSafe) {
+    let t0 = Instant::now();
+    let h = std::thread::Builder::new()
+        .stack_size(1 << 29)
+        .spawn(move || std::panic::catch_unwind(f))
+        .unwrap();
+    let res = h.join().unwrap();
+    let ms = t0.elapsed().as_secs_f64() * 1e3;
+    match res {
+        Err(e) => {
+            let msg = e.downcast_ref::<String>().cloned().or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string())).unwrap_or_default();
+            println!("ROW|{NAME}|{id}|PANIC|||||{ms:.1}||{}", msg.replace('\n', " "));
+        }
+        Ok(Err(e)) => println!("ROW|{NAME}|{id}|FAIL|||||{ms:.1}||{}", e.replace('\n', " ")),
+        Ok(Ok(m)) => {
+            let r = analyze(&m);
+            let err = (r.volume - reference) / reference;
+            let ok = r.closed && err.abs() <= tol_rel;
+            println!(
+                "ROW|{NAME}|{id}|{}|{:.6}|{:.6}|{:+.4}%|{}|{ms:.1}|tris={} badedges={} degen={}|tol={:.3}%",
+                if ok { "OK" } else { "WRONG" },
+                r.volume, reference, err * 100.0, if r.closed { "yes" } else { "no" }, r.tris, r.bad_edges, r.degenerate, tol_rel * 100.0
+            );
+        }
+    }
+}
+
+const T: f64 = 1e-3;
+
+#[test]
+fn a_union_overlapping_boxes() {
+    run("a", 1875.0, T, || {
+        boolean(Op::Union, &make_box([0.; 3], [10.; 3]), &make_box([5.; 3], [15.; 3]))
+    });
+}
+
+fn box_minus_cyl() -> R {
+    boolean(Op::Difference, &make_box([-10., -10., 0.], [10., 10., 10.]), &make_cylinder(0., 0., -5., 15., 4.))
+}
+
+#[test]
+fn b_box_minus_cylinder() {
+    run("b", 4000.0 - area64(4.0) * 10.0, T, box_minus_cyl);
+}
+
+#[test]
+fn c_cube_and_sphere() {
+    let (mc, sd) = monte_carlo([-10.; 3], [10.; 3], |p| p[0] * p[0] + p[1] * p[1] + p[2] * p[2] <= 144.0);
+    println!("INFO|c MC analytic-sphere reference {mc:.3} (1 sigma {sd:.3})");
+    run("c", mc, 0.007, || boolean(Op::Intersection, &make_box([-10.; 3], [10.; 3]), &make_sphere([0.; 3], 12.0)));
+}
+
+#[test]
+fn d_union_crossing_cylinders() {
+    // ref = 2*V(prism) - MC(intersection of the two faceted prisms)
+    let (inter, sd) = monte_carlo([-5.; 3], [5.; 3], |p| {
+        in_prism64(p, 0., 0., -15., 15., 5.) && in_prism64([p[2], p[1], p[0]], 0., 0., -15., 15., 5.)
+    });
+    let reference = 2.0 * area64(5.0) * 30.0 - inter;
+    println!("INFO|d reference {reference:.3} (MC intersection {inter:.3}, 1 sigma {sd:.3})");
+    run("d", reference, T, || {
+        let c1 = make_cylinder(0., 0., -15., 15., 5.);
+        boolean(Op::Union, &c1, &swap_xz(&c1))
+    });
+}
+
+#[test]
+fn e_box_minus_corner_box() {
+    run("e", 875.0, T, || boolean(Op::Difference, &make_box([0.; 3], [10.; 3]), &make_box([0.; 3], [5.; 3])));
+}
+
+#[test]
+fn f_union_face_touching() {
+    run("f", 2000.0, T, || boolean(Op::Union, &make_box([0.; 3], [10.; 3]), &make_box([10., 0., 0.], [20., 10., 10.])));
+}
+
+#[test]
+fn g_chained() {
+    run("g", 4000.0 - area64(4.0) * 10.0 - area64(2.0) * 10.0, T, || {
+        let r = box_minus_cyl()?;
+        let r = analyze_ok(&r)?;
+        boolean(Op::Difference, &r, &make_cylinder(6., 6., -5., 15., 2.))
+    });
+}
+
+/// Intermediate must be a usable (closed) mesh; weld it so the next call gets shared vertices.
+fn analyze_ok(m: &Mesh) -> R {
+    Ok(weld(m, 1e-9))
+}
+
+#[test]
+fn h_identical_boxes() {
+    run("h", 1000.0, T, || boolean(Op::Union, &make_box([0.; 3], [10.; 3]), &make_box([0.; 3], [10.; 3])));
+}
+
+#[test]
+fn i_edge_touching_difference() {
+    run("i", 1000.0, T, || boolean(Op::Difference, &make_box([0.; 3], [10.; 3]), &make_box([10., 10., 0.], [20., 20., 10.])));
+}
+
+#[test]
+fn j_stress_30_boxes() {
+    let mut r = XorShift(0x2545F4914F6CDD1D);
+    let offs: Vec<[f64; 3]> = (0..30).map(|_| [r.f() * 30.0, r.f() * 30.0, r.f() * 30.0]).collect();
+    let o2 = offs.clone();
+    let (mc, sd) = monte_carlo([0.; 3], [40.; 3], move |p| o2.iter().any(|o| in_box(p, *o, [o[0] + 10., o[1] + 10., o[2] + 10.])));
+    let exact = exact_box_union_volume(&offs.iter().map(|o| (*o, [o[0] + 10., o[1] + 10., o[2] + 10.])).collect::<Vec<_>>());
+    println!("INFO|j MC reference {mc:.3} (1 sigma {sd:.3}); exact coordinate-compression union volume {exact:.3}");
+    let t0 = Instant::now();
+    let h = std::thread::Builder::new().stack_size(1 << 29).spawn(move || {
+        std::panic::catch_unwind(move || {
+            let mut acc = make_box(offs[0], [offs[0][0] + 10., offs[0][1] + 10., offs[0][2] + 10.]);
+            let mut closed_steps = 0;
+            let mut log = String::new();
+            for (k, o) in offs.iter().enumerate().skip(1) {
+                let b = make_box(*o, [o[0] + 10., o[1] + 10., o[2] + 10.]);
+                match boolean(Op::Union, &acc, &b) {
+                    Ok(m) => {
+                        let rep = analyze(&m);
+                        if rep.closed { closed_steps += 1 } else { log += &format!(" step{k}:open(badedges={})", rep.bad_edges); }
+                        acc = weld(&m, 1e-9);
+                        
+                    }
+                    Err(e) => return (Err(format!("step {k} error: {e}; closed {closed_steps}/29")), acc, closed_steps),
+                }
+            }
+            (if closed_steps == 29 { Ok(()) } else { Err(format!("only {closed_steps}/29 intermediates closed;{log}")) }, acc, closed_steps)
+        })
+    }).unwrap();
+    let res = h.join().unwrap();
+    let ms = t0.elapsed().as_secs_f64() * 1e3;
+    match res {
+        Err(e) => {
+            let msg = e.downcast_ref::<String>().cloned().or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string())).unwrap_or_default();
+            println!("ROW|{NAME}|j|PANIC|||||{ms:.1}||{msg}");
+        }
+        Ok((st, m, closed)) => {
+            let r = analyze(&m);
+            let err = (r.volume - exact) / exact;
+            let tol = 1e-3;
+            let ok = st.is_ok() && r.closed && err.abs() <= tol;
+            let status = if st.is_err() && !r.closed && r.tris == 0 { "FAIL" } else if ok { "OK" } else { "WRONG" };
+            println!(
+                "ROW|{NAME}|j|{status}|{:.3}|{:.3}|{:+.4}%|{}|{ms:.1}|closed_intermediates={closed}/29 tris={} degen={}|tol={:.3}% {}",
+                r.volume, exact, err * 100.0, if r.closed { "yes" } else { "no" }, r.tris, r.degenerate, tol * 100.0, st.err().unwrap_or_default()
+            );
+        }
+    }
+}
+
+#[test]
+fn k_scale_robustness() {
+    for (id, s) in [("k_1e-3", 1e-3), ("k_1e4", 1e4)] {
+        run(id, 1875.0 * s * s * s, T, move || {
+            boolean(Op::Union, &scaled(&make_box([0.; 3], [10.; 3]), s), &scaled(&make_box([5.; 3], [15.; 3]), s))
+        });
+    }
+}
+
+#[test]
+fn z_tjunction_probe() {
+    let m = boolean(Op::Union, &make_box([0.; 3], [10.; 3]), &make_box([5.; 3], [15.; 3])).unwrap();
+    let (bad, tj) = tjunction_edges(&m);
+    println!("INFO|{NAME} case a: unmatched edges {bad}, of which carry a T-junction vertex {tj}");
+    let m = box_minus_cyl().unwrap();
+    let (bad, tj) = tjunction_edges(&m);
+    println!("INFO|{NAME} case b: unmatched edges {bad}, of which carry a T-junction vertex {tj}");
+}

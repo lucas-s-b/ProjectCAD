@@ -1,0 +1,11 @@
+[package]
+name = "cad-bench"
+edition.workspace = true
+version.workspace = true
+publish = false
+
+[dependencies]
+cad-constraints = { version = "0.1.0", path = "../cad-constraints" }
+cad-document = { version = "0.1.0", path = "../cad-document" }
+cad-geometry = { version = "0.1.0", path = "../cad-geometry" }
+cad-import-export = { version = "0.1.0", path = "../cad-import-export" }

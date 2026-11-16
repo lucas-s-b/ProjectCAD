@@ -1,0 +1,429 @@
+use crate::camera::{Camera2D, OrbitCamera};
+use crate::mcp::{self, bridge::Bridge};
+use crate::rebuild_worker::RebuildWorker;
+use crate::{panels, view2d, view3d};
+use cad_document::{Command, ConstraintId, Document, Entity, EntityId, History, LayerId, BodyOp, Feature, FeatureId, RebuildResult, RevolveAxis, SketchId, BasePlane, Target};
+use cad_geometry::snap::Snap;
+use cad_geometry::{DVec2, DVec3, Shape};
+use std::collections::BTreeSet;
+use eframe::egui;
+use std::path::PathBuf;
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Tool {
+    Select,
+    Line,
+    Circle,
+    Rect,
+    Arc,
+    Polyline,
+    Ellipse,
+    Spline,
+    Polygon,
+    Text,
+    Dimension,
+    Leader,
+    RadiusDim,
+    AngleDim,
+    Trim,
+    Extend,
+    Offset,
+    Fillet,
+    Chamfer,
+}
+
+impl Tool {
+    /// Tools that collect points by clicking.
+    pub fn is_draw(self) -> bool {
+        !matches!(self, Tool::Select | Tool::Trim | Tool::Extend | Tool::Offset | Tool::Fillet | Tool::Chamfer)
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum SideTab {
+    Sketch,
+    Model,
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum ViewMode {
+    TwoD,
+    ThreeD,
+}
+
+/// What the next click on a planar face in the 3D view does.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum PickFace {
+    Off,
+    /// Start a sketch on the face.
+    Sketch,
+    /// Open the face of a new shell feature.
+    Shell,
+}
+
+/// Action waiting for the unsaved-changes dialog.
+#[derive(Clone, Copy)]
+pub enum Pending {
+    New,
+    Open,
+    Import,
+    Quit,
+}
+
+pub struct CadApp {
+    pub doc: Document,
+    pub history: History,
+    pub path: Option<PathBuf>,
+    pub saved_rev: u64,
+    pub selection: BTreeSet<EntityId>,
+    /// Bumped on every selection change.
+    pub sel_rev: u64,
+    pub tool: Tool,
+    pub view: ViewMode,
+    pub cam2d: Camera2D,
+    pub cam3d: OrbitCamera,
+    /// Clicks collected by the active draw tool.
+    pub points: Vec<DVec2>,
+    /// Move drag: (start world, current world).
+    pub drag: Option<(DVec2, DVec2)>,
+    /// Uncommitted numeric edit.
+    pub inspector: Option<(EntityId, Shape)>,
+    pub status: String,
+    pub cursor_world: DVec2,
+    pub confirm: Option<Pending>,
+    /// (doc.revision, model revision, sel_rev) last uploaded to the GPU.
+    pub gpu_stamp: Option<(u64, u64, u64)>,
+    /// Central panel rect of the last frame, used to fit the 2D camera.
+    pub view_rect: egui::Rect,
+    pub last_title: String,
+    pub allow_close: bool,
+    /// Current layer for new shapes.
+    pub layer: LayerId,
+    /// The sketch the 2D view shows and new entities go to.
+    pub sketch: SketchId,
+    pub osnap: bool,
+    pub grid_snap: bool,
+    /// Snap found this frame, for the marker.
+    pub snap: Option<Snap>,
+    pub rot_deg: f64,
+    pub scale_factor: f64,
+    /// Rename buffer of the layers panel.
+    pub layer_name: String,
+    /// First pick of a two-pick edit tool.
+    pub op_target: Option<(EntityId, DVec2)>,
+    pub offset_dist: f64,
+    pub fillet_radius: f64,
+    pub chamfer_dist: f64,
+    pub text_input: String,
+    pub text_height: f64,
+    pub dim_text_height: f64,
+    pub polygon_sides: u32,
+    pub radial_diameter: bool,
+    pub hatch_angle_deg: f64,
+    pub hatch_spacing: f64,
+    pub array: crate::app_ops::ArrayParams,
+    /// Text of the coordinate field in the status bar.
+    pub coord_input: String,
+    /// Uncommitted value edit of a constraint.
+    pub constraint_edit: Option<(ConstraintId, f64)>,
+    /// Constraint status text per document revision.
+    pub constraint_cache: Option<(u64, Option<String>)>,
+    pub side_tab: SideTab,
+    /// Uncommitted parameter expression edit: (name, text).
+    pub param_edit: Option<(String, String)>,
+    /// Add-parameter row: (name, expression).
+    pub param_new: (String, String),
+    pub feat_distance: String,
+    pub feat_angle: String,
+    pub feat_op: BodyOp,
+    pub feat_axis: RevolveAxis,
+    pub feat_flip: bool,
+    pub feat_target: Target,
+    /// Selections captured for a sweep (profile, path) or a loft (sections).
+    pub captures: Vec<Vec<EntityId>>,
+    /// The next click in the 3D view picks a planar face.
+    pub pick_face: PickFace,
+    /// Thickness field of the Shell controls.
+    pub shell_thickness: String,
+    pub pick_edges: Option<crate::edge_pick::EdgePick>,
+    pub blend_size: String,
+    pub new_sketch_base: BasePlane,
+    pub new_sketch_offset: String,
+    pub feature_sel: Option<FeatureId>,
+    /// Uncommitted edit of the selected feature.
+    pub feature_edit: Option<(FeatureId, Feature)>,
+    pub worker: RebuildWorker,
+    /// Document revision last sent to the worker.
+    pub requested: Option<u64>,
+    /// Newest rebuild result and the document revision it was built from; may lag behind `doc`.
+    pub model: Option<(u64, RebuildResult)>,
+    /// Fit the 3D camera to the first result after a document was replaced.
+    pub fit_on_model: bool,
+    /// Named widgets of the last complete frame.
+    pub widgets: Vec<crate::widgets::WidgetHit>,
+    /// Present only with --mcp.
+    pub mcp: Option<Bridge>,
+}
+
+impl CadApp {
+    pub fn new(cc: &eframe::CreationContext<'_>, mcp: bool) -> Self {
+        view3d::init_renderer(cc);
+        Self {
+            doc: Document::new("Untitled"),
+            history: History::default(),
+            path: None,
+            saved_rev: 0,
+            selection: BTreeSet::new(),
+            sel_rev: 0,
+            tool: Tool::Select,
+            view: ViewMode::TwoD,
+            cam2d: Camera2D::default(),
+            cam3d: OrbitCamera::default(),
+            points: Vec::new(),
+            drag: None,
+            inspector: None,
+            status: String::new(),
+            cursor_world: DVec2::ZERO,
+            confirm: None,
+            gpu_stamp: None,
+            view_rect: egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 700.0)),
+            last_title: String::new(),
+            allow_close: false,
+            layer: 0,
+            sketch: 0,
+            osnap: true,
+            grid_snap: false,
+            snap: None,
+            rot_deg: 90.0,
+            scale_factor: 2.0,
+            layer_name: String::new(),
+            op_target: None,
+            offset_dist: 5.0,
+            fillet_radius: 5.0,
+            chamfer_dist: 5.0,
+            text_input: "Text".into(),
+            text_height: 5.0,
+            dim_text_height: 3.5,
+            polygon_sides: 6,
+            radial_diameter: false,
+            hatch_angle_deg: 45.0,
+            hatch_spacing: 2.0,
+            array: Default::default(),
+            coord_input: String::new(),
+            constraint_edit: None,
+            constraint_cache: None,
+            side_tab: SideTab::Sketch,
+            param_edit: None,
+            param_new: Default::default(),
+            feat_distance: "10 mm".into(),
+            feat_angle: "360 deg".into(),
+            feat_op: BodyOp::Add,
+            feat_axis: RevolveAxis::Y,
+            feat_flip: false,
+            feat_target: Target::Auto,
+            captures: Vec::new(),
+            pick_face: PickFace::Off,
+            shell_thickness: "2 mm".into(),
+            pick_edges: None,
+            blend_size: "2 mm".into(),
+            new_sketch_base: BasePlane::XY,
+            new_sketch_offset: "0".into(),
+            feature_sel: None,
+            feature_edit: None,
+            worker: RebuildWorker::spawn(cc.egui_ctx.clone()),
+            requested: None,
+            model: None,
+            fit_on_model: false,
+            widgets: Vec::new(),
+            mcp: mcp.then(|| mcp::spawn(cc.egui_ctx.clone())),
+        }
+    }
+
+    /// Takes the newest finished rebuild and asks for one when the document has moved on.
+    pub fn sync_model(&mut self) {
+        if let Some(m) = self.worker.poll() {
+            self.model = Some(m);
+            if std::mem::take(&mut self.fit_on_model) {
+                let (lo, hi) = self.scene_bounds();
+                self.cam3d.fit(lo, hi);
+            }
+        }
+        let rev = self.doc.revision();
+        if self.requested != Some(rev) {
+            self.requested = Some(rev);
+            self.worker.request(rev, self.doc.clone());
+        }
+    }
+
+    /// Forgets the model of the old document; the next frame rebuilds from scratch.
+    pub fn reset_model(&mut self) {
+        self.worker.reset();
+        self.requested = None;
+        self.model = None;
+        self.fit_on_model = true;
+    }
+
+    pub fn model_current(&self) -> bool {
+        self.model.as_ref().is_some_and(|(r, _)| *r == self.doc.revision())
+    }
+
+    pub fn rebuilding(&self) -> bool {
+        !self.doc.features().is_empty() && !self.model_current()
+    }
+
+    pub fn model_result(&self) -> Option<&RebuildResult> {
+        self.model.as_ref().map(|(_, r)| r)
+    }
+
+    /// Ids of the bodies of the latest rebuild.
+    pub fn body_ids(&self) -> Vec<u64> {
+        self.model_result().into_iter().flat_map(|r| &r.bodies).map(|(id, _)| *id).collect()
+    }
+
+    pub fn is_dirty(&self) -> bool {
+        self.doc.revision() != self.saved_rev
+    }
+
+    pub fn exec(&mut self, cmds: Vec<Command>) {
+        // A stale inspector buffer would be committed over this change on the next frame.
+        self.inspector = None;
+        self.status.clear();
+        if let Err(e) = self.history.execute(&mut self.doc, cmds) {
+            self.status = e.to_string();
+        }
+        self.sanitize();
+    }
+
+    /// Like `exec`, but a run with the same key is one undo step.
+    pub fn exec_merged(&mut self, cmds: Vec<Command>, key: u64) {
+        self.inspector = None;
+        self.status.clear();
+        if let Err(e) = self.history.execute_merged(&mut self.doc, cmds, key) {
+            self.status = e.to_string();
+        }
+        self.sanitize();
+    }
+
+    pub fn add_shape(&mut self, shape: Shape) {
+        if !self.doc.layer(self.layer).is_some_and(|l| l.visible && !l.locked) {
+            self.status = "Current layer is hidden or locked".into();
+            return;
+        }
+        let id = self.doc.alloc_id();
+        let name = format!("{} {}", shape.kind(), id);
+        self.exec(vec![Command::Add(Entity { id, name, shape, layer: self.layer, sketch: self.sketch })]);
+        if self.doc.get(id).is_some() {
+            self.set_selection([id]);
+        }
+    }
+
+    pub fn delete_selection(&mut self) {
+        let constraints: BTreeSet<ConstraintId> = self.selection.iter().flat_map(|id| self.doc.constraints_of(*id)).collect();
+        let cmds: Vec<Command> = constraints
+            .into_iter()
+            .map(Command::RemoveConstraint)
+            .chain(self.selection.iter().map(|id| Command::Remove(*id)))
+            .collect();
+        self.exec(cmds);
+        self.set_selection([]);
+        self.inspector = None;
+    }
+
+    /// The shape as it must be drawn now: inspector edit, move-drag preview, or the stored shape.
+    pub fn display_shape(&self, e: &Entity) -> Shape {
+        if let Some((id, shape)) = &self.inspector
+            && *id == e.id
+        {
+            return shape.clone();
+        }
+        if let Some((start, now)) = self.drag
+            && self.selection.contains(&e.id)
+        {
+            let mut s = e.shape.clone();
+            s.translate((now - start).extend(0.0));
+            return s;
+        }
+        e.shape.clone()
+    }
+
+    pub fn set_selection(&mut self, ids: impl IntoIterator<Item = EntityId>) {
+        self.selection = ids.into_iter().collect();
+        self.sel_rev += 1;
+    }
+
+    pub fn undo(&mut self) {
+        if self.history.undo(&mut self.doc) {
+            self.after_history_change();
+        }
+    }
+
+    pub fn redo(&mut self) {
+        if self.history.redo(&mut self.doc) {
+            self.after_history_change();
+        }
+    }
+
+    fn after_history_change(&mut self) {
+        self.sanitize();
+        self.inspector = None;
+        self.param_edit = None;
+        self.feature_edit = None;
+        self.constraint_edit = None;
+    }
+
+    /// Union of all entity bboxes; a default box for an empty document.
+    pub fn scene_bounds(&self) -> (DVec3, DVec3) {
+        let bodies = self.model.iter().flat_map(|(_, m)| &m.bodies).map(|(_, b)| b.bbox());
+        self.doc
+            .entities()
+            .filter_map(|e| self.entity_bounds(e))
+            .chain(bodies)
+            .reduce(|(a, b), (c, d)| (a.min(c), b.max(d)))
+            .unwrap_or((DVec3::new(-50.0, -50.0, 0.0), DVec3::new(50.0, 50.0, 50.0)))
+    }
+
+    pub fn fit_active(&mut self) {
+        match self.view {
+            ViewMode::TwoD => self.fit_sketch(),
+            ViewMode::ThreeD => {
+                let (lo, hi) = self.scene_bounds();
+                self.cam3d.fit(lo, hi);
+            }
+        }
+    }
+}
+
+impl eframe::App for CadApp {
+    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
+        if let Some(b) = &mut self.mcp {
+            b.feed(raw);
+        }
+    }
+
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let ctx = ui.ctx().clone();
+        self.widgets = crate::widgets::begin_frame(&ctx);
+        if let Some(mut b) = self.mcp.take() {
+            b.poll(self, &ctx);
+            self.mcp = Some(b);
+        }
+        if ctx.input(|i| i.viewport().close_requested()) && self.is_dirty() && !self.allow_close {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            self.confirm = Some(Pending::Quit);
+        }
+        self.sync_model();
+        panels::shortcuts(self, &ctx);
+        panels::menu_bar(self, ui);
+        crate::toolbar::toolbar(self, ui);
+        panels::right_panel(self, ui);
+        panels::status_bar(self, ui);
+        panels::confirm_dialog(self, &ctx);
+        panels::update_title(self, &ctx);
+        egui::CentralPanel::default().show(ui, |ui| match self.view {
+            ViewMode::TwoD => view2d::show(self, ui),
+            ViewMode::ThreeD => view3d::show(self, ui),
+        });
+        // Edits made during this frame go to the worker now, not a frame later.
+        self.sync_model();
+    }
+}

@@ -1,0 +1,35 @@
+pub mod constraints;
+pub mod document;
+pub mod feature;
+pub mod file;
+pub mod history;
+pub mod linetype;
+pub mod rebuild;
+mod rebuild_blend;
+mod rebuild_pattern;
+mod rebuild_shell;
+mod rebuild_sweep;
+pub mod sketch;
+pub mod units;
+
+#[cfg(test)]
+mod constraint_tests;
+#[cfg(test)]
+mod document_tests;
+#[cfg(test)]
+mod pattern_feature_tests;
+#[cfg(test)]
+mod shell_feature_tests;
+#[cfg(test)]
+mod sweep_feature_tests;
+
+pub use cad_constraints::{Constraint, PointKind, PointRef, Solution, SolveError, Status};
+pub use cad_modeler::{Body, BodyEdge, BoolOp, Convexity, EdgeGeom, Surface};
+pub use cad_params::{ParamError, ParamSet, Value};
+pub use document::{Command, ConstraintId, DocError, Document, Entity, EntityId, FORMAT_VERSION, Layer, LayerId};
+pub use feature::{Axis3, BODY_TOLERANCE, BodyOp, EDGE_PICK_TOLERANCE, Feature, FeatureId, FeatureKind, MirrorSource, RevolveAxis, Target};
+pub use history::History;
+pub use linetype::LineType;
+pub use rebuild::{FeatureState, RebuildResult, Rebuilder};
+pub use sketch::{BasePlane, PlaneDef, Sketch, SketchId};
+pub use units::{Settings, Units};

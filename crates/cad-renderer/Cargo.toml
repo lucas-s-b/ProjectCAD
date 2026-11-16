@@ -1,0 +1,8 @@
+[package]
+name = "cad-renderer"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+bytemuck = { version = "1.25.2", features = ["derive"] }
+wgpu = "=30.0.2"

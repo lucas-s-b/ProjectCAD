@@ -1,0 +1,203 @@
+//! Evaluation spike of the `truck` B-Rep kernel. Experiments are `#[test]`s printing `RESULT` lines.
+use std::collections::HashMap;
+use std::f64::consts::PI;
+use std::time::Instant;
+use truck_meshalgo::prelude::*;
+use truck_modeling::*;
+
+pub struct MeshStats {
+    pub tris: usize,
+    pub volume: f64,
+    pub closed: bool,
+    pub oriented: bool,
+    pub degenerate: usize,
+    pub bad_edges: usize,
+}
+
+/// Tessellate a solid with tolerance `tol` and return the welded mesh stats.
+pub fn tessellate(solid: &Solid, tol: f64) -> PolygonMesh {
+    solid.triangulation(tol).to_polygon()
+}
+
+pub fn mesh_stats(mesh: &PolygonMesh) -> MeshStats {
+    let pos = mesh.positions();
+    let mut tris: Vec<[usize; 3]> = Vec::new();
+    for f in mesh.face_iter() {
+        for i in 1..f.len() - 1 {
+            tris.push([f[0].pos, f[i].pos, f[i + 1].pos]);
+        }
+    }
+    let mut vol = 0.0;
+    for t in &tris {
+        let (a, b, c) = (pos[t[0]], pos[t[1]], pos[t[2]]);
+        vol += a.x * (b.y * c.z - b.z * c.y) - a.y * (b.x * c.z - b.z * c.x)
+            + a.z * (b.x * c.y - b.y * c.x);
+    }
+    vol /= 6.0;
+    // weld by quantised position (1e-6)
+    let weld = weld_positions(pos, 1e-5);
+    let mut und: HashMap<(usize, usize), u32> = HashMap::new();
+    let mut dir: HashMap<(usize, usize), u32> = HashMap::new();
+    let mut degenerate = 0;
+    for t in &tris {
+        let w = [weld[t[0]], weld[t[1]], weld[t[2]]];
+        if w[0] == w[1] || w[1] == w[2] || w[0] == w[2] {
+            degenerate += 1;
+            continue;
+        }
+        for i in 0..3 {
+            let (a, b) = (w[i], w[(i + 1) % 3]);
+            *und.entry((a.min(b), a.max(b))).or_default() += 1;
+            *dir.entry((a, b)).or_default() += 1;
+        }
+    }
+    let bad_edges = und.values().filter(|&&c| c != 2).count();
+    let oriented = dir.values().all(|&c| c == 1);
+    MeshStats { tris: tris.len(), volume: vol, closed: bad_edges == 0, oriented, degenerate, bad_edges }
+}
+
+pub fn face_count(s: &Solid) -> usize {
+    s.boundaries().iter().map(|sh| sh.face_iter().count()).sum()
+}
+
+pub fn rel(m: f64, e: f64) -> f64 { (m - e) / e }
+
+/// Run a closure catching panics, timing it; prints a RESULT line.
+pub fn run<F: FnOnce() -> std::result::Result<String, String>>(name: &str, f: F) {
+    let t = Instant::now();
+    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
+    let ms = t.elapsed().as_secs_f64() * 1e3;
+    match r {
+        Ok(Ok(s)) => println!("RESULT {name} OK {ms:.1}ms {s}"),
+        Ok(Err(s)) => println!("RESULT {name} FAIL {ms:.1}ms {s}"),
+        Err(e) => {
+            let m = e.downcast_ref::<String>().cloned().or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string())).unwrap_or_default();
+            println!("RESULT {name} PANIC {ms:.1}ms {m}")
+        }
+    }
+}
+
+/// Report string for a solid against an exact volume.
+pub fn report(s: &Solid, tol: f64, exact: f64) -> String {
+    let m = mesh_stats(&tessellate(s, tol));
+    format!(
+        "faces={} tris={} vol={:.5} exact={:.5} relerr={:.3e} closed={} oriented={} bad_edges={} degenerate={} tol={}",
+        face_count(s), m.tris, m.volume, exact, rel(m.volume, exact), m.closed, m.oriented, m.bad_edges, m.degenerate, tol
+    )
+}
+
+// ---------- builders ----------
+pub fn rect_wire(x0: f64, y0: f64, w: f64, h: f64) -> Wire {
+    let v = [
+        builder::vertex(Point3::new(x0, y0, 0.0)),
+        builder::vertex(Point3::new(x0 + w, y0, 0.0)),
+        builder::vertex(Point3::new(x0 + w, y0 + h, 0.0)),
+        builder::vertex(Point3::new(x0, y0 + h, 0.0)),
+    ];
+    Wire::from(vec![
+        builder::line(&v[0], &v[1]),
+        builder::line(&v[1], &v[2]),
+        builder::line(&v[2], &v[3]),
+        builder::line(&v[3], &v[0]),
+    ])
+}
+
+pub fn circle_wire(cx: f64, cy: f64, z: f64, r: f64) -> Wire {
+    let v = builder::vertex(Point3::new(cx + r, cy, z));
+    builder::rsweep(&v, Point3::new(cx, cy, z), Vector3::unit_z(), Rad(7.0))
+}
+
+pub fn extrude(w: Wire, h: f64) -> Solid {
+    let f = builder::try_attach_plane(&[w]).unwrap();
+    builder::tsweep(&f, Vector3::new(0.0, 0.0, h))
+}
+
+pub fn cuboid(o: [f64; 3], d: [f64; 3]) -> Solid {
+    let v = builder::vertex(Point3::new(o[0], o[1], o[2]));
+    let e = builder::tsweep(&v, Vector3::new(d[0], 0.0, 0.0));
+    let f = builder::tsweep(&e, Vector3::new(0.0, d[1], 0.0));
+    builder::tsweep(&f, Vector3::new(0.0, 0.0, d[2]))
+}
+
+/// Cylinder along z, base at z0, height h.
+pub fn cylinder_z(cx: f64, cy: f64, z0: f64, r: f64, h: f64) -> Solid {
+    extrude_from(circle_wire(cx, cy, z0, r), h)
+}
+fn extrude_from(w: Wire, h: f64) -> Solid { extrude(w, h) }
+
+/// Cylinder along x, centred at (cx,cy,cz), length l.
+pub fn cylinder_x(c: [f64; 3], r: f64, l: f64) -> Solid {
+    let v = builder::vertex(Point3::new(c[0] - l / 2.0, c[1] + r, c[2]));
+    let w = builder::rsweep(&v, Point3::new(c[0] - l / 2.0, c[1], c[2]), Vector3::unit_x(), Rad(7.0));
+    let f = builder::try_attach_plane(&[w]).unwrap();
+    builder::tsweep(&f, Vector3::new(l, 0.0, 0.0))
+}
+/// Cylinder along y.
+pub fn cylinder_y(c: [f64; 3], r: f64, l: f64) -> Solid {
+    let v = builder::vertex(Point3::new(c[0] + r, c[1] - l / 2.0, c[2]));
+    let w = builder::rsweep(&v, Point3::new(c[0], c[1] - l / 2.0, c[2]), Vector3::unit_y(), Rad(7.0));
+    let f = builder::try_attach_plane(&[w]).unwrap();
+    builder::tsweep(&f, Vector3::new(0.0, l, 0.0))
+}
+
+pub fn sphere(r: f64) -> Solid {
+    let v = builder::vertex(Point3::new(0.0, r, 0.0));
+    let w: Wire = builder::rsweep(&v, Point3::origin(), Vector3::unit_x(), Rad(PI));
+    let shell = builder::cone(&w, Vector3::unit_y(), Rad(7.0));
+    Solid::new(vec![shell])
+}
+
+/// 40x20 rounded rectangle, corner radius r, centred at origin, 4 lines + 4 arcs.
+pub fn rounded_rect_wire(w: f64, h: f64, r: f64) -> Wire {
+    let (a, b) = (w / 2.0, h / 2.0);
+    let p = |x: f64, y: f64| builder::vertex(Point3::new(x, y, 0.0));
+    let v = [p(-a + r, -b), p(a - r, -b), p(a, -b + r), p(a, b - r), p(a - r, b), p(-a + r, b), p(-a, b - r), p(-a, -b + r)];
+    let k = r * (1.0 - std::f64::consts::FRAC_1_SQRT_2);
+    let arc = |i: usize, j: usize, t: Point3| builder::circle_arc(&v[i], &v[j], t);
+    Wire::from(vec![
+        builder::line(&v[0], &v[1]),
+        arc(1, 2, Point3::new(a - k, -b + k, 0.0)),
+        builder::line(&v[2], &v[3]),
+        arc(3, 4, Point3::new(a - k, b - k, 0.0)),
+        builder::line(&v[4], &v[5]),
+        arc(5, 6, Point3::new(-a + k, b - k, 0.0)),
+        builder::line(&v[6], &v[7]),
+        arc(7, 0, Point3::new(-a + k, -b + k, 0.0)),
+    ])
+}
+
+/// Boolean difference a - b (b is topologically cloned then inverted).
+pub fn diff(a: &Solid, b: &Solid, tol: f64) -> Option<Solid> {
+    let mut c = builder::clone(b);
+    c.not();
+    truck_shapeops::and(a, &c, tol)
+}
+
+#[cfg(test)]
+mod tests;
+
+/// Weld points closer than `tol` (grid + 27-neighbour search, union-find); returns representative id per point.
+pub fn weld_positions(pos: &[Point3], tol: f64) -> Vec<usize> {
+    let key = |p: &Point3| [(p.x / tol).floor() as i64, (p.y / tol).floor() as i64, (p.z / tol).floor() as i64];
+    let mut grid: HashMap<[i64; 3], Vec<usize>> = HashMap::new();
+    for (i, p) in pos.iter().enumerate() { grid.entry(key(p)).or_default().push(i); }
+    let mut parent: Vec<usize> = (0..pos.len()).collect();
+    fn find(p: &mut Vec<usize>, mut x: usize) -> usize {
+        while p[x] != x { p[x] = p[p[x]]; x = p[x]; }
+        x
+    }
+    for (i, p) in pos.iter().enumerate() {
+        let k = key(p);
+        for dx in -1..=1 { for dy in -1..=1 { for dz in -1..=1 {
+            if let Some(v) = grid.get(&[k[0] + dx, k[1] + dy, k[2] + dz]) {
+                for &j in v {
+                    if j > i && (pos[j] - *p).magnitude() <= tol {
+                        let (a, b) = (find(&mut parent, i), find(&mut parent, j));
+                        if a != b { parent[b] = a; }
+                    }
+                }
+            }
+        }}}
+    }
+    (0..pos.len()).map(|i| find(&mut parent, i)).collect()
+}

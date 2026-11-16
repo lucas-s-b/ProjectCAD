@@ -1,0 +1,12 @@
+[package]
+name = "cad-topology"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+glam = { version = "0.34.3", features = ["serde"] }
+serde = { version = "1.0.229", features = ["derive"] }
+thiserror = "2.0.21"
+
+[dev-dependencies]
+serde_json = "1.0.154"

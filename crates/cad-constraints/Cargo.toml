@@ -1,0 +1,10 @@
+[package]
+name = "cad-constraints"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+cad-geometry = { version = "0.1.0", path = "../cad-geometry" }
+nalgebra = "0.35.0"
+serde = { version = "1.0.229", features = ["derive"] }
+thiserror = "2.0.21"
