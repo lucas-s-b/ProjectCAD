@@ -50,6 +50,6 @@ flat 19 | grep -q '"section":\[1.0,0.0,0.0,20.0\]' || bad "section is $(flat 19 
 grep '"id":20,' "$OUT" | grep -o '"data":"[^"]*"' | sed 's/"data":"//; s/"$//' | base64 -d > target/mcp_phase3a_3d.png 2>/dev/null
 [ "$(head -c 4 target/mcp_phase3a_3d.png | tail -c 3)" = "PNG" ] || bad "3D screenshot is not a PNG"
 [ "$(head -n 1 "$STEP" 2>/dev/null | tr -d '\r')" = "ISO-10303-21;" ] || bad "STEP file missing or wrong first line"
-[ "$(grep -c FACE_SURFACE "$STEP" 2>/dev/null)" -gt 0 ] || bad "STEP file has no faces"
+[ "$(grep -cE 'FACE_SURFACE|ADVANCED_FACE' "$STEP" 2>/dev/null)" -gt 0 ] || bad "STEP file has no faces"
 
 [ "$fail" -eq 0 ] && echo "MCP PHASE3A PASS" || { echo "outputs in $OUT"; exit 1; }

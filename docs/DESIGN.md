@@ -143,7 +143,7 @@ all UI clicks, so adding rows does not break them. Picks inside the 3D viewport 
 - `cad-modeler` builds B-Reps by `extrude` and `revolve` and tessellates them watertight: every edge is sampled
   once and shared; planar faces are triangulated, curved faces are four-sided grids projected onto their surface.
 - A `Body` is the tessellation plus, for every triangle, the analytic surface it lies on. Booleans combine bodies
-  through `manifold-rust` and keep that mapping through its face ids. Trimmed analytic faces are not rebuilt yet.
+  through `manifold-rust` and keep that mapping through its face ids. `TrimmedBody::from_body` rebuilds faces on planes and cylinders: one face per connected group of triangles, boundary loops walked on the mesh and split into the body edges, vertices snapped onto all their surfaces (1e-6). STEP writes such bodies as advanced B-Reps and falls back to a faceted B-Rep per body otherwise.
 - `cad-params` evaluates named expressions with units; a bare number means millimetres or degrees by context.
 - The document stores parameters and an ordered feature list. `Rebuilder` evaluates the list into one body. Each
   feature's result is cached under a key hashed from its resolved inputs and the previous feature's key, so

@@ -132,3 +132,10 @@ fn an_open_rim_is_filleted_over_its_own_arc() {
     assert!(r.mesh.is_closed());
     close(half.volume() - r.volume(), all / 2.0, 0.03);
 }
+
+#[test]
+fn fillet_on_a_line_next_to_a_cylinder_is_refused() {
+    let d = d_flat();
+    let line = d.edges().into_iter().find(|e| matches!(e.geom, crate::EdgeGeom::Line { .. }) && !e.faces.iter().all(|&f| matches!(d.faces[f as usize].surface, Surface::Plane { .. }))).unwrap();
+    fails_with(fillet_edge(&d, &line, 1.0, TOL), NOT_YET);
+}

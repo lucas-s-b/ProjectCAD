@@ -101,3 +101,36 @@ fn half_rim_is_an_open_arc_running_counter_clockwise() {
     let end = center + glam::DQuat::from_axis_angle(axis, sweep) * (start - center);
     assert!(end.distance(*e.points.last().unwrap()) < 1e-6);
 }
+
+#[test]
+fn flat_parallel_to_the_axis_meets_the_cylinder_in_lines() {
+    let d = d_flat();
+    let is_cyl = |f: u32| matches!(d.faces[f as usize].surface, crate::Surface::Cylinder { .. });
+    let is_x_plane = |f: u32| matches!(d.faces[f as usize].surface, crate::Surface::Plane { normal, .. } if normal.x.abs() > 0.999);
+    let lines: Vec<_> = d.edges().into_iter().filter(|e| e.faces.iter().any(|&f| is_x_plane(f)) && e.faces.iter().any(|&f| is_cyl(f))).collect();
+    assert_eq!(lines.len(), 2);
+    for e in lines {
+        let EdgeGeom::Line { a, b } = e.geom else { panic!("{:?}", e.geom) };
+        assert!(((a.z - b.z).abs() - 10.0).abs() < 1e-9);
+        assert!((a.x - 3.0).abs() < 1e-9 && (b.x - 3.0).abs() < 1e-9);
+        assert!((a.y.abs() - 4.0).abs() < 0.05);
+    }
+}
+
+#[test]
+fn oblique_plane_cuts_the_cylinder_in_an_ellipse() {
+    let cut = oblique_cut();
+    let edges = cut.edges();
+    let ellipses: Vec<_> = edges.iter().filter(|e| matches!(e.geom, EdgeGeom::Ellipse { .. })).collect();
+    assert_eq!(ellipses.len(), 1);
+    let e = ellipses[0];
+    let EdgeGeom::Ellipse { center, major_dir, major, minor, .. } = e.geom else { unreachable!() };
+    assert!(e.closed);
+    assert!(center.distance(DVec3::new(0.0, 0.0, 10.0)) < 1e-9);
+    assert!((minor - 5.0).abs() < 1e-9 && (major - 5.773502692).abs() < 1e-6);
+    // The major axis runs up the tilted plane: (0, cos 30, sin 30) up to sign.
+    assert!(major_dir.x.abs() < 1e-6 && (major_dir.y.abs() - 30f64.to_radians().cos()).abs() < 1e-6);
+    let rings: Vec<_> = circles(&edges);
+    assert_eq!(rings.len(), 1);
+    assert!((circle_at(rings[0]).1 - 5.0).abs() < 1e-9);
+}

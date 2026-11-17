@@ -106,6 +106,8 @@ Done (unit-tested; the plate-with-hole flow checked in the running app through M
 - [x] Rebuild worker: a running rebuild stops when a newer request or a reset arrives (checked between features); a panic in a feature is reported as that feature's error, a panic outside a feature as an error on all features
 - [x] Sparse constraint solver (faer sparse Cholesky on the normal equations); a 400-line chain takes 178 ms (was 3.1 s)
 - [x] STEP export of the bodies as faceted B-Reps (AP214, one planar face per triangle), units mm; read back in tests and compared by volume
+- [x] Trimmed B-Rep faces rebuilt from the tessellation for planes and cylinders (boundary loops, snapped vertices); plane-cylinder edges are exact lines, circles or ellipses
+- [x] STEP export with analytic faces: ADVANCED_FACEs on PLANE and CYLINDRICAL_SURFACE with LINE, CIRCLE and ELLIPSE edges; other bodies are written faceted in the same file
 - [x] BVH over body triangles for 3D ray picks (cached per body)
 - [x] Face selection in the 3D view: click a body face to highlight it and show its surface kind and area
 - [x] Section plane in the 3D view (axis, offset, flip); display only, picks still hit hidden parts
@@ -120,6 +122,7 @@ Limits of this slice (state them wherever results are shown):
 - A sketch on a face stores the plane as it was when picked; it does not follow later changes of the body.
 - The feature history is linear: changing an early feature recomputes everything after it.
 - Ellipse and spline cannot be part of a profile. Crossing profile loops are not detected.
+- STEP: a body with any face other than a plane or cylinder, or an edge other than a line, circle or ellipse, is exported faceted.
 - Shell: the offset tool is a faceted sphere, so walls next to curved or slanted faces are slightly thicker than asked; an open shell needs a thickness of at most about a quarter of the body depth along the opening direction.
 - Fillets and chamfers: no blending at corners where filleted edges meet; a stored edge is a picked point, so a
   feature reports "edge not found" when earlier features move that edge. A rim fillet on a round hole carries a
@@ -127,12 +130,12 @@ Limits of this slice (state them wherever results are shown):
 
 Remaining:
 1. Face references that survive rebuilds (needs trimmed faces); a dependency graph between sketches, features and bodies instead of the linear history
-2. Trimmed B-Rep faces rebuilt from boolean results; analytic intersection curves (plane with cylinder first)
+2. Trimmed faces and analytic curves beyond plane and cylinder (cones, spheres, tori, cylinder-cylinder); booleans still run on the mesh
 3. Smooth loft through three or more sections, loft sections with holes, self-intersection checks, draft; corner blending where filleted edges meet; fillets on other edge types
 4. NURBS curves and surfaces
 5. (done) Constraint values from parameter expressions; solver Jacobian restricted per variable. Sparse normal equations (faer); a 400-line chain now takes 178 ms
 6. (done) 3D gizmo, edge selection, section caps
-7. STEP export with analytic faces (faceted export done)
+7. STEP export of cones, spheres, tori and free-form faces (planes and cylinders done)
 8. (done) Handle a rebuild worker panic; cancel a running rebuild when a newer request arrives
 
 ## Phase 4: Architectural CAD

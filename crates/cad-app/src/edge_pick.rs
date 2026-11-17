@@ -79,6 +79,7 @@ pub fn select_edge(app: &mut CadApp, origin: DVec3, dir: DVec3, pixel: f64) -> b
         EdgeGeom::Circle { radius, sweep, .. } => {
             format!("Edge: circle, radius {radius:.3} mm, arc {:.1}\u{b0}, {conv}", sweep.to_degrees())
         }
+        EdgeGeom::Ellipse { major, minor, .. } => format!("Edge: ellipse, semi-axes {major:.3} x {minor:.3} mm, {conv}"),
         EdgeGeom::Other => {
             let n = edge.points.len();
             let len: f64 = (0..if edge.closed { n } else { n - 1 }).map(|i| edge.points[i].distance(edge.points[(i + 1) % n])).sum();
