@@ -62,14 +62,23 @@ What the baseline says (see `docs/BENCHMARKS.md`):
 - The solver takes about 0.22 s for a 150-line chain: the dense numeric Jacobian is the first thing to replace (Phase 3, before the feature graph relies on it).
 - A 100 000-line project is 31 MB of JSON and saves in about 80 ms: a binary format is not urgent.
 
-Leftovers from the brief's 2D scope (not built; picked up when their phase needs them):
-1. Blocks, groups and object metadata (with Phase 3 components)
-2. Construction and infinite lines; split, join, stretch, align, distribute; transforms with a picked base point
-3. Trim, extend, offset and intersections for ellipse and spline; fillet with arcs; hatch patterns and islands
-4. Constraints: glyphs on the canvas, point-on-curve, rectangle and polyline, pinned dragging, Symmetric in the UI
-5. Associative dimensions and hatches; true DXF DIMENSION entities; SVG import; PDF export
+Leftovers batch (done; unit-tested, main paths checked in the running app through MCP):
+- [x] Construction geometry; split, join, align, distribute
+- [x] Trim, split and intersection snap for ellipse and spline (through a 1e-4 mm flattening, not exact)
+- [x] Constraints: point on line, point on circle, Symmetric button, glyphs in the 2D view, pinned dragging
+- [x] Groups and object metadata; associative linear dimensions; hatch patterns (lines, cross, solid)
+- [x] SVG import; PDF export (hand-written vector PDF); file format version 11
+- [ ] Not exercised in the app: hatch pattern combo, Unlink, metadata remove, group selection in 3D and in the Objects list, File menu import/export dialogs
+- [ ] PDF never opened in a viewer; DXF, SVG, STL never opened in another program
+
+Still open from the brief's 2D scope:
+1. Blocks with shared definitions and instances
+2. Infinite construction lines, stretch, transforms with a picked base point
+3. Extend and offset for ellipse and spline; exact conic and spline intersections; fillet with arcs; hatch islands
+4. Constraints on rectangle and polyline
+5. Associative radial and angular dimensions and hatches; true DXF DIMENSION entities
 6. Parallel snap, user coordinate systems, line types and annotation text in the 3D view
-7. (done) MCP scripts click widgets by name (`click_widget`, `set_text`, `widgets`) and use no sleeps; 3D picks still use pixels
+7. Speed of ellipse and spline snapping (about 2000 segments per ellipse on every mouse move; not measured)
 
 ## Phase 3: Geometry and parametric modeling (in progress)
 Kernel decisions, both from measured spikes: truck rejected (`docs/KERNEL_EVAL.md`), own B-Rep kernel;
@@ -113,7 +122,7 @@ Remaining:
 2. Trimmed B-Rep faces rebuilt from boolean results; analytic intersection curves (plane with cylinder first)
 3. Smooth loft through three or more sections, loft sections with holes, self-intersection checks, draft; corner blending where filleted edges meet; fillets on other edge types
 4. NURBS curves and surfaces
-5. Parameters in sketch constraints and dimensions; analytic sparse Jacobian for the solver
+5. (done) Constraint values from parameter expressions; solver Jacobian restricted per variable. Still open: sparse factorisation (a 400-line chain takes 3.75 s, the dense solve dominates)
 6. 3D gizmo, face and edge selection, section planes, BVH picking
 7. STEP export (truck writer as a reference)
 8. Handle a rebuild worker panic; cancel a running rebuild when a newer request arrives

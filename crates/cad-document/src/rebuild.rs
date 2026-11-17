@@ -1,4 +1,4 @@
-use crate::document::Document;
+use crate::document::{Document, EntityId};
 use crate::feature::{BODY_TOLERANCE, BodyOp, Feature, FeatureId, FeatureKind, RevolveAxis, Target};
 use crate::rebuild_blend::Blend;
 use crate::rebuild_pattern::{Pattern, resolve_pattern};
@@ -119,7 +119,7 @@ pub(crate) fn resolve_solid(doc: &Document, f: &Feature) -> Result<Inputs, Strin
         _ => return Err(NOT_SOLID.to_string()),
     };
     let shape = |id| doc.get(id).map(|e| &e.shape).ok_or_else(|| format!("entity {id} not found"));
-    let shapes = profile_ids.iter().map(|&id| shape(id)).collect::<Result<Vec<&Shape>, _>>()?;
+    let shapes = profile_shapes(doc, profile_ids)?;
     let profile = Profile::from_shapes(&shapes).map_err(|e| e.to_string())?;
     let shapes_json = serde_json::to_string(&shapes).map_err(|e| e.to_string())?;
     // A profile is never empty and all its entities share a sketch (both checked when the feature is added).
@@ -141,6 +141,18 @@ pub(crate) fn resolve_solid(doc: &Document, f: &Feature) -> Result<Inputs, Strin
         _ => return Err(NOT_SOLID.to_string()),
     };
     Ok(Inputs { profile, shapes_json, plane, tool, op, target })
+}
+
+/// The shapes of the entities that make up a profile or path; construction entities are left out.
+pub(crate) fn profile_shapes<'a>(doc: &'a Document, ids: &[EntityId]) -> Result<Vec<&'a Shape>, String> {
+    let mut shapes = Vec::new();
+    for &id in ids {
+        let e = doc.get(id).ok_or_else(|| format!("entity {id} not found"))?;
+        if !e.construction {
+            shapes.push(&e.shape);
+        }
+    }
+    Ok(shapes)
 }
 
 /// `a` combined with `b`; an empty result is `None`.

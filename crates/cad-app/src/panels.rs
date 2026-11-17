@@ -9,6 +9,7 @@ enum Action {
     New,
     Open,
     Import,
+    ImportSvg,
     Save,
     Undo,
     Redo,
@@ -22,6 +23,7 @@ fn run(app: &mut CadApp, ctx: &egui::Context, action: Action) {
         Action::New => app.request(ctx, Pending::New),
         Action::Open => app.request(ctx, Pending::Open),
         Action::Import => app.request(ctx, Pending::Import),
+        Action::ImportSvg => app.request(ctx, Pending::ImportSvg),
         Action::Save => {
             app.save();
         }
@@ -97,6 +99,9 @@ pub fn menu_bar(app: &mut CadApp, ui: &mut egui::Ui) {
                 if menu_item(ui, true, "Open...", "Ctrl+O") {
                     run(app, &ctx, Action::Open);
                 }
+                if menu_item(ui, true, "Import SVG...", "") {
+                    run(app, &ctx, Action::ImportSvg);
+                }
                 if menu_item(ui, true, "Import DXF...", "") {
                     run(app, &ctx, Action::Import);
                 }
@@ -111,6 +116,9 @@ pub fn menu_bar(app: &mut CadApp, ui: &mut egui::Ui) {
                 }
                 if menu_item(ui, true, "Export DXF...", "") {
                     app.export_dialog("dxf");
+                }
+                if menu_item(ui, true, "Export PDF...", "") {
+                    app.export_dialog("pdf");
                 }
                 if menu_item(ui, true, "Export STL...", "") {
                     app.export_dialog("stl");
@@ -140,6 +148,7 @@ pub fn menu_bar(app: &mut CadApp, ui: &mut egui::Ui) {
                 if menu_item(ui, true, "Fit", "F") {
                     run(app, &ctx, Action::Fit);
                 }
+                w::checkbox(ui, &mut app.show_glyphs, "Constraint glyphs");
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 w::selectable_value(ui, &mut app.side_tab, SideTab::Model, "Model");
@@ -165,15 +174,8 @@ pub fn right_panel(app: &mut CadApp, ui: &mut egui::Ui) {
             for (id, name, pickable) in items {
                 let selected = app.selection.contains(&id);
                 if w::selectable(ui, selected, &name).clicked() && pickable {
-                    if ui.input(|i| i.modifiers.shift) {
-                        let mut ids = app.selection.clone();
-                        if !ids.remove(&id) {
-                            ids.insert(id);
-                        }
-                        app.set_selection(ids);
-                    } else {
-                        app.set_selection([id]);
-                    }
+                    let shift = ui.input(|i| i.modifiers.shift);
+                    app.click_select(Some(id), shift);
                 }
             }
         });
@@ -184,7 +186,7 @@ pub fn right_panel(app: &mut CadApp, ui: &mut egui::Ui) {
             ui.heading("Properties");
             properties_panel::properties(app, ui, &ctx);
             ui.separator();
-            constraints_panel::show(app, ui, &ctx);
+            constraints_panel::show(app, ui);
         });
     });
 }

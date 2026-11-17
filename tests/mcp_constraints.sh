@@ -41,7 +41,7 @@ bad() { echo "FAIL: $1"; fail=1; }
 flat() { grep "\"id\":$1," "$OUT" | sed 's/[\]n//g; s/[\]"/"/g; s/ //g'; }
 # "ax ay bx by" of line entity $2 in the state response $1
 line_pts() {
-  flat "$1" | grep -oE "\"id\":$2,\"layer\":[0-9]+,\"name\":\"[^\"]*\",\"shape\":\{\"Line\":\{\"a\":\[[^]]*\],\"b\":\[[^]]*\]" \
+  flat "$1" | grep -oE "\"id\":$2,\"layer\":[0-9]+,(\"meta\":\{[^}]*\},)?\"name\":\"[^\"]*\",\"shape\":\{\"Line\":\{\"a\":\[[^]]*\],\"b\":\[[^]]*\]" \
     | grep -oE '\[[^]]*\]' | tr -d '[]' | tr ',' ' ' | tr '\n' ' '
 }
 horizontal() { echo "$1" | awk '{d = $2 - $4; exit !(NF == 4 && d < 1e-6 && d > -1e-6)}'; }

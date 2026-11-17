@@ -35,10 +35,10 @@ pub fn trim(target: &Shape, pick: DVec2, cutters: &[&Shape]) -> Result<Vec<Shape
 
 /// Lengthens the end of `target` nearest to `pick` until it meets the first boundary.
 pub fn extend(target: &Shape, pick: DVec2, boundaries: &[&Shape]) -> Result<Shape, GeomError> {
+    if matches!(target, Shape::Ellipse { .. } | Shape::Spline { .. }) {
+        return Err(not_curve(target));
+    }
     let Some((end, false)) = domain(target) else {
-        if matches!(target, Shape::Ellipse { .. } | Shape::Spline { .. }) {
-            return Err(not_curve(target));
-        }
         return Err(GeomError::Unsupported("extend needs an open curve"));
     };
     let at_start = param_of(target, pick) < end / 2.0;

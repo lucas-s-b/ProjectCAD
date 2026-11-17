@@ -5,7 +5,7 @@ use cad_modeler::Plane3;
 use std::f64::consts::{PI, TAU};
 
 fn entity(id: EntityId, shape: Shape) -> Command {
-    Command::Add(Entity { id, name: format!("e{id}"), shape, layer: 0, sketch: 0 })
+    Command::Add(Entity { id, name: format!("e{id}"), shape, layer: 0, sketch: 0, construction: false, group: None, meta: Default::default() })
 }
 
 fn circle(cx: f64, cy: f64, r: f64) -> Shape {

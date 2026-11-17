@@ -11,6 +11,16 @@ pub(crate) enum Kind {
     Arc,
 }
 
+impl Kind {
+    fn width(self) -> usize {
+        match self {
+            Kind::Line => 4,
+            Kind::Circle => 3,
+            Kind::Arc => 5,
+        }
+    }
+}
+
 /// Entity id -> (offset into the variable vector, kind). Line `[a.x, a.y, b.x, b.y]`,
 /// Circle `[c.x, c.y, r]`, Arc `[c.x, c.y, r, start, sweep]`.
 #[derive(Debug)]
@@ -20,6 +30,25 @@ pub(crate) struct Layout {
 }
 
 impl Layout {
+    /// One flag per variable, true for those of the pinned entities.
+    pub(crate) fn pinned(&self, pinned: &BTreeSet<Id>) -> Vec<bool> {
+        let mut mask = vec![false; self.n];
+        for (id, (offset, kind)) in &self.entries {
+            mask[*offset..offset + kind.width()].fill(pinned.contains(id));
+        }
+        mask
+    }
+
+    /// The entity each variable belongs to.
+    pub(crate) fn owners(&self) -> Vec<Id> {
+        let mut owner = vec![0; self.n];
+        for (id, (offset, kind)) in &self.entries {
+            owner[*offset..offset + kind.width()].fill(*id);
+        }
+        owner
+    }
+
+    #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
         self.n
     }
@@ -117,6 +146,16 @@ fn validate(index: usize, c: &Constraint, shapes: &BTreeMap<Id, Shape>) -> Resul
             point(*p)?;
             point(*q)?;
             line(*l)
+        }
+        Constraint::PointOnLine(p, l) => {
+            point(*p)?;
+            line(*l)?;
+            distinct(p.entity, *l)
+        }
+        Constraint::PointOnCircle(p, c) => {
+            point(*p)?;
+            curve(*c)?;
+            distinct(p.entity, *c)
         }
         Constraint::Fixed { point: p, at } => {
             point(*p)?;
@@ -221,66 +260,91 @@ fn wrap(a: f64) -> f64 {
 /// Replaces `out` with the equations of all constraints, in constraint order.
 pub(crate) fn residuals(layout: &Layout, modes: &[bool], constraints: &[Constraint], x: &[f64], out: &mut Vec<f64>) {
     out.clear();
-    let cx = Ctx { l: layout, x };
     for (i, c) in constraints.iter().enumerate() {
-        match c {
-            Constraint::Coincident(p, q) => {
-                let d = cx.point(*p) - cx.point(*q);
-                out.extend([d.x, d.y]);
-            }
-            Constraint::Horizontal(l) => {
-                let (a, b) = cx.line(*l);
-                out.push(a.y - b.y);
-            }
-            Constraint::Vertical(l) => {
-                let (a, b) = cx.line(*l);
-                out.push(a.x - b.x);
-            }
-            Constraint::Parallel(l1, l2) => out.push(cx.parallel(*l1, *l2)),
-            Constraint::Perpendicular(l1, l2) => {
-                let (d1, d2) = (cx.dir(*l1), cx.dir(*l2));
-                out.push(d1.dot(d2) / (d1.length() * d2.length()));
-            }
-            Constraint::Tangent(a, b) if cx.is_line(*a) || cx.is_line(*b) => {
-                let (line, curve) = if cx.is_line(*a) { (*a, *b) } else { (*b, *a) };
-                let d = cx.dir(line);
-                let (c, r) = cx.curve(curve);
-                out.push(cross(c - cx.line(line).0, d).abs() / d.length() - r);
-            }
-            Constraint::Tangent(a, b) => {
-                let ((c1, r1), (c2, r2)) = (cx.curve(*a), cx.curve(*b));
-                let rhs = if modes[i] { (r1 - r2).abs() } else { r1 + r2 };
-                out.push(c1.distance(c2) - rhs);
-            }
-            Constraint::Concentric(a, b) => {
-                let d = cx.curve(*a).0 - cx.curve(*b).0;
-                out.extend([d.x, d.y]);
-            }
-            Constraint::Equal(a, b) if cx.is_line(*a) => out.push(cx.dir(*a).length() - cx.dir(*b).length()),
-            Constraint::Equal(a, b) => out.push(cx.curve(*a).1 - cx.curve(*b).1),
-            Constraint::Collinear(l1, l2) => {
-                out.push(cx.parallel(*l1, *l2));
-                let d1 = cx.dir(*l1);
-                out.push(cross(cx.line(*l2).0 - cx.line(*l1).0, d1) / d1.length());
-            }
-            Constraint::Symmetric(p, q, l) => {
-                let (a, d) = (cx.line(*l).0, cx.dir(*l));
-                let (p, q) = (cx.point(*p), cx.point(*q));
-                out.push(cross((p + q) / 2.0 - a, d) / d.length());
-                out.push((q - p).dot(d) / d.length());
-            }
-            Constraint::Fixed { point, at } => {
-                let d = cx.point(*point) - *at;
-                out.extend([d.x, d.y]);
-            }
-            Constraint::Distance(p, q, v) => out.push(cx.point(*p).distance(cx.point(*q)) - v),
-            Constraint::Angle(l1, l2, v) => {
-                let (d1, d2) = (cx.dir(*l1), cx.dir(*l2));
-                out.push(wrap(cross(d1, d2).atan2(d1.dot(d2)) - v));
-            }
-            Constraint::Radius(e, v) => out.push(cx.curve(*e).1 - v),
-            Constraint::Diameter(e, v) => out.push(2.0 * cx.curve(*e).1 - v),
+        constraint_residuals(layout, modes, i, c, x, out);
+    }
+}
+
+/// Number of equations of a constraint.
+pub(crate) fn rows(c: &Constraint) -> usize {
+    match c {
+        Constraint::Coincident(..)
+        | Constraint::Concentric(..)
+        | Constraint::Collinear(..)
+        | Constraint::Symmetric(..)
+        | Constraint::Fixed { .. } => 2,
+        _ => 1,
+    }
+}
+
+/// Appends the equations of constraint number `i`.
+pub(crate) fn constraint_residuals(layout: &Layout, modes: &[bool], i: usize, c: &Constraint, x: &[f64], out: &mut Vec<f64>) {
+    let cx = Ctx { l: layout, x };
+    match c {
+        Constraint::Coincident(p, q) => {
+            let d = cx.point(*p) - cx.point(*q);
+            out.extend([d.x, d.y]);
         }
+        Constraint::Horizontal(l) => {
+            let (a, b) = cx.line(*l);
+            out.push(a.y - b.y);
+        }
+        Constraint::Vertical(l) => {
+            let (a, b) = cx.line(*l);
+            out.push(a.x - b.x);
+        }
+        Constraint::Parallel(l1, l2) => out.push(cx.parallel(*l1, *l2)),
+        Constraint::Perpendicular(l1, l2) => {
+            let (d1, d2) = (cx.dir(*l1), cx.dir(*l2));
+            out.push(d1.dot(d2) / (d1.length() * d2.length()));
+        }
+        Constraint::Tangent(a, b) if cx.is_line(*a) || cx.is_line(*b) => {
+            let (line, curve) = if cx.is_line(*a) { (*a, *b) } else { (*b, *a) };
+            let d = cx.dir(line);
+            let (c, r) = cx.curve(curve);
+            out.push(cross(c - cx.line(line).0, d).abs() / d.length() - r);
+        }
+        Constraint::Tangent(a, b) => {
+            let ((c1, r1), (c2, r2)) = (cx.curve(*a), cx.curve(*b));
+            let rhs = if modes[i] { (r1 - r2).abs() } else { r1 + r2 };
+            out.push(c1.distance(c2) - rhs);
+        }
+        Constraint::Concentric(a, b) => {
+            let d = cx.curve(*a).0 - cx.curve(*b).0;
+            out.extend([d.x, d.y]);
+        }
+        Constraint::Equal(a, b) if cx.is_line(*a) => out.push(cx.dir(*a).length() - cx.dir(*b).length()),
+        Constraint::Equal(a, b) => out.push(cx.curve(*a).1 - cx.curve(*b).1),
+        Constraint::Collinear(l1, l2) => {
+            out.push(cx.parallel(*l1, *l2));
+            let d1 = cx.dir(*l1);
+            out.push(cross(cx.line(*l2).0 - cx.line(*l1).0, d1) / d1.length());
+        }
+        Constraint::Symmetric(p, q, l) => {
+            let (a, d) = (cx.line(*l).0, cx.dir(*l));
+            let (p, q) = (cx.point(*p), cx.point(*q));
+            out.push(cross((p + q) / 2.0 - a, d) / d.length());
+            out.push((q - p).dot(d) / d.length());
+        }
+        Constraint::PointOnLine(p, l) => {
+            let (a, d) = (cx.line(*l).0, cx.dir(*l));
+            out.push(cross(cx.point(*p) - a, d) / d.length());
+        }
+        Constraint::PointOnCircle(p, c) => {
+            let (centre, r) = cx.curve(*c);
+            out.push(cx.point(*p).distance(centre) - r);
+        }
+        Constraint::Fixed { point, at } => {
+            let d = cx.point(*point) - *at;
+            out.extend([d.x, d.y]);
+        }
+        Constraint::Distance(p, q, v) => out.push(cx.point(*p).distance(cx.point(*q)) - v),
+        Constraint::Angle(l1, l2, v) => {
+            let (d1, d2) = (cx.dir(*l1), cx.dir(*l2));
+            out.push(wrap(cross(d1, d2).atan2(d1.dot(d2)) - v));
+        }
+        Constraint::Radius(e, v) => out.push(cx.curve(*e).1 - v),
+        Constraint::Diameter(e, v) => out.push(2.0 * cx.curve(*e).1 - v),
     }
 }
 

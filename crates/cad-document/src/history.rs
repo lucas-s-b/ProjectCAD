@@ -1,4 +1,5 @@
-use crate::document::{Command, DocError, Document};
+use crate::document::{Command, DocError, Document, EntityId};
+use std::collections::BTreeSet;
 
 #[derive(Default)]
 pub struct History {
@@ -29,12 +30,19 @@ impl History {
     /// Runs `cmds`, then lets the constraint solver move geometry so the document satisfies its constraints.
     /// Both land in one undo step. On any error the document is exactly as before the call.
     pub fn execute(&mut self, doc: &mut Document, cmds: Vec<Command>) -> Result<(), DocError> {
+        self.execute_pinned(doc, cmds, &BTreeSet::new())
+    }
+
+    /// Like `execute`, but the solve after the commands holds the pinned entities where the commands left them, so the rest of the sketch follows.
+    /// When that solve fails the constraints win over the pins and it is repeated without them.
+    pub fn execute_pinned(&mut self, doc: &mut Document, cmds: Vec<Command>, pinned: &BTreeSet<EntityId>) -> Result<(), DocError> {
         if cmds.is_empty() {
             return Ok(());
         }
         let mut inverses = run(doc, cmds)?;
         if doc.constraints().next().is_some() {
-            match doc.solve_commands().and_then(|extra| run(doc, extra)) {
+            let solved = doc.solve_commands_pinned(pinned).or_else(|e| if pinned.is_empty() { Err(e) } else { doc.solve_commands() });
+            match solved.and_then(|extra| run(doc, extra)) {
                 // Undo replays in list order: the solver's changes first, then the user's.
                 Ok(mut solver_inverses) => {
                     solver_inverses.append(&mut inverses);
@@ -46,6 +54,20 @@ impl History {
                     }
                     return Err(e);
                 }
+            }
+        }
+        // Linked dimensions follow their points, after the solve moved them.
+        let refresh = doc.dim_refresh_commands();
+        match run(doc, refresh) {
+            Ok(mut follow_inverses) => {
+                follow_inverses.append(&mut inverses);
+                inverses = follow_inverses;
+            }
+            Err(e) => {
+                for inv in inverses {
+                    let _ = doc.apply(inv);
+                }
+                return Err(e);
             }
         }
         self.undo.push(inverses);
@@ -116,7 +138,7 @@ mod tests {
         Shape::Circle { center: DVec2::ZERO, radius: r }
     }
     fn add(id: u64, r: f64) -> Command {
-        Command::Add(Entity { id, name: format!("c{id}"), shape: circle(r), layer: 0, sketch: 0 })
+        Command::Add(Entity { id, name: format!("c{id}"), shape: circle(r), layer: 0, sketch: 0, construction: false, group: None, meta: Default::default() })
     }
     fn snapshot(d: &Document) -> Vec<Entity> {
         d.entities().cloned().collect()

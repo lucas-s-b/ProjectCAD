@@ -21,7 +21,7 @@ pub enum ImportError {
 impl std::fmt::Display for ImportError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let Self::Format(m) = self;
-        write!(f, "not a DXF file: {m}")
+        write!(f, "{m}")
     }
 }
 
@@ -49,7 +49,7 @@ impl Rec {
 }
 
 fn format_err(m: &str) -> ImportError {
-    ImportError::Format(m.into())
+    ImportError::Format(format!("not a DXF file: {m}"))
 }
 
 /// Records per section name, and whether an ENTITIES section or EOF was seen.
@@ -135,7 +135,7 @@ impl Builder {
         let id = self.doc.alloc_id();
         let ok = shape.is_some_and(|shape| {
             let name = format!("{} {id}", shape.kind());
-            self.doc.apply(Command::Add(Entity { id, name, shape, layer, sketch: 0 })).is_ok()
+            self.doc.apply(Command::Add(Entity { id, name, shape, layer, sketch: 0, construction: false, group: None, meta: Default::default() })).is_ok()
         });
         if ok {
             self.report.imported += 1;

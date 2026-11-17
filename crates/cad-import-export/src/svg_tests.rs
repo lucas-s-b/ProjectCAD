@@ -79,7 +79,7 @@ fn layer_weight_and_dash_pattern() {
     d.apply(Command::AddLayer(dashed)).unwrap();
     let id = d.alloc_id();
     let line = Shape::Line { a: DVec2::ZERO, b: DVec2::X };
-    d.apply(Command::Add(cad_document::Entity { id, name: "l".into(), shape: line, layer: 3, sketch: 0 })).unwrap();
+    d.apply(Command::Add(cad_document::Entity { id, name: "l".into(), shape: line, layer: 3, sketch: 0, construction: false, group: None, meta: Default::default() })).unwrap();
     let svg = to_svg(&d, 0);
     let xml = roxmltree::Document::parse(&svg).unwrap();
     let g: Vec<_> = xml.root_element().children().filter(|n| n.is_element()).collect();
@@ -99,7 +99,7 @@ fn ellipse_and_spline_elements() {
     ];
     for shape in shapes {
         let id = d.alloc_id();
-        d.apply(Command::Add(Entity { id, name: "e".into(), shape, layer: 0, sketch: 0 })).unwrap();
+        d.apply(Command::Add(Entity { id, name: "e".into(), shape, layer: 0, sketch: 0, construction: false, group: None, meta: Default::default() })).unwrap();
     }
     let svg = to_svg(&d, 0);
     assert!(svg.contains("<ellipse cx=\"10\" cy=\"-20\" rx=\"6\" ry=\"3\" transform=\"rotate(-90 10 -20)\"/>"), "{svg}");
@@ -132,7 +132,7 @@ fn only_the_requested_sketch_is_exported() {
     d.apply(Command::AddSketch(Sketch { id: 1, name: "S1".into(), plane })).unwrap();
     let id = d.alloc_id();
     let circle = Shape::Circle { center: DVec2::new(7.0, 8.0), radius: 3.0 };
-    d.apply(Command::Add(Entity { id, name: "c".into(), shape: circle, layer: 0, sketch: 1 })).unwrap();
+    d.apply(Command::Add(Entity { id, name: "c".into(), shape: circle, layer: 0, sketch: 1, construction: false, group: None, meta: Default::default() })).unwrap();
     let svg = to_svg(&d, 1);
     let xml = roxmltree::Document::parse(&svg).unwrap();
     let children: Vec<_> = xml.descendants().filter(|n| n.is_element() && n.has_tag_name("circle")).collect();
@@ -142,4 +142,26 @@ fn only_the_requested_sketch_is_exported() {
     let dxf = crate::to_dxf(&d, 1);
     assert_eq!(dxf.matches("CIRCLE").count(), 1);
     assert_eq!(dxf.matches("\nLINE\n").count(), 0);
+}
+
+#[test]
+fn solid_hatch_is_filled_polygons_and_cross_has_both_line_sets() {
+    use cad_document::{Command, Entity};
+    use cad_geometry::HatchPattern;
+    let hatch = |pattern| {
+        let boundary = vec![DVec2::new(0.0, 0.0), DVec2::new(10.0, 0.0), DVec2::new(10.0, 10.0), DVec2::new(0.0, 10.0)];
+        let mut d = Document::new("c");
+        let id = d.alloc_id();
+        let shape = Shape::Hatch { boundary, angle: 0.0, spacing: 2.0, pattern };
+        d.apply(Command::Add(Entity { id, name: "h".into(), shape, layer: 0, sketch: 0, construction: false, group: None, meta: Default::default() })).unwrap();
+        to_svg(&d, 0)
+    };
+    let count = |svg: &str, tag: &str| roxmltree::Document::parse(svg).unwrap().descendants().filter(|n| n.has_tag_name(tag)).count();
+    let solid = hatch(HatchPattern::Solid);
+    assert_eq!((count(&solid, "polygon"), count(&solid, "line"), count(&solid, "polyline")), (2, 0, 1));
+    let xml = roxmltree::Document::parse(&solid).unwrap();
+    assert!(xml.descendants().filter(|n| n.has_tag_name("polygon")).all(|n| n.attribute("fill") == Some("#000000")));
+    let cross = hatch(HatchPattern::Cross);
+    assert_eq!((count(&cross, "line"), count(&cross, "polygon")), (11, 0));
+    assert_eq!(count(&hatch(HatchPattern::Lines), "line"), 5);
 }

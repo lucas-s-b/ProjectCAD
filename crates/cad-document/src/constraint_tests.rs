@@ -11,7 +11,7 @@ fn circle(x: f64, r: f64) -> Shape {
     Shape::Circle { center: v(x, 0.0), radius: r }
 }
 fn add(id: EntityId, shape: Shape) -> Command {
-    Command::Add(Entity { id, name: format!("e{id}"), shape, layer: 0, sketch: 0 })
+    Command::Add(Entity { id, name: format!("e{id}"), shape, layer: 0, sketch: 0, construction: false, group: None, meta: Default::default() })
 }
 fn pt(entity: EntityId, kind: PointKind) -> PointRef {
     PointRef { entity, kind }
@@ -217,4 +217,55 @@ fn version_3_file_loads_without_constraints() {
 fn load_rejects_constraint_on_missing_entity() {
     let text = r#"{"version":4,"name":"x","next_id":1,"entities":{},"constraints":{"1":{"Horizontal":5}}}"#;
     assert!(matches!(load_text("missing", text), Err(DocError::NotFound(5))));
+}
+
+/// Two lines joined end to start and both horizontal, as one transaction.
+fn joined_pair() -> (Document, History) {
+    let mut d = Document::new("t");
+    let mut h = History::default();
+    let cs = [
+        Constraint::Coincident(pt(1, PointKind::End), pt(2, PointKind::Start)),
+        Constraint::Horizontal(1),
+        Constraint::Horizontal(2),
+    ];
+    let mut cmds = vec![add(1, line((0.0, 0.0), (10.0, 0.0))), add(2, line((10.0, 0.0), (20.0, 0.0)))];
+    cmds.extend(cs.into_iter().enumerate().map(|(i, c)| Command::AddConstraint(i as u64 + 1, c)));
+    h.execute(&mut d, cmds).unwrap();
+    (d, h)
+}
+
+fn moved_up(id: EntityId, d: &Document) -> Command {
+    let (a, b) = ends(d, id);
+    Command::SetShape { id, shape: line((a.x, a.y + 5.0), (b.x, b.y + 5.0)) }
+}
+
+#[test]
+fn a_pinned_drag_keeps_the_dragged_line_and_the_rest_follows() {
+    let (mut d, mut h) = joined_pair();
+    let cmd = moved_up(1, &d);
+    h.execute_pinned(&mut d, vec![cmd], &[1].into()).unwrap();
+    assert_eq!(ends(&d, 1), (v(0.0, 5.0), v(10.0, 5.0)));
+    let (a, b) = ends(&d, 2);
+    assert!(a.distance(v(10.0, 5.0)) < 1e-6 && (b.y - 5.0).abs() < 1e-6);
+    assert!(h.undo(&mut d));
+    assert_eq!(ends(&d, 1), (v(0.0, 0.0), v(10.0, 0.0)));
+    assert_eq!(ends(&d, 2), (v(10.0, 0.0), v(20.0, 0.0)));
+}
+
+#[test]
+fn without_pins_the_solver_may_move_the_dragged_line_too() {
+    let (mut d, mut h) = joined_pair();
+    let cmd = moved_up(1, &d);
+    h.execute(&mut d, vec![cmd]).unwrap();
+    assert_ne!(ends(&d, 1), (v(0.0, 5.0), v(10.0, 5.0)));
+}
+
+#[test]
+fn when_the_pins_cannot_be_kept_the_constraints_win() {
+    let (mut d, mut h) = joined_pair();
+    let cmd = moved_up(1, &d);
+    // both lines pinned: the broken joint cannot be repaired, so the solve is repeated without pins
+    h.execute_pinned(&mut d, vec![cmd], &[1, 2].into()).unwrap();
+    let ((_, a_end), (b_start, _)) = (ends(&d, 1), ends(&d, 2));
+    assert!(a_end.distance(b_start) < 1e-6);
 }

@@ -7,7 +7,7 @@ fn circle(r: f64) -> Shape {
     Shape::Circle { center: DVec2::ZERO, radius: r }
 }
 fn entity(id: EntityId, r: f64) -> Entity {
-    Entity { id, name: format!("c{id}"), shape: circle(r), layer: 0, sketch: 0 }
+    Entity { id, name: format!("c{id}"), shape: circle(r), layer: 0, sketch: 0, construction: false, group: None, meta: Default::default() }
 }
 
 #[test]
@@ -18,7 +18,7 @@ fn inverses_are_correct() {
     let inv = d.apply(Command::SetShape { id: 1, shape: circle(2.0) }).unwrap();
     assert_eq!(inv, Command::SetShape { id: 1, shape: circle(1.0) });
     let inv = d.apply(Command::Remove(1)).unwrap();
-    assert_eq!(inv, Command::Add(Entity { id: 1, name: "c1".into(), shape: circle(2.0), layer: 0, sketch: 0 }));
+    assert_eq!(inv, Command::Add(Entity { id: 1, name: "c1".into(), shape: circle(2.0), layer: 0, sketch: 0, construction: false, group: None, meta: Default::default() }));
     assert!(d.is_empty());
 }
 

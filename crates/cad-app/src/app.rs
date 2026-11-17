@@ -2,9 +2,9 @@ use crate::camera::{Camera2D, OrbitCamera};
 use crate::mcp::{self, bridge::Bridge};
 use crate::rebuild_worker::RebuildWorker;
 use crate::{panels, view2d, view3d};
-use cad_document::{Command, ConstraintId, Document, Entity, EntityId, History, LayerId, BodyOp, Feature, FeatureId, RebuildResult, RevolveAxis, SketchId, BasePlane, Target};
+use cad_document::{Command, ConstraintId, Document, Entity, EntityId, History, LayerId, BodyOp, Feature, FeatureId, PointRef, RebuildResult, RevolveAxis, SketchId, BasePlane, Target};
 use cad_geometry::snap::Snap;
-use cad_geometry::{DVec2, DVec3, Shape};
+use cad_geometry::{DVec2, DVec3, HatchPattern, Shape};
 use std::collections::BTreeSet;
 use eframe::egui;
 use std::path::PathBuf;
@@ -30,12 +30,13 @@ pub enum Tool {
     Offset,
     Fillet,
     Chamfer,
+    Split,
 }
 
 impl Tool {
     /// Tools that collect points by clicking.
     pub fn is_draw(self) -> bool {
-        !matches!(self, Tool::Select | Tool::Trim | Tool::Extend | Tool::Offset | Tool::Fillet | Tool::Chamfer)
+        !matches!(self, Tool::Select | Tool::Trim | Tool::Extend | Tool::Offset | Tool::Fillet | Tool::Chamfer | Tool::Split)
     }
 }
 
@@ -67,6 +68,7 @@ pub enum Pending {
     New,
     Open,
     Import,
+    ImportSvg,
     Quit,
 }
 
@@ -103,6 +105,8 @@ pub struct CadApp {
     pub sketch: SketchId,
     pub osnap: bool,
     pub grid_snap: bool,
+    /// Constraint labels in the 2D view.
+    pub show_glyphs: bool,
     /// Snap found this frame, for the marker.
     pub snap: Option<Snap>,
     pub rot_deg: f64,
@@ -121,11 +125,14 @@ pub struct CadApp {
     pub radial_diameter: bool,
     pub hatch_angle_deg: f64,
     pub hatch_spacing: f64,
+    pub hatch_pattern: HatchPattern,
+    /// Add-metadata row: (key, value).
+    pub meta_new: (String, String),
     pub array: crate::app_ops::ArrayParams,
     /// Text of the coordinate field in the status bar.
     pub coord_input: String,
-    /// Uncommitted value edit of a constraint.
-    pub constraint_edit: Option<(ConstraintId, f64)>,
+    /// Uncommitted text of a constraint value field.
+    pub constraint_edit: Option<(ConstraintId, String)>,
     /// Constraint status text per document revision.
     pub constraint_cache: Option<(u64, Option<String>)>,
     pub side_tab: SideTab,
@@ -193,6 +200,7 @@ impl CadApp {
             sketch: 0,
             osnap: true,
             grid_snap: false,
+            show_glyphs: true,
             snap: None,
             rot_deg: 90.0,
             scale_factor: 2.0,
@@ -208,6 +216,8 @@ impl CadApp {
             radial_diameter: false,
             hatch_angle_deg: 45.0,
             hatch_spacing: 2.0,
+            hatch_pattern: HatchPattern::default(),
+            meta_new: Default::default(),
             array: Default::default(),
             coord_input: String::new(),
             constraint_edit: None,
@@ -294,6 +304,16 @@ impl CadApp {
         self.sanitize();
     }
 
+    /// Like `exec`, but the solve afterwards keeps the pinned entities where the commands put them.
+    pub fn exec_pinned(&mut self, cmds: Vec<Command>, pinned: &BTreeSet<EntityId>) {
+        self.inspector = None;
+        self.status.clear();
+        if let Err(e) = self.history.execute_pinned(&mut self.doc, cmds, pinned) {
+            self.status = e.to_string();
+        }
+        self.sanitize();
+    }
+
     /// Like `exec`, but a run with the same key is one undo step.
     pub fn exec_merged(&mut self, cmds: Vec<Command>, key: u64) {
         self.inspector = None;
@@ -305,13 +325,20 @@ impl CadApp {
     }
 
     pub fn add_shape(&mut self, shape: Shape) {
+        self.add_shape_linked(shape, None);
+    }
+
+    /// Adds the shape; a linear dimension also gets its link in the same undo step.
+    pub fn add_shape_linked(&mut self, shape: Shape, link: Option<(PointRef, PointRef)>) {
         if !self.doc.layer(self.layer).is_some_and(|l| l.visible && !l.locked) {
             self.status = "Current layer is hidden or locked".into();
             return;
         }
         let id = self.doc.alloc_id();
         let name = format!("{} {}", shape.kind(), id);
-        self.exec(vec![Command::Add(Entity { id, name, shape, layer: self.layer, sketch: self.sketch })]);
+        let mut cmds = vec![Command::Add(Entity { id, name, shape, layer: self.layer, sketch: self.sketch, construction: false, group: None, meta: Default::default() })];
+        cmds.extend(link.map(|l| Command::SetDimLink { id, link: Some(l) }));
+        self.exec(cmds);
         if self.doc.get(id).is_some() {
             self.set_selection([id]);
         }
@@ -319,9 +346,11 @@ impl CadApp {
 
     pub fn delete_selection(&mut self) {
         let constraints: BTreeSet<ConstraintId> = self.selection.iter().flat_map(|id| self.doc.constraints_of(*id)).collect();
+        let links = self.selection.iter().filter(|id| self.doc.dim_link(**id).is_some()).map(|id| Command::SetDimLink { id: *id, link: None });
         let cmds: Vec<Command> = constraints
             .into_iter()
             .map(Command::RemoveConstraint)
+            .chain(links)
             .chain(self.selection.iter().map(|id| Command::Remove(*id)))
             .collect();
         self.exec(cmds);

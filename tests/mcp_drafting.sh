@@ -5,7 +5,7 @@ OUT=target/mcp_drafting.out
 SVG=target/mcp_test.svg
 DXF=target/mcp_test.dxf
 SHOT=target/mcp_drafting.png
-rm -f "$OUT" "$SVG" "$DXF" "$SHOT" target/x.pdf
+rm -f "$OUT" "$SVG" "$DXF" "$SHOT" target/x.xyz
 
 call() { printf '{"jsonrpc":"2.0","id":%s,"method":"tools/call","params":{"name":"%s","arguments":%s}}\n' "$1" "$2" "$3"; }
 # click the widget with this name; the optional third argument is its occurrence index (draw order)
@@ -30,7 +30,7 @@ cw() { call "$1" click_widget "{\"name\":\"$2\",\"index\":${3:-0}}"; }
   call 16 screenshot '{}'
   call 17 export_project "{\"path\":\"$SVG\"}"
   call 18 export_project "{\"path\":\"$DXF\"}"
-  call 19 export_project '{"path":"target/x.pdf"}'
+  call 19 export_project '{"path":"target/x.xyz"}'
 } | target/debug/cad-app.exe --mcp > "$OUT" 2> target/mcp_drafting.err
 
 fail=0
@@ -59,8 +59,8 @@ read -r px py <<< "$(nums 15 Text pos)"
 { near "$px" 10 && near "$py" -20; } || bad "text position $px $py"
 near "$(nums 15 Text height)" 5 || bad "text height"
 flat 15 | grep -q '"text":"Text"' || bad "text content"
-flat 19 | grep -q '"isError":true' || bad "pdf export should fail"
-flat 19 | grep -q 'unknownexportformat' || bad "pdf error text"
+flat 19 | grep -q '"isError":true' || bad "export to an unknown format should fail"
+flat 19 | grep -q 'unknownexportformat' || bad "unknown format error text"
 [ -f "$SVG" ] && grep -q '<text' "$SVG" && grep -q '100.00' "$SVG" || bad "svg lacks <text or the value 100.00"
 [ -f "$DXF" ] && grep -qx 'TEXT' "$DXF" && [ "$(tail -n 1 "$DXF")" = "EOF" ] || bad "dxf lacks TEXT or EOF"
 grep '"id":16,' "$OUT" | grep -o '"data":"[^"]*"' | sed 's/"data":"//; s/"$//' | base64 -d > "$SHOT" 2>/dev/null

@@ -11,7 +11,7 @@ fn principal(base: BasePlane, offset: &str) -> PlaneDef {
 }
 
 fn line_in(id: EntityId, sketch: SketchId) -> Entity {
-    Entity { id, name: format!("l{id}"), shape: Shape::Line { a: DVec2::ZERO, b: DVec2::new(10.0, 0.0) }, layer: 0, sketch }
+    Entity { id, name: format!("l{id}"), shape: Shape::Line { a: DVec2::ZERO, b: DVec2::new(10.0, 0.0) }, layer: 0, sketch, construction: false, group: None, meta: Default::default() }
 }
 
 fn doc_with_sketch_1() -> Document {
@@ -104,6 +104,9 @@ fn solids_only_in_sketch_0() {
         shape: Shape::Box { center: DVec3::ZERO, size: DVec3::ONE },
         layer: 0,
         sketch,
+        construction: false,
+        group: None,
+        meta: Default::default(),
     };
     assert!(matches!(d.apply(Command::Add(solid(1))), Err(DocError::SolidOutsideBaseSketch)));
     assert!(d.is_empty());

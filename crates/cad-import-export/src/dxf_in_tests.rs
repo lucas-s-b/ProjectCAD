@@ -54,7 +54,7 @@ fn round_trip_of_the_exporter() {
     ];
     for (layer, shape) in list {
         let id = d.alloc_id();
-        d.apply(Command::Add(Entity { id, name: format!("e{id}"), shape, layer, sketch: 0 })).unwrap();
+        d.apply(Command::Add(Entity { id, name: format!("e{id}"), shape, layer, sketch: 0, construction: false, group: None, meta: Default::default() })).unwrap();
     }
     let (back, report) = from_dxf(&to_dxf(&d, 0), "back").unwrap();
     assert_eq!(report, ImportReport { imported: 8, skipped: BTreeMap::new() });
@@ -145,7 +145,7 @@ fn arc_across_zero_has_a_short_sweep() {
 fn crlf_and_invalid_geometry() {
     let mut d = Document::new("c");
     let id = d.alloc_id();
-    d.apply(Command::Add(Entity { id, name: "l".into(), shape: Shape::Line { a: v2(0.0, 0.0), b: v2(1.0, 1.0) }, layer: 0, sketch: 0 })).unwrap();
+    d.apply(Command::Add(Entity { id, name: "l".into(), shape: Shape::Line { a: v2(0.0, 0.0), b: v2(1.0, 1.0) }, layer: 0, sketch: 0, construction: false, group: None, meta: Default::default() })).unwrap();
     let crlf = to_dxf(&d, 0).replace('\n', "\r\n");
     let (doc, report) = from_dxf(&crlf, "x").unwrap();
     assert_eq!((doc.len(), report.imported), (1, 1));

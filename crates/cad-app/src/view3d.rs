@@ -11,6 +11,8 @@ type Geometry = (Vec<Vertex>, Vec<Vertex>);
 
 const SELECTED: [f32; 3] = [1.0, 0.63, 0.0];
 const CAPTURED: [f32; 3] = [0.3, 0.8, 1.0];
+/// Dash and gap of construction geometry in sketch millimetres.
+const DASH_MM: (f64, f64) = (3.0, 2.0);
 
 pub fn init_renderer(cc: &eframe::CreationContext<'_>) {
     let rs = cc.wgpu_render_state.as_ref().expect("wgpu backend required");
@@ -62,6 +64,23 @@ fn vertex(p: DVec3, normal: [f32; 3], c: [f32; 3]) -> Vertex {
     Vertex { pos: p.as_vec3().to_array(), normal, color: [c[0], c[1], c[2], 1.0] }
 }
 
+/// The "on" parts of a segment under a dash pattern; `phase` is the distance walked in the pattern and carries over to the next segment.
+fn dashed(a: DVec3, b: DVec3, phase: &mut f64) -> Vec<[DVec3; 2]> {
+    let (len, period) = ((b - a).length(), DASH_MM.0 + DASH_MM.1);
+    let (mut out, mut s) = (Vec::new(), 0.0);
+    while s < len {
+        let p = *phase % period;
+        let (on, left) = if p < DASH_MM.0 { (true, DASH_MM.0 - p) } else { (false, period - p) };
+        let e = (s + left.max(1e-9)).min(len);
+        if on {
+            out.push([a + (b - a) * (s / len), a + (b - a) * (e / len)]);
+        }
+        *phase += e - s;
+        s = e;
+    }
+    out
+}
+
 fn build_scene(app: &CadApp) -> Geometry {
     let (mut tris, mut lines) = (Vec::new(), Vec::new());
     let mut line = |a: DVec3, b: DVec3, c: [f32; 3]| {
@@ -79,7 +98,7 @@ fn build_scene(app: &CadApp) -> Geometry {
     line(DVec3::ZERO, DVec3::new(0.0, 0.0, 50.0), [0.3, 0.4, 1.0]);
     for e in app.doc.entities().filter(|e| app.visible(e)) {
         let shape = app.display_shape(e);
-        let col = app.color(e).map(|c| f32::from(c) / 255.0);
+        let col = (if e.construction { crate::view2d::CONSTRUCTION_RGB } else { app.color(e) }).map(|c| f32::from(c) / 255.0);
         let selected = app.selection.contains(&e.id);
         let col = if !selected && app.captures.iter().any(|c| c.contains(&e.id)) { CAPTURED } else { col };
         // Solids are placed in world space; 2D shapes go through their sketch plane and vanish when it does not resolve.
@@ -87,12 +106,20 @@ fn build_scene(app: &CadApp) -> Geometry {
         if !shape.is_solid() && to_world.is_none() {
             continue;
         }
+        let mut phase = 0.0;
         for [a, b] in outline(&shape) {
             let (a, b) = match &to_world {
                 Some(f) if !shape.is_solid() => (f(a.truncate()), f(b.truncate())),
                 _ => (a, b),
             };
-            line(a, b, if selected { SELECTED } else { col });
+            let c = if selected { SELECTED } else { col };
+            if e.construction {
+                for [p, q] in dashed(a, b, &mut phase) {
+                    line(p, q, c);
+                }
+            } else {
+                line(a, b, c);
+            }
         }
         if let Some(mesh) = tessellate(&shape) {
             let color = if selected { SELECTED } else { col };
@@ -163,16 +190,7 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
                 let pixel = 2.0 * 22.5f64.to_radians().tan() / f64::from(rect.height().max(1.0));
                 crate::edge_pick::click(app, origin, dir, pixel);
             }
-            (Some(id), true) => {
-                let mut ids = app.selection.clone();
-                if !ids.remove(&id) {
-                    ids.insert(id);
-                }
-                app.set_selection(ids);
-            }
-            (Some(id), false) => app.set_selection([id]),
-            (None, false) => app.set_selection([]),
-            (None, true) => {}
+            (hit, shift) => app.click_select(hit, shift),
         }
     }
 

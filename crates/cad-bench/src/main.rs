@@ -42,7 +42,7 @@ fn document(shapes: &[Shape]) -> Document {
     let mut doc = Document::new("bench");
     for s in shapes {
         let id = doc.alloc_id();
-        doc.apply(Command::Add(Entity { id, name: String::new(), shape: s.clone(), layer: 0, sketch: 0 })).expect("valid line");
+        doc.apply(Command::Add(Entity { id, name: String::new(), shape: s.clone(), layer: 0, sketch: 0, construction: false, group: None, meta: Default::default() })).expect("valid line");
     }
     doc
 }
@@ -98,7 +98,7 @@ fn chain(n: usize) -> (BTreeMap<u64, Shape>, Vec<Constraint>) {
 fn plate_with_holes(doc: &mut Document) -> u64 {
     let add = |doc: &mut Document, shape: Shape| {
         let id = doc.alloc_id();
-        doc.apply(Command::Add(Entity { id, name: String::new(), shape, layer: 0, sketch: 0 })).expect("valid shape");
+        doc.apply(Command::Add(Entity { id, name: String::new(), shape, layer: 0, sketch: 0, construction: false, group: None, meta: Default::default() })).expect("valid shape");
         id
     };
     let plate = add(doc, Shape::rect(DVec2::ZERO, DVec2::new(60.0, 50.0)));
@@ -142,7 +142,7 @@ fn pattern_case(t: &mut Table) {
     let mut doc = Document::new("pattern");
     let add = |doc: &mut Document, shape: Shape| {
         let id = doc.alloc_id();
-        doc.apply(Command::Add(Entity { id, name: String::new(), shape, layer: 0, sketch: 0 })).expect("valid shape");
+        doc.apply(Command::Add(Entity { id, name: String::new(), shape, layer: 0, sketch: 0, construction: false, group: None, meta: Default::default() })).expect("valid shape");
         id
     };
     let plate = add(&mut doc, Shape::rect(DVec2::ZERO, DVec2::splat(110.0)));
@@ -181,7 +181,7 @@ fn main() {
         }
         hits
     });
-    for n in [10, 50, 150] {
+    for n in [10, 50, 150, 400] {
         let (shapes, cs) = chain(n);
         solve(&shapes, &cs).expect("the chain must converge, otherwise the timing means nothing");
         t.add("solver, line chain", n, || solve(&shapes, &cs).map(|s| s.iterations));
@@ -191,7 +191,7 @@ fn main() {
         let (mut doc, mut history) = (Document::new("h"), History::default());
         for s in &adds {
             let id = doc.alloc_id();
-            history.execute(&mut doc, vec![Command::Add(Entity { id, name: String::new(), shape: s.clone(), layer: 0, sketch: 0 })]).expect("add");
+            history.execute(&mut doc, vec![Command::Add(Entity { id, name: String::new(), shape: s.clone(), layer: 0, sketch: 0, construction: false, group: None, meta: Default::default() })]).expect("add");
         }
         while history.undo(&mut doc) {}
         doc.len()

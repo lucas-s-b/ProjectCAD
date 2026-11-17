@@ -1,13 +1,20 @@
-//! Export of a document to SVG and DXF, and of solid bodies to STL and OBJ. Model coordinates are millimetres.
+//! Export of a document to SVG, DXF and PDF, and of solid bodies to STL and OBJ; import of DXF and SVG. Model coordinates are millimetres.
 mod dxf;
 mod dxf_in;
 mod mesh_out;
+mod pdf_out;
 mod svg;
+mod svg_curve;
+mod svg_in;
+mod svg_path;
+mod svg_xform;
 
 pub use dxf::to_dxf;
 pub use dxf_in::{ImportError, ImportReport, from_dxf};
 pub use mesh_out::{to_obj, to_stl};
+pub use pdf_out::to_pdf;
 pub use svg::to_svg;
+pub use svg_in::from_svg;
 
 use cad_document::{Document, Entity, Layer, SketchId};
 
@@ -16,6 +23,22 @@ pub(crate) fn num(v: f64) -> String {
     let s = format!("{v:.6}");
     let s = s.trim_end_matches('0').trim_end_matches('.');
     if s == "-0" || s.is_empty() { "0".into() } else { s.into() }
+}
+
+/// Light screen colours would vanish on white paper.
+pub(crate) fn paper_color(c: [u8; 3]) -> [u8; 3] {
+    if c.iter().all(|v| *v >= 200) { [0, 0, 0] } else { c }
+}
+
+/// Baseline-left start of a label drawn in a format that anchors text there (DXF TEXT, PDF): the estimated box is moved so the label anchor lands where it belongs.
+pub(crate) fn label_origin(l: &cad_geometry::annot::Label, value: &str) -> cad_geometry::DVec2 {
+    use cad_geometry::annot::{Align, text_box};
+    let b = text_box(cad_geometry::DVec2::ZERO, l.height, l.angle, value);
+    match l.align {
+        Align::Left => l.anchor,
+        Align::Center => l.anchor - (b[0] + b[2]) / 2.0,
+        Align::Right => l.anchor - (b[1] - b[0]),
+    }
 }
 
 /// First outline path of a curve as 2D points; a closed path loses its repeated last point.
@@ -27,11 +50,12 @@ pub(crate) fn flattened(shape: &cad_geometry::Shape, closed: bool) -> Vec<cad_ge
     path.iter().map(|p| p.truncate()).collect()
 }
 
-/// Visible layers that hold at least one non-solid entity of the sketch, with those entities.
+/// Visible layers that hold at least one non-solid, non-construction entity of the sketch, with those entities.
+/// Entity groups and metadata are not part of SVG or DXF, so the exporters never read them.
 pub(crate) fn exported(doc: &Document, sketch: SketchId) -> Vec<(&Layer, Vec<&Entity>)> {
     doc.layers()
         .filter(|l| l.visible)
-        .map(|l| (l, doc.entities().filter(|e| e.sketch == sketch && e.layer == l.id && !e.shape.is_solid()).collect::<Vec<_>>()))
+        .map(|l| (l, doc.entities().filter(|e| e.sketch == sketch && e.layer == l.id && !e.shape.is_solid() && !e.construction).collect::<Vec<_>>()))
         .filter(|(_, es)| !es.is_empty())
         .collect()
 }
@@ -50,14 +74,14 @@ pub(crate) mod sample {
     pub fn annot_doc() -> Document {
         let mut d = Document::new("annot");
         let shapes = [
-            Shape::Hatch { boundary: vec![v2(0.0, 0.0), v2(10.0, 0.0), v2(10.0, 10.0), v2(0.0, 10.0)], angle: 0.0, spacing: 2.0 },
+            Shape::Hatch { boundary: vec![v2(0.0, 0.0), v2(10.0, 0.0), v2(10.0, 10.0), v2(0.0, 10.0)], angle: 0.0, spacing: 2.0, pattern: cad_geometry::HatchPattern::Lines },
             Shape::Leader { points: vec![v2(20.0, 0.0), v2(30.0, 10.0), v2(50.0, 10.0)], text: "Note".into(), text_height: 2.0 },
             Shape::RadialDim { center: v2(0.0, 30.0), radius: 20.0, angle: 0.5, text_height: 2.0, diameter: false },
             Shape::AngularDim { center: v2(60.0, 0.0), start: 0.0, sweep: FRAC_PI_2, radius: 15.0, text_height: 2.0 },
         ];
         for shape in shapes {
             let id = d.alloc_id();
-            d.apply(Command::Add(Entity { id, name: format!("e{id}"), shape, layer: 0, sketch: 0 })).unwrap();
+            d.apply(Command::Add(Entity { id, name: format!("e{id}"), shape, layer: 0, sketch: 0, construction: false, group: None, meta: Default::default() })).unwrap();
         }
         d
     }
@@ -85,7 +109,7 @@ pub(crate) mod sample {
         ];
         for (layer, shape) in shapes {
             let id = d.alloc_id();
-            d.apply(Command::Add(Entity { id, name: format!("e{id}"), shape, layer, sketch: 0 })).unwrap();
+            d.apply(Command::Add(Entity { id, name: format!("e{id}"), shape, layer, sketch: 0, construction: false, group: None, meta: Default::default() })).unwrap();
         }
         d
     }
@@ -102,6 +126,16 @@ mod tests {
         assert_eq!(num(0.1234567), "0.123457");
         assert_eq!(num(-2.5), "-2.5");
         assert_eq!(num(100.0), "100");
+    }
+
+    #[test]
+    fn export_skips_construction_entities() {
+        let mut d = sample::doc();
+        let before = (exported(&d, 0).iter().map(|(_, es)| es.len()).sum::<usize>(), to_svg(&d, 0), to_dxf(&d, 0));
+        let id = d.alloc_id();
+        let line = cad_geometry::Shape::Line { a: sample::v2(0.0, 0.0), b: sample::v2(777.0, 888.0) };
+        d.apply(cad_document::Command::Add(Entity { id, name: "c".into(), shape: line, layer: 0, sketch: 0, construction: true, group: None, meta: Default::default() })).unwrap();
+        assert_eq!((exported(&d, 0).iter().map(|(_, es)| es.len()).sum::<usize>(), to_svg(&d, 0), to_dxf(&d, 0)), before);
     }
 
     #[test]

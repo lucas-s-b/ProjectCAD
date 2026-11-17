@@ -1,7 +1,7 @@
 use crate::app::{CadApp, Tool};
 use crate::view2d::pick;
 use cad_document::{Command, EntityId};
-use cad_geometry::edit::{chamfer, extend, fillet, offset, trim};
+use cad_geometry::edit::{chamfer, extend, fillet, offset, split, trim};
 use cad_geometry::{DVec2, Shape};
 use eframe::egui::{self, Color32, PointerButton};
 
@@ -49,6 +49,17 @@ fn run(app: &mut CadApp, world: DVec2, hit: Option<EntityId>) -> Result<Vec<Comm
                 cmds.push(Command::Add(app.new_entity(piece, layer)));
             }
         }
+        (Tool::Split, _) => {
+            let Some(e) = app.doc.get(id) else { return Ok(vec![]) };
+            let layer = e.layer;
+            let mut pieces = split(&e.shape, world).map_err(err)?.into_iter();
+            if let Some(shape) = pieces.next() {
+                cmds.push(Command::SetShape { id, shape });
+            }
+            for piece in pieces {
+                cmds.push(Command::Add(app.new_entity(piece, layer)));
+            }
+        }
         (Tool::Offset, None) | (Tool::Fillet, None) | (Tool::Chamfer, None) => {
             if hit.is_some() {
                 app.op_target = Some((id, world));
@@ -87,6 +98,7 @@ fn run(app: &mut CadApp, world: DVec2, hit: Option<EntityId>) -> Result<Vec<Comm
 pub fn draw_hint(app: &CadApp, painter: &egui::Painter, rect: egui::Rect) {
     let text = match app.tool {
         Tool::Trim => "Click the part to remove",
+        Tool::Split => "Click the curve where to cut it",
         Tool::Extend => "Click near the end to extend",
         Tool::Offset => "Click a curve, then the side",
         Tool::Fillet | Tool::Chamfer => "Click the first line, then the second",

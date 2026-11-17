@@ -106,7 +106,8 @@ pub fn tool_point(app: &mut CadApp, p: DVec2) {
         _ => build_shape(app, &pts[..1], pts[1]),
     };
     if let Some(shape) = shape {
-        app.add_shape(shape);
+        let link = (app.tool == Tool::Dimension).then(|| app.point_ref_at(pts[0]).zip(app.point_ref_at(pts[1]))).flatten();
+        app.add_shape_linked(shape, link);
     }
 }
 

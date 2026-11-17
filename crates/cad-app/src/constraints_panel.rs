@@ -16,7 +16,7 @@ pub fn status_text(doc: &Document) -> Option<String> {
     })
 }
 
-pub fn show(app: &mut CadApp, ui: &mut egui::Ui, ctx: &egui::Context) {
+pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     let options = proposals(&app.doc, &app.selection);
     let any = app.doc.constraints().next().is_some();
     if options.is_empty() && !any {
@@ -37,7 +37,6 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui, ctx: &egui::Context) {
         ui.label(text);
     }
     constraint_list(app, ui);
-    commit_edit(app, ctx);
 }
 
 fn constrain_buttons(app: &mut CadApp, ui: &mut egui::Ui, options: Vec<(&'static str, Vec<Constraint>)>) {
@@ -63,15 +62,8 @@ fn constraint_list(app: &mut CadApp, ui: &mut egui::Ui) {
             c.entities().iter().map(|e| app.doc.get(*e).map_or_else(|| e.to_string(), |e| e.name.clone())).collect();
         ui.horizontal_wrapped(|ui| {
             ui.label(format!("{}: {}", c.name(), names.join(", ")));
-            if let Some(stored) = c.value() {
-                let is_angle = matches!(c, Constraint::Angle(..));
-                let value = app.constraint_edit.filter(|(i, _)| *i == id).map_or(stored, |(_, v)| v);
-                let mut shown = if is_angle { value.to_degrees() } else { value };
-                let before = shown;
-                w::add(ui, "Constraint value", egui::DragValue::new(&mut shown).speed(0.1));
-                if shown != before {
-                    app.constraint_edit = Some((id, if is_angle { shown.to_radians() } else { shown }));
-                }
+            if c.value().is_some() {
+                value_field(app, ui, id, &c);
             }
             let x = ui.small_button("x");
             if w::tag(ui, "x", x).clicked() {
@@ -84,18 +76,42 @@ fn constraint_list(app: &mut CadApp, ui: &mut egui::Ui) {
     }
 }
 
-/// Same rule as the Properties inspector: commit when the buffer differs and nothing is being edited.
-fn commit_edit(app: &mut CadApp, ctx: &egui::Context) {
-    let Some((id, buffer)) = app.constraint_edit else { return };
-    let new = app.doc.constraint(id).filter(|c| c.value() != Some(buffer)).and_then(|c| c.with_value(buffer));
-    let Some(new) = new else {
-        app.constraint_edit = None;
-        return;
-    };
-    if ctx.egui_is_using_pointer() || ctx.memory(|m| m.focused().is_some()) {
-        ctx.request_repaint();
-    } else {
-        app.constraint_edit = None;
-        app.exec(vec![Command::SetConstraint(id, new)]);
+/// The expression when there is one, else the number (angles in degrees).
+fn shown_text(doc: &Document, id: ConstraintId, c: &Constraint) -> String {
+    if let Some(expr) = doc.constraint_expr(id) {
+        return expr.to_string();
     }
+    let v = c.value().unwrap_or_default();
+    let n = if matches!(c, Constraint::Angle(..)) { v.to_degrees() } else { v };
+    format!("{n:.6}").trim_end_matches('0').trim_end_matches('.').to_string()
+}
+
+fn value_field(app: &mut CadApp, ui: &mut egui::Ui, id: ConstraintId, c: &Constraint) {
+    let shown = shown_text(&app.doc, id, c);
+    let mut text = match &app.constraint_edit {
+        Some((i, t)) if *i == id => t.clone(),
+        _ => shown.clone(),
+    };
+    let r = w::add(ui, "Constraint value", egui::TextEdit::singleline(&mut text).id_salt(("constraint", id)).desired_width(80.0));
+    if r.changed() {
+        app.constraint_edit = Some((id, text));
+    }
+    if r.lost_focus()
+        && let Some((_, t)) = app.constraint_edit.take().filter(|(i, t)| *i == id && *t != shown)
+    {
+        commit(app, id, c, t.trim());
+    }
+}
+
+/// A plain number sets the value and drops any expression; anything else becomes the expression.
+fn commit(app: &mut CadApp, id: ConstraintId, c: &Constraint, text: &str) {
+    let cmds = match text.parse::<f64>() {
+        Ok(n) if n.is_finite() => {
+            let v = if matches!(c, Constraint::Angle(..)) { n.to_radians() } else { n };
+            let drop_expr = app.doc.constraint_expr(id).map(|_| Command::SetConstraintExpr { id, expr: None });
+            drop_expr.into_iter().chain(c.with_value(v).map(|new| Command::SetConstraint(id, new))).collect()
+        }
+        _ => vec![Command::SetConstraintExpr { id, expr: Some(text.to_string()) }],
+    };
+    app.exec(cmds);
 }

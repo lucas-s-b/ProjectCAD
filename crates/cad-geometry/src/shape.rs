@@ -4,6 +4,17 @@ use glam::{DVec2, DVec3};
 use serde::{Deserialize, Serialize};
 use std::f64::consts::{FRAC_PI_2, TAU};
 
+/// How a hatch fills its boundary.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum HatchPattern {
+    #[default]
+    Lines,
+    /// The lines plus the same set turned by 90 degrees.
+    Cross,
+    /// A filled region, no lines.
+    Solid,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Shape {
     Line { a: DVec2, b: DVec2 },
@@ -24,8 +35,14 @@ pub enum Shape {
     Ellipse { center: DVec2, rx: f64, ry: f64, angle: f64 },
     /// Passes through every point.
     Spline { points: Vec<DVec2>, closed: bool },
-    /// Closed polygon filled with parallel lines at `angle` (radians) every `spacing`.
-    Hatch { boundary: Vec<DVec2>, angle: f64, spacing: f64 },
+    /// Closed polygon filled by `pattern`: parallel lines at `angle` (radians) every `spacing`, two crossing sets, or solid.
+    Hatch {
+        boundary: Vec<DVec2>,
+        angle: f64,
+        spacing: f64,
+        #[serde(default)]
+        pattern: HatchPattern,
+    },
     /// Arrow at `points[0]`, text at the last point.
     Leader { points: Vec<DVec2>, text: String, text_height: f64 },
     /// Dimension of a circle, attached at `angle`; `diameter` selects Ø instead of R.
@@ -92,7 +109,7 @@ impl Shape {
                 center.is_finite() && rx.is_finite() && ry.is_finite() && angle.is_finite()
             }
             Shape::Spline { points, .. } => points.iter().all(|p| p.is_finite()),
-            Shape::Hatch { boundary, angle, spacing } => {
+            Shape::Hatch { boundary, angle, spacing, .. } => {
                 boundary.iter().all(|p| p.is_finite()) && angle.is_finite() && spacing.is_finite()
             }
             Shape::Leader { points, text_height, .. } => points.iter().all(|p| p.is_finite()) && text_height.is_finite(),

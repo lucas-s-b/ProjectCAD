@@ -1,7 +1,9 @@
 pub mod constraints;
+mod dimlink;
 pub mod document;
 pub mod feature;
 pub mod file;
+mod group;
 pub mod history;
 pub mod linetype;
 pub mod rebuild;
@@ -13,9 +15,19 @@ pub mod sketch;
 pub mod units;
 
 #[cfg(test)]
+mod construction_tests;
+#[cfg(test)]
 mod constraint_tests;
 #[cfg(test)]
+mod constraint_expr_tests;
+#[cfg(test)]
+mod dimlink_tests;
+#[cfg(test)]
 mod document_tests;
+#[cfg(test)]
+mod group_tests;
+#[cfg(test)]
+mod hatch_tests;
 #[cfg(test)]
 mod pattern_feature_tests;
 #[cfg(test)]

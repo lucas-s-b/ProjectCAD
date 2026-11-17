@@ -9,7 +9,7 @@ repository.workspace = true
 cad-document = { version = "0.1.0", path = "../cad-document" }
 cad-geometry = { version = "0.1.0", path = "../cad-geometry" }
 cad-modeler = { version = "0.1.0", path = "../cad-modeler" }
+roxmltree = "0.21.2"
 
 [dev-dependencies]
 dxf = "0.6.2"
-roxmltree = "0.21.2"

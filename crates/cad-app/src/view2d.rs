@@ -8,6 +8,9 @@ use eframe::egui::{self, Color32, PointerButton, Stroke};
 const PICK_PIXELS: f64 = 6.0;
 const SNAP_PIXELS: f64 = 10.0;
 const SELECTED: Color32 = Color32::from_rgb(255, 160, 0);
+/// Colour and screen dash pattern (dash, gap) of construction geometry, whatever its layer.
+pub const CONSTRUCTION_RGB: [u8; 3] = [120, 120, 160];
+const CONSTRUCTION_DASH: [f32; 2] = [6.0, 4.0];
 
 pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     let (rect, resp) = ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
@@ -27,7 +30,7 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     let mut cursor = app.cursor_world;
     match app.tool {
         Tool::Select => select(app, ui, &resp, rect),
-        Tool::Trim | Tool::Extend | Tool::Offset | Tool::Fillet | Tool::Chamfer => {
+        Tool::Trim | Tool::Extend | Tool::Offset | Tool::Fillet | Tool::Chamfer | Tool::Split => {
             view2d_edit::edit_tool(app, ui, &resp, rect)
         }
         _ => cursor = view2d_tools::draw_tool(app, ui, &resp, rect),
@@ -38,11 +41,15 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     draw_grid(app, &painter, rect);
     draw_reference(app, &painter, rect);
     for e in app.doc.entities_in(app.sketch).filter(|e| app.visible(e)) {
-        let [r, g, b] = app.color(e);
+        let [r, g, b] = if e.construction { CONSTRUCTION_RGB } else { app.color(e) };
         let marked = app.selection.contains(&e.id) || app.op_target.is_some_and(|(id, _)| id == e.id);
         let color = if marked { SELECTED } else { Color32::from_rgb(r, g, b) };
         let stroke = Stroke::new(stroke_width(app, e, marked), color);
-        draw_styled(app, &painter, rect, &app.display_shape(e), stroke, &dash_pixels(app, e));
+        let dash = if e.construction { CONSTRUCTION_DASH.to_vec() } else { dash_pixels(app, e) };
+        draw_styled(app, &painter, rect, &app.display_shape(e), stroke, &dash);
+    }
+    if app.show_glyphs {
+        crate::glyphs::draw(app, &painter, rect);
     }
     view2d_tools::draw_preview(app, &painter, rect, cursor);
     view2d_tools::draw_marker(app, &painter, rect);
@@ -124,21 +131,6 @@ pub fn pick(app: &CadApp, rect: egui::Rect, pos: egui::Pos2) -> Option<EntityId>
         .map(|(id, _)| id)
 }
 
-fn click_selection(app: &mut CadApp, hit: Option<EntityId>, shift: bool) {
-    match (hit, shift) {
-        (Some(id), true) => {
-            let mut ids = app.selection.clone();
-            if !ids.remove(&id) {
-                ids.insert(id);
-            }
-            app.set_selection(ids);
-        }
-        (Some(id), false) => app.set_selection([id]),
-        (None, true) => {}
-        (None, false) => app.set_selection([]),
-    }
-}
-
 fn select(app: &mut CadApp, ui: &egui::Ui, resp: &egui::Response, rect: egui::Rect) {
     let shift = ui.input(|i| i.modifiers.shift);
     if resp.drag_started_by(PointerButton::Primary) {
@@ -147,7 +139,7 @@ fn select(app: &mut CadApp, ui: &egui::Ui, resp: &egui::Response, rect: egui::Re
             && let Some(id) = pick(app, rect, press)
         {
             if !app.selection.contains(&id) {
-                app.set_selection([id]);
+                app.click_select(Some(id), false);
             }
             let w = snapped(app, rect, press, false, None);
             app.drag = Some((w, w));
@@ -175,13 +167,14 @@ fn select(app: &mut CadApp, ui: &egui::Ui, resp: &egui::Response, rect: egui::Re
                     Command::SetShape { id: e.id, shape }
                 })
                 .collect();
-            app.exec(cmds);
+            let pinned = app.selection.clone();
+            app.exec_pinned(cmds, &pinned);
         }
     } else if resp.clicked_by(PointerButton::Primary)
         && let Some(pos) = resp.interact_pointer_pos()
     {
         let hit = pick(app, rect, pos);
-        click_selection(app, hit, shift);
+        app.click_select(hit, shift);
     }
 }
 

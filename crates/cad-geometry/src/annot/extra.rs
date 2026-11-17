@@ -1,6 +1,7 @@
 //! Layout of the hatch, leader, radial and angular dimension shapes.
+use super::triangulate::triangulate;
 use super::{Align, Label, LabelText};
-use crate::shape::Shape;
+use crate::shape::{HatchPattern, Shape};
 use glam::DVec2;
 use std::f64::consts::{FRAC_PI_2, PI, TAU};
 #[cfg(test)]
@@ -64,9 +65,19 @@ fn label(text: LabelText, anchor: DVec2, align: Align, angle: f64, height: f64) 
 pub(super) fn parts(shape: &Shape) -> Option<Parts> {
     let mut p = Parts { strokes: Vec::new(), fills: Vec::new(), labels: Vec::new() };
     match shape {
-        Shape::Hatch { boundary, angle, spacing } => {
+        Shape::Hatch { boundary, angle, spacing, pattern } => {
             p.strokes.push(boundary.iter().chain(boundary.first()).copied().collect());
-            p.strokes.extend(hatch_lines(boundary, *angle, *spacing).iter().map(|l| l.to_vec()));
+            let turns = match pattern {
+                HatchPattern::Lines => vec![*angle],
+                HatchPattern::Cross => vec![*angle, angle + FRAC_PI_2],
+                HatchPattern::Solid => {
+                    p.fills = triangulate(boundary);
+                    Vec::new()
+                }
+            };
+            for a in turns {
+                p.strokes.extend(hatch_lines(boundary, a, *spacing).iter().map(|l| l.to_vec()));
+            }
         }
         Shape::Leader { points, text, text_height } => {
             if points.len() < 2 {
