@@ -17,7 +17,7 @@ fn rect(x0: f64, y0: f64, x1: f64, y1: f64) -> Shape {
 }
 
 fn extrude(id: FeatureId, profile: EntityId, distance: &str, op: BodyOp) -> Feature {
-    let kind = FeatureKind::Extrude { profile: vec![profile], distance: distance.into(), offset: "0".into(), op, flip: false, target: Target::Auto };
+    let kind = FeatureKind::Extrude { profile: vec![profile], distance: distance.into(), offset: "0".into(), taper: "0 deg".into(), op, flip: false, target: Target::Auto };
     Feature { id, name: format!("f{id}"), suppressed: false, kind }
 }
 
@@ -214,4 +214,42 @@ fn panic_message_reads_str_and_string() {
     assert_eq!(panic_message(p.as_ref()), "b");
     let p: Box<dyn std::any::Any + Send> = Box::new(3);
     assert_eq!(panic_message(p.as_ref()), "unknown panic");
+}
+
+fn tapered(mut f: Feature, taper: &str, offset: &str) -> Feature {
+    if let FeatureKind::Extrude { taper: t, offset: o, .. } = &mut f.kind {
+        *t = taper.into();
+        *o = offset.into();
+    }
+    f
+}
+
+#[test]
+fn tapered_extrude_follows_its_angle_parameter() {
+    let mut d = Document::new("taper");
+    set_param(&mut d, "a", "45 deg");
+    d.apply(entity(1, rect(-10.0, -10.0, 10.0, 10.0))).unwrap();
+    d.apply(Command::AddFeature { index: 0, feature: tapered(extrude(1, 1, "5 mm", BodyOp::Add), "a", "0") }).unwrap();
+    let r = Rebuilder::default().rebuild(&d);
+    assert_eq!(state(&r, 1), &FeatureState::Ok);
+    close(volume(&r), 3500.0 / 3.0, 1e-9);
+    set_param(&mut d, "a", "0 deg");
+    close(volume(&Rebuilder::default().rebuild(&d)), 2000.0, 1e-9);
+    set_param(&mut d, "a", "70 deg");
+    let r = Rebuilder::default().rebuild(&d);
+    assert_eq!(state(&r, 1), &FeatureState::Error("draft angle too large for the profile".into()));
+    assert!(r.bodies.is_empty());
+    assert_eq!(d.features_using_param("a"), [1]);
+}
+
+#[test]
+fn tapered_cut_makes_a_countersink() {
+    let mut d = Document::new("countersink");
+    d.apply(entity(1, rect(-10.0, -10.0, 10.0, 10.0))).unwrap();
+    d.apply(entity(2, rect(-5.0, -5.0, 5.0, 5.0))).unwrap();
+    d.apply(Command::AddFeature { index: 0, feature: extrude(1, 1, "10 mm", BodyOp::Add) }).unwrap();
+    d.apply(Command::AddFeature { index: 1, feature: tapered(extrude(2, 2, "4 mm", BodyOp::Cut), "45 deg", "8 mm") }).unwrap();
+    let r = Rebuilder::default().rebuild(&d);
+    assert_eq!((state(&r, 1), state(&r, 2)), (&FeatureState::Ok, &FeatureState::Ok));
+    close(volume(&r), 11608.0 / 3.0, 1e-6);
 }

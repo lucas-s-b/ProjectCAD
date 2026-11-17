@@ -17,7 +17,12 @@ fn square(half: f64) -> Profile {
 
 fn build(parts: &[(&Profile, &Plane3)]) -> Result<Body, ModelError> {
     let sections: Vec<Section> = parts.iter().map(|&(profile, plane)| Section { profile, plane }).collect();
-    loft(&sections, TOL)
+    loft(&sections, false, TOL)
+}
+
+fn build_smooth(parts: &[(&Profile, &Plane3)]) -> Result<Body, ModelError> {
+    let sections: Vec<Section> = parts.iter().map(|&(profile, plane)| Section { profile, plane }).collect();
+    loft(&sections, true, TOL)
 }
 
 fn close(a: f64, b: f64) {
@@ -108,4 +113,24 @@ fn bad_sections_are_rejected() {
     let holed = make(&[rect(-5.0, -5.0, 5.0, 5.0), circle(0.0, 0.0, 1.0)]);
     assert_eq!(build(&[(&s, &at(0.0)), (&holed, &at(5.0))]).err(), Some(ModelError::Invalid("loft sections must be single loops without holes")));
     assert_eq!(build(&[(&s, &at(0.0)), (&s, &at(0.0))]).err(), Some(ModelError::Invalid("loft sections coincide")));
+}
+
+#[test]
+fn smooth_loft_bulges_through_three_squares() {
+    let b = build_smooth(&[(&square(5.0), &at(0.0)), (&square(10.0), &at(10.0)), (&square(5.0), &at(20.0))]).unwrap();
+    let h = |t: f64| 5.0 + 5.0 * t + 5.0 * t * t - 5.0 * t * t * t;
+    let n = SMOOTH_STEPS as f64;
+    let span: f64 = (0..SMOOTH_STEPS).map(|s| frustum(10.0 / n, 2.0 * h(s as f64 / n), 2.0 * h((s + 1) as f64 / n))).sum();
+    close(b.volume(), 2.0 * span);
+    close(2.0 * span, 5207.979838053386);
+    assert!(b.volume() > 14000.0 / 3.0);
+    assert!(b.mesh.is_closed());
+}
+
+#[test]
+fn smooth_two_sections_are_ruled() {
+    let parts = [(&square(10.0), &at(0.0)), (&square(5.0), &at(15.0))];
+    let b = build_smooth(&parts).unwrap();
+    close(b.volume(), frustum(15.0, 20.0, 10.0));
+    assert_eq!(b.mesh.indices.len(), build(&parts).unwrap().mesh.indices.len());
 }

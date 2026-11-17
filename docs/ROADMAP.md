@@ -80,7 +80,7 @@ Still open from the brief's 2D scope:
 6. Parallel snap, user coordinate systems, line types and annotation text in the 3D view
 7. Speed of ellipse and spline snapping (about 2000 segments per ellipse on every mouse move; not measured)
 
-## Phase 3: Geometry and parametric modeling (in progress)
+## Phase 3: Geometry and parametric modeling (done; deferred items listed below)
 Kernel decisions, both from measured spikes: truck rejected (`docs/KERNEL_EVAL.md`), own B-Rep kernel;
 `manifold-rust` chosen for booleans (`docs/BOOLEAN_EVAL.md`).
 
@@ -109,6 +109,7 @@ Done (unit-tested; the plate-with-hole flow checked in the running app through M
 - [x] Trimmed B-Rep faces rebuilt from the tessellation for planes and cylinders (boundary loops, snapped vertices); plane-cylinder edges are exact lines, circles or ellipses
 - [x] STEP export with analytic faces: ADVANCED_FACEs on PLANE and CYLINDRICAL_SURFACE with LINE, CIRCLE and ELLIPSE edges; other bodies are written faceted in the same file
 - [x] Face and edge references: a sketch on a face and fillet/chamfer edges keep which way their faces point and are found again on every rebuild, so they follow when earlier features move them; file format version 13
+- [x] Tapered extrude: a draft angle (an expression) leans the side walls about the extrusion's start plane, holes widen as the walls narrow; smooth loft through three or more sections (Catmull-Rom, an option per loft); file format version 14
 - [x] BVH over body triangles for 3D ray picks (cached per body)
 - [x] Face selection in the 3D view: click a body face to highlight it and show its surface kind and area
 - [x] Section plane in the 3D view (axis, offset, flip); display only, picks still hit hidden parts
@@ -127,18 +128,18 @@ Limits of this slice (state them wherever results are shown):
 - Shell: the offset tool is a faceted sphere, so walls next to curved or slanted faces are slightly thicker than asked; an open shell needs a thickness of at most about a quarter of the body depth along the opening direction.
 - Fillets and chamfers: no blending at corners where filleted edges meet; a stored edge is found again as the nearest edge between faces pointing the same ways as when picked; if the picked edge is gone, another such edge may be blended. Edges from files before version 13 are picked points and report "edge not found" when moved. A rim fillet on a round hole carries a
   few percent volume error at the 0.02 mm body tolerance (mesh slivers between facets and the true circle).
+- Tapered extrude: walls of arcs and circles are faceted (no analytic cone), so STEP writes them faceted; a draft that turns an edge around or makes the moved outlines cross is refused; collinear overlaps of the moved outlines are not detected.
+- Smooth loft: uniform Catmull-Rom through the section points, 8 rings between two sections, no self-intersection check; with two sections it is the ruled loft.
 
-Remaining:
-1. A dependency graph between sketches, features and bodies instead of the linear history; references for shell faces and for faces that tilt (face and edge references that follow moved faces done)
-2. Trimmed faces and analytic curves beyond plane and cylinder (cones, spheres, tori, cylinder-cylinder); booleans still run on the mesh
-3. Smooth loft through three or more sections, loft sections with holes, self-intersection checks, draft; corner blending where filleted edges meet; fillets on other edge types
-4. NURBS curves and surfaces
-5. (done) Constraint values from parameter expressions; solver Jacobian restricted per variable. Sparse normal equations (faer); a 400-line chain now takes 178 ms
-6. (done) 3D gizmo, edge selection, section caps
-7. STEP export of cones, spheres, tori and free-form faces (planes and cylinders done)
-8. (done) Handle a rebuild worker panic; cancel a running rebuild when a newer request arrives
+Deferred to later phases:
+- Dependency graph between sketches, features and bodies instead of the linear history; references for shell faces and for faces that tilt: Phase 5 (assemblies and part generators need stable references)
+- Draft of existing faces about a neutral plane (any body, not only at extrude time); corner blending where filleted edges meet; fillets on other edge types: Phase 5 (moulded and machined parts)
+- Loft sections with holes; self-intersection checks for sweep and loft: Phase 7
+- Trimmed faces and analytic curves beyond plane and cylinder (cones, spheres, tori, cylinder-cylinder); booleans on exact geometry instead of the mesh: Phase 7
+- NURBS curves and surfaces: Phase 7
+- STEP export of cones, spheres, tori and free-form faces (planes and cylinders done): Phase 7. Phase 5 parts are mesh-boolean solids checked with parry on meshes, so they do not need it first.
 
-## Phase 4: Architectural CAD
+## Phase 4: Architectural CAD (next)
 Walls with automatic joins, doors, windows, floors, roofs, stairs, room detection and areas,
 multi-floor projects, BIM metadata designed for later IFC export.
 

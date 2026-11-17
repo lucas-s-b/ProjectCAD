@@ -108,7 +108,7 @@ fn plate_with_holes(doc: &mut Document) -> u64 {
         features.push((add(doc, Shape::Circle { center, radius: 2.0 }), BodyOp::Cut));
     }
     for (i, (profile, op)) in features.iter().enumerate() {
-        let kind = FeatureKind::Extrude { profile: vec![*profile], distance: "5".into(), offset: "0".into(), op: *op, flip: false, target: Target::Auto };
+        let kind = FeatureKind::Extrude { profile: vec![*profile], distance: "5".into(), offset: "0".into(), taper: "0 deg".into(), op: *op, flip: false, target: Target::Auto };
         let feature = Feature { id: doc.alloc_feature_id(), name: format!("f{i}"), suppressed: false, kind };
         doc.apply(Command::AddFeature { index: i, feature }).expect("valid feature");
     }
@@ -147,7 +147,7 @@ fn pattern_case(t: &mut Table) {
     };
     let plate = add(&mut doc, Shape::rect(DVec2::ZERO, DVec2::splat(110.0)));
     let hole = add(&mut doc, Shape::Circle { center: DVec2::splat(10.0), radius: 2.0 });
-    let extrude = |profile, op| FeatureKind::Extrude { profile: vec![profile], distance: "5".into(), offset: "0".into(), op, flip: false, target: Target::Auto };
+    let extrude = |profile, op| FeatureKind::Extrude { profile: vec![profile], distance: "5".into(), offset: "0".into(), taper: "0 deg".into(), op, flip: false, target: Target::Auto };
     let linear = |source, dx: &str, dy: &str| FeatureKind::LinearPattern { source, count: "10".into(), dx: dx.into(), dy: dy.into(), dz: "0".into() };
     let kinds = [extrude(plate, BodyOp::Add), extrude(hole, BodyOp::Cut), linear(2, "10", "0"), linear(3, "0", "10")];
     for (i, kind) in kinds.into_iter().enumerate() {

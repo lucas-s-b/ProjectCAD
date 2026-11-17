@@ -75,8 +75,38 @@ fn prepare(sec: &Section, toward: DVec3, reference: DVec3, tol: f64) -> Result<L
     Ok(Loop3 { pts, cum, start })
 }
 
-// shortcut: ruled between sections and no self-intersection check; add smooth interpolation and the check with NURBS surfaces
-pub fn loft(sections: &[Section], tol: f64) -> Result<Body, ModelError> {
+/// Rings per span between two sections of a smooth loft.
+// shortcut: a fixed count, not derived from `tol`; derive it from the curvature if smooth lofts look coarse
+const SMOOTH_STEPS: usize = 8;
+
+/// The uniform Catmull-Rom curve between `p1` (t = 0) and `p2` (t = 1).
+fn catmull_rom(p0: DVec3, p1: DVec3, p2: DVec3, p3: DVec3, t: f64) -> DVec3 {
+    0.5 * (2.0 * p1 + (p2 - p0) * t + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * (t * t) + (3.0 * p1 - p0 - 3.0 * p2 + p3) * (t * t * t))
+}
+
+/// `k` rings of `m` points (ring after ring) refined so that every column of points runs on a Catmull-Rom curve,
+/// `SMOOTH_STEPS` rings per span; the end tangents come from points mirrored through the end rings.
+fn smooth_rings(rings: &[DVec3], k: usize, m: usize) -> Vec<DVec3> {
+    let ring = |i: usize, j: usize| rings[i * m + j];
+    let mut out = Vec::with_capacity(((k - 1) * SMOOTH_STEPS + 1) * m);
+    for i in 0..k - 1 {
+        for s in 0..SMOOTH_STEPS {
+            let t = s as f64 / SMOOTH_STEPS as f64;
+            out.extend((0..m).map(|j| {
+                let (p1, p2) = (ring(i, j), ring(i + 1, j));
+                let p0 = if i == 0 { 2.0 * p1 - p2 } else { ring(i - 1, j) };
+                let p3 = if i + 2 == k { 2.0 * p2 - p1 } else { ring(i + 2, j) };
+                catmull_rom(p0, p1, p2, p3, t)
+            }));
+        }
+    }
+    out.extend_from_slice(&rings[(k - 1) * m..]);
+    out
+}
+
+// shortcut: no self-intersection check; add it with NURBS surfaces
+/// A solid through the sections in order: ruled between consecutive sections, or with `smooth` and three or more sections a uniform Catmull-Rom surface through them (`SMOOTH_STEPS` rings per span).
+pub fn loft(sections: &[Section], smooth: bool, tol: f64) -> Result<Body, ModelError> {
     if sections.len() < 2 {
         return Err(ModelError::Invalid("loft needs at least two sections"));
     }
@@ -105,21 +135,23 @@ pub fn loft(sections: &[Section], tol: f64) -> Result<Body, ModelError> {
     }
     let m = shared.len();
     let positions: Vec<DVec3> = loops.iter().flat_map(|l| shared.iter().map(|&u| l.at(u))).collect();
+    let (count, per_span) = if smooth && k >= 3 { ((k - 1) * SMOOTH_STEPS + 1, SMOOTH_STEPS) } else { (k, 1) };
+    let positions = if per_span > 1 { smooth_rings(&positions, k, m) } else { positions };
     let vid = |r: usize, j: usize| (r * m + j) as u32;
     let (mut indices, mut tri_face) = (Vec::new(), Vec::new());
-    for i in 0..k - 1 {
+    for i in 0..count - 1 {
         for j in 0..m {
             let (a, b, c, d) = (vid(i, j), vid(i, (j + 1) % m), vid(i + 1, (j + 1) % m), vid(i + 1, j));
             for t in [[a, b, c], [a, c, d]] {
                 indices.extend(t);
-                tri_face.push(i as u32);
+                tri_face.push((i / per_span) as u32);
             }
         }
     }
     let mut faces = vec![BodyFace { surface: Surface::Faceted, outward: true }; k - 1];
     let pos = |i: u32| positions[i as usize];
-    for (ring, section_dir) in [(0, -toward(0)), (k - 1, toward(k - 1))] {
-        let plane = sections[ring].plane;
+    for (ring, sec, section_dir) in [(0, 0, -toward(0)), (count - 1, k - 1, toward(k - 1))] {
+        let plane = sections[sec].plane;
         let n = plane.normal();
         let out = if n.dot(section_dir) < 0.0 { -n } else { n };
         let flat: Vec<DVec2> = (0..m)

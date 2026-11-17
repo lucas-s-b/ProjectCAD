@@ -6,7 +6,7 @@ fn rect_entity(id: EntityId) -> Entity {
 }
 
 fn extrude(id: FeatureId, profile: Vec<EntityId>, distance: &str) -> Feature {
-    let kind = FeatureKind::Extrude { profile, distance: distance.into(), offset: "0".into(), op: BodyOp::Add, flip: false, target: Target::Auto };
+    let kind = FeatureKind::Extrude { profile, distance: distance.into(), offset: "0".into(), taper: "0 deg".into(), op: BodyOp::Add, flip: false, target: Target::Auto };
     Feature { id, name: format!("f{id}"), suppressed: false, kind }
 }
 

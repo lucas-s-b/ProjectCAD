@@ -30,11 +30,12 @@ pub fn controls(app: &mut CadApp, ui: &mut egui::Ui) {
         }
     });
     ui.add_enabled_ui(n >= 2, |ui| {
+        w::checkbox(ui, &mut app.loft_smooth, "Smooth");
         if w::button(ui, "Loft").clicked() {
-            add(app, "Loft", FeatureKind::Loft { sections: app.captures.clone(), op, target });
+            add(app, "Loft", FeatureKind::Loft { sections: app.captures.clone(), op, target, smooth: app.loft_smooth });
         }
     });
-    ui.small(RichText::new("Sweep: capture the profile, then the path. Loft: capture the sections in order.").color(Color32::GRAY));
+    ui.small(RichText::new("Sweep: capture the profile, then the path. Loft: capture the sections in order; Smooth needs three or more.").color(Color32::GRAY));
 }
 
 fn add(app: &mut CadApp, label: &str, kind: FeatureKind) {

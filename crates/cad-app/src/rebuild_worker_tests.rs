@@ -8,7 +8,7 @@ fn doc_with_extrude(distance: &str) -> Document {
     let mut d = Document::new("t");
     let shape = Shape::rect(DVec2::new(0.0, 0.0), DVec2::new(40.0, 20.0));
     d.apply(Command::Add(Entity { id: 1, name: "r".into(), shape, layer: 0, sketch: 0, construction: false, group: None, meta: Default::default() })).unwrap();
-    let kind = FeatureKind::Extrude { profile: vec![1], distance: distance.into(), offset: "0".into(), op: BodyOp::Add, flip: false, target: Target::Auto };
+    let kind = FeatureKind::Extrude { profile: vec![1], distance: distance.into(), offset: "0".into(), taper: "0 deg".into(), op: BodyOp::Add, flip: false, target: Target::Auto };
     d.apply(Command::AddFeature { index: 0, feature: Feature { id: 1, name: "e".into(), suppressed: false, kind } }).unwrap();
     d
 }

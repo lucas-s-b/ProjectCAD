@@ -42,7 +42,7 @@ pub(crate) fn resolve_sweep(doc: &Document, f: &Feature, planes: &SketchPlanes) 
             let profile = from_shapes(&shapes)?;
             Ok(Inputs { profile, shapes_json, plane, tool: Tool::Sweep { path: pieces, closed }, op: *op, target: *target })
         }
-        FeatureKind::Loft { sections, op, target } => {
+        FeatureKind::Loft { sections, op, target, smooth } => {
             let mut built = Vec::new();
             let mut json = Vec::new();
             for ids in sections {
@@ -52,7 +52,7 @@ pub(crate) fn resolve_sweep(doc: &Document, f: &Feature, planes: &SketchPlanes) 
             }
             let shapes_json = serde_json::to_string(&json).map_err(|e| e.to_string())?;
             let (profile, plane) = built.first().cloned().ok_or("loft needs at least two sections")?;
-            Ok(Inputs { profile, shapes_json, plane, tool: Tool::Loft { sections: built }, op: *op, target: *target })
+            Ok(Inputs { profile, shapes_json, plane, tool: Tool::Loft { sections: built, smooth: *smooth }, op: *op, target: *target })
         }
         _ => Err("not a solid feature".to_string()),
     }

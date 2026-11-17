@@ -142,6 +142,7 @@ all UI clicks, so adding rows does not break them. Picks inside the 3D viewport 
   loops of coedges). `validate` checks manifoldness, loop closure and that vertices lie on their surfaces.
 - `cad-modeler` builds B-Reps by `extrude` and `revolve` and tessellates them watertight: every edge is sampled
   once and shared; planar faces are triangulated, curved faces are four-sided grids projected onto their surface.
+- Sweep, loft and the tapered extrude build their mesh directly: rings of profile samples joined by ruled quads, caps triangulated. A tapered extrude moves every loop to its material side by |distance| · tan(angle) with mitred vertices and refuses moves whose edges turn around or cross; straight walls keep a plane surface, walls of arcs are faceted; a zero taper uses the B-Rep extrude. A smooth loft runs every column of ring points through a uniform Catmull-Rom curve (mirrored end points, 8 rings per span).
 - A `Body` is the tessellation plus, for every triangle, the analytic surface it lies on. Booleans combine bodies
   through `manifold-rust` and keep that mapping through its face ids. `TrimmedBody::from_body` rebuilds faces on planes and cylinders: one face per connected group of triangles, boundary loops walked on the mesh and split into the body edges, vertices snapped onto all their surfaces (1e-6). STEP writes such bodies as advanced B-Reps and falls back to a faceted B-Rep per body otherwise.
 - `cad-params` evaluates named expressions with units; a bare number means millimetres or degrees by context.

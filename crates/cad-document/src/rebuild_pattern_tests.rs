@@ -18,7 +18,7 @@ pub(crate) fn put(d: &mut Document, id: EntityId, sketch: SketchId, shape: Shape
 }
 
 pub(crate) fn extrude(id: FeatureId, profile: EntityId, distance: &str, op: BodyOp) -> Feature {
-    let kind = FeatureKind::Extrude { profile: vec![profile], distance: distance.into(), offset: "0".into(), op, flip: false, target: Target::Auto };
+    let kind = FeatureKind::Extrude { profile: vec![profile], distance: distance.into(), offset: "0".into(), taper: "0 deg".into(), op, flip: false, target: Target::Auto };
     Feature { id, name: format!("f{id}"), suppressed: false, kind }
 }
 
