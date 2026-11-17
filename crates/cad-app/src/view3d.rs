@@ -159,6 +159,18 @@ fn build_scene(app: &CadApp) -> Geometry {
             }
         }
     }
+    // Wall solids in a warm grey; the generic outline at their foot is drawn with the entities above.
+    for (id, body) in app.model.iter().flat_map(|(_, m)| &m.walls) {
+        let Some(e) = app.doc.get(*id).filter(|e| app.visible(e)) else { continue };
+        let color = if app.selection.contains(&e.id) { SELECTED } else { [0.86, 0.84, 0.78] };
+        for (&i, n) in body.mesh.indices.iter().zip(&body.mesh.normals) {
+            tris.push(vertex(body.mesh.positions[i as usize], n.as_vec3().to_array(), color));
+        }
+        for [a, b] in body.feature_edges() {
+            lines.push(vertex(a, [0.0; 3], [0.12, 0.12, 0.14]));
+            lines.push(vertex(b, [0.0; 3], [0.12, 0.12, 0.14]));
+        }
+    }
     for p in app.pick_edges.iter().flat_map(|p| &p.points) {
         for (_, body) in app.model.iter().flat_map(|(_, m)| &m.bodies) {
             let Some(e) = body.nearest_edge(*p, 1e-3) else { continue };

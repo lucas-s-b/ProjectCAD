@@ -61,6 +61,9 @@ fn shape(out: &mut String, s: &Shape, col: &str, doc: &Document) {
         Shape::Polyline { points: p, closed } => {
             let _ = writeln!(out, "<{} points=\"{}\"/>", if *closed { "polygon" } else { "polyline" }, points(p));
         }
+        Shape::Wall(wall) => {
+            let _ = writeln!(out, "<polygon points=\"{}\"/>", points(&wall.corners()));
+        }
         Shape::Arc { center, radius, .. } if shape_is_full(s) => circle(out, *center, *radius),
         Shape::Arc { center, radius, start, sweep } => {
             let at = |a: f64| *center + DVec2::from_angle(a) * *radius;

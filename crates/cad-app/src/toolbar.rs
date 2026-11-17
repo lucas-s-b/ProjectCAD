@@ -1,5 +1,5 @@
 use crate::app::{CadApp, Tool, ViewMode};
-use cad_geometry::{DVec3, Shape};
+use cad_geometry::{DVec3, Shape, WallAlign};
 use crate::widgets as w;
 use eframe::egui;
 
@@ -27,6 +27,7 @@ pub fn toolbar(app: &mut CadApp, ui: &mut egui::Ui) {
                 (Tool::Leader, "Leader"),
                 (Tool::RadiusDim, "Radius dim"),
                 (Tool::AngleDim, "Angle dim"),
+                (Tool::Wall, "Wall"),
             ] {
                 w::selectable_value(ui, &mut app.tool, tool, label);
             }
@@ -65,6 +66,16 @@ pub fn toolbar(app: &mut CadApp, ui: &mut egui::Ui) {
                     w::add(ui, "Text input", egui::TextEdit::singleline(&mut app.text_input).desired_width(90.0));
                     ui.label("Text height");
                     w::add(ui, "Text height", egui::DragValue::new(&mut app.dim_text_height).speed(0.1).range(0.0..=f64::MAX));
+                }
+                Tool::Wall => {
+                    ui.label("Thickness");
+                    w::add(ui, "Wall thickness", egui::DragValue::new(&mut app.wall_thickness).speed(1.0).range(1.0..=f64::MAX));
+                    let align = app.wall_align;
+                    w::combo(ui, "Wall align", egui::ComboBox::from_id_salt("wall_align").selected_text(format!("{align:?}")).width(80.0), |ui| {
+                        for a in [WallAlign::Center, WallAlign::Left, WallAlign::Right] {
+                            w::selectable_value(ui, &mut app.wall_align, a, &format!("{a:?}"));
+                        }
+                    });
                 }
                 Tool::RadiusDim => {
                     w::checkbox(ui, &mut app.radial_diameter, "Diameter");

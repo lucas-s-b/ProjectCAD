@@ -16,6 +16,7 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     ui.separator();
     crate::model_section::controls(app, ui);
     crate::model_sketches::show(app, ui);
+    crate::model_levels::show(app, ui);
 }
 
 fn value_text(app: &CadApp, v: Value) -> String {

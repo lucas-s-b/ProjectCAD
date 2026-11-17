@@ -32,6 +32,8 @@ pub struct RebuildResult {
     pub recomputed: usize,
     /// Planes of the sketches on faces, as this rebuild placed them.
     pub planes: SketchPlanes,
+    /// Wall solids by wall entity id (`rebuild_walls`).
+    pub walls: Vec<(EntityId, Arc<Body>)>,
 }
 
 impl RebuildResult {
@@ -360,7 +362,8 @@ impl Rebuilder {
             place_sketch(s, &bodies, &mut planes);
         }
         self.cache.retain(|id, _| doc.feature(*id).is_some());
-        Some(RebuildResult { bodies, states, recomputed, planes })
+        let walls = crate::rebuild_walls::wall_bodies(doc);
+        Some(RebuildResult { bodies, states, recomputed, planes, walls })
     }
 }
 

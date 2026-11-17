@@ -233,6 +233,8 @@ pub enum DocError {
     MixedSketches,
     #[error("primitive solids can only be in sketch 0")]
     SolidOutsideBaseSketch,
+    #[error("sketch {0} is not a level")]
+    NotALevel(SketchId),
 }
 
 impl Document {
@@ -315,6 +317,9 @@ impl Document {
                 if !self.sketches.contains_key(&entity.sketch) {
                     return Err(DocError::SketchNotFound(entity.sketch));
                 }
+                if matches!(entity.shape, Shape::Wall(_)) && !self.is_level(entity.sketch) {
+                    return Err(DocError::NotALevel(entity.sketch));
+                }
                 if entity.sketch != 0 && entity.shape.is_solid() {
                     return Err(DocError::SolidOutsideBaseSketch);
                 }
@@ -341,6 +346,10 @@ impl Document {
             }
             Command::SetShape { id, shape } => {
                 shape.validate(&tol)?;
+                let sketch = self.entities.get(&id).ok_or(DocError::NotFound(id))?.sketch;
+                if matches!(shape, Shape::Wall(_)) && !self.is_level(sketch) {
+                    return Err(DocError::NotALevel(sketch));
+                }
                 let e = self.entities.get_mut(&id).ok_or(DocError::NotFound(id))?;
                 let old = std::mem::replace(&mut e.shape, shape);
                 Command::SetShape { id, shape: old }

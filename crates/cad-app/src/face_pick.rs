@@ -64,7 +64,7 @@ pub fn click(app: &mut CadApp, origin: DVec3, dir: DVec3) {
     let x = if x.length() < 1e-9 { DVec3::X } else { x.normalize() };
     let sketch = app.doc.alloc_sketch_id();
     let plane = PlaneDef::Face { origin: n * n.dot(hit), x, y: n.cross(x), at: hit, body: id };
-    app.exec(vec![Command::AddSketch(Sketch { id: sketch, name: format!("Sketch {sketch}"), plane })]);
+    app.exec(vec![Command::AddSketch(Sketch { id: sketch, name: format!("Sketch {sketch}"), plane, level: None })]);
     if app.doc.sketch(sketch).is_some() {
         app.set_sketch(sketch);
         app.view = ViewMode::TwoD;

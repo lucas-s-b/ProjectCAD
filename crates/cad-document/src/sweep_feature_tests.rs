@@ -9,7 +9,7 @@ fn line(a: (f64, f64), b: (f64, f64)) -> Shape {
 
 fn sketch(d: &mut Document, id: SketchId, base: BasePlane, offset: &str) {
     let plane = PlaneDef::Principal { base, offset: offset.into() };
-    d.apply(Command::AddSketch(Sketch { id, name: format!("s{id}"), plane })).unwrap();
+    d.apply(Command::AddSketch(Sketch { id, name: format!("s{id}"), plane, level: None })).unwrap();
 }
 
 fn sweep(id: FeatureId, profile: Vec<EntityId>, path: Vec<EntityId>, op: BodyOp) -> Feature {
@@ -182,7 +182,7 @@ fn undo_redo_and_save_load() {
     let loaded = Document::load(&p).unwrap();
     std::fs::remove_file(&p).unwrap();
     assert_eq!(loaded.features(), after);
-    assert_eq!(FORMAT_VERSION, 14);
+    assert_eq!(FORMAT_VERSION, 15);
 }
 
 #[test]

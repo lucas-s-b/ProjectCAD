@@ -99,7 +99,7 @@ fn link_validation() {
     d.apply(add_in(1, line(v(0.0, 0.0), v(40.0, 0.0)), 0)).unwrap();
     d.apply(add_in(2, dim(v(0.0, 0.0), v(40.0, 0.0)), 0)).unwrap();
     d.apply(add_in(3, Shape::Circle { center: v(9.0, 9.0), radius: 1.0 }, 0)).unwrap();
-    d.apply(Command::AddSketch(crate::Sketch { id: 1, name: "s".into(), plane: crate::PlaneDef::Principal { base: crate::BasePlane::XY, offset: "0".into() } })).unwrap();
+    d.apply(Command::AddSketch(crate::Sketch { id: 1, name: "s".into(), plane: crate::PlaneDef::Principal { base: crate::BasePlane::XY, offset: "0".into() }, level: None })).unwrap();
     d.apply(add_in(4, line(v(0.0, 0.0), v(1.0, 0.0)), 1)).unwrap();
     d.apply(add_in(5, arc, 0)).unwrap();
     let set = |id, a, b| Command::SetDimLink { id, link: Some((a, b)) };

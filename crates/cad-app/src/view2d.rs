@@ -7,7 +7,7 @@ use eframe::egui::{self, Color32, PointerButton, Stroke};
 
 const PICK_PIXELS: f64 = 6.0;
 const SNAP_PIXELS: f64 = 10.0;
-const SELECTED: Color32 = Color32::from_rgb(255, 160, 0);
+pub(crate) const SELECTED: Color32 = Color32::from_rgb(255, 160, 0);
 /// Colour and screen dash pattern (dash, gap) of construction geometry, whatever its layer.
 pub const CONSTRUCTION_RGB: [u8; 3] = [120, 120, 160];
 const CONSTRUCTION_DASH: [f32; 2] = [6.0, 4.0];
@@ -40,7 +40,11 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     painter.rect_filled(rect, 0.0, Color32::from_gray(24));
     draw_grid(app, &painter, rect);
     draw_reference(app, &painter, rect);
+    crate::view2d_walls::draw(app, &painter, rect);
     for e in app.doc.entities_in(app.sketch).filter(|e| app.visible(e)) {
+        if matches!(e.shape, Shape::Wall(_)) && !e.construction {
+            continue;
+        }
         let [r, g, b] = if e.construction { CONSTRUCTION_RGB } else { app.color(e) };
         let marked = app.selection.contains(&e.id) || app.op_target.is_some_and(|(id, _)| id == e.id);
         let color = if marked { SELECTED } else { Color32::from_rgb(r, g, b) };

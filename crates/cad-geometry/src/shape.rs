@@ -1,5 +1,6 @@
 use crate::annot::{dim_layout, fills, labels, strokes, text_box};
 use crate::tol::Tolerance;
+use crate::wall::Wall;
 use glam::{DVec2, DVec3};
 use serde::{Deserialize, Serialize};
 use std::f64::consts::{FRAC_PI_2, TAU};
@@ -49,6 +50,8 @@ pub enum Shape {
     RadialDim { center: DVec2, radius: f64, angle: f64, text_height: f64, diameter: bool },
     /// Angle `sweep` from direction `start`, arc drawn at `radius`.
     AngularDim { center: DVec2, start: f64, sweep: f64, radius: f64, text_height: f64 },
+    /// A straight wall; only in level sketches (see cad-document).
+    Wall(Wall),
 }
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
@@ -119,6 +122,7 @@ impl Shape {
             Shape::AngularDim { center, start, sweep, radius, text_height } => {
                 center.is_finite() && start.is_finite() && sweep.is_finite() && radius.is_finite() && text_height.is_finite()
             }
+            Shape::Wall(w) => w.a.is_finite() && w.b.is_finite() && w.thickness.is_finite() && w.height.is_finite(),
         };
         if !finite {
             return Err(GeomError::NonFinite);
@@ -220,6 +224,10 @@ impl Shape {
             Shape::AngularDim { sweep, .. } if *sweep <= 1e-9 || *sweep > TAU + 1e-9 => {
                 Err(GeomError::Degenerate("angle sweep out of range"))
             }
+            Shape::Wall(w) if w.a.distance(w.b) <= t => Err(GeomError::Degenerate("wall has zero length")),
+            Shape::Wall(w) if w.thickness <= t || w.height <= t => {
+                Err(GeomError::Degenerate("wall thickness and height must be positive"))
+            }
             _ => Ok(()),
         }
     }
@@ -246,6 +254,7 @@ impl Shape {
             Shape::Leader { .. } => "Leader",
             Shape::RadialDim { .. } => "Radial dimension",
             Shape::AngularDim { .. } => "Angular dimension",
+            Shape::Wall(_) => "Wall",
         }
     }
 
@@ -271,6 +280,10 @@ impl Shape {
             Shape::Rect { min, max } => {
                 *min += d2;
                 *max += d2;
+            }
+            Shape::Wall(w) => {
+                w.a += d2;
+                w.b += d2;
             }
             Shape::Box { center, .. }
             | Shape::Cylinder { center, .. }
@@ -339,6 +352,12 @@ impl Shape {
                 let grow = DVec2::splat(labels.iter().fold(0.0, |m, l| f64::max(m, l.height)));
                 let lo = pts.iter().fold(DVec2::INFINITY, |m, p| m.min(*p)) - grow;
                 let hi = pts.iter().fold(DVec2::NEG_INFINITY, |m, p| m.max(*p)) + grow;
+                (lo.extend(0.0), hi.extend(0.0))
+            }
+            Shape::Wall(w) => {
+                let c = w.corners();
+                let lo = c.iter().fold(DVec2::INFINITY, |m, p| m.min(*p));
+                let hi = c.iter().fold(DVec2::NEG_INFINITY, |m, p| m.max(*p));
                 (lo.extend(0.0), hi.extend(0.0))
             }
             Shape::Spline { points, closed } => {

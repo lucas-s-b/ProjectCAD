@@ -1,7 +1,7 @@
 use crate::app::{CadApp, Tool};
 use crate::view2d::{draw_shape, pick, snapped};
 use cad_geometry::snap::SnapKind;
-use cad_geometry::{DVec2, Shape, Tolerance};
+use cad_geometry::{DVec2, Shape, Tolerance, Wall};
 use std::f64::consts::{PI, TAU};
 use eframe::egui::{self, Color32, PointerButton, Stroke, StrokeKind};
 
@@ -70,6 +70,8 @@ fn build_shape(app: &CadApp, points: &[DVec2], cursor: DVec2) -> Option<Shape> {
             Some(Shape::RadialDim { center: first, radius: first.distance(points[1]), angle: d.y.atan2(d.x), text_height, diameter: app.radial_diameter })
         }
         (Tool::AngleDim, 2) => angle_dim(first, points[1], cursor, text_height),
+        // the preview is 2D, its height is never shown
+        (Tool::Wall, 1) => Some(Shape::Wall(Wall { a: first, b: cursor, thickness: app.wall_thickness, height: 1.0, align: app.wall_align })),
         (Tool::Polyline | Tool::Spline | Tool::Leader, _) => {
             let mut pts = points.to_vec();
             pts.push(cursor);
@@ -88,6 +90,14 @@ fn build_shape(app: &CadApp, points: &[DVec2], cursor: DVec2) -> Option<Shape> {
 /// Feeds one world point to the active draw tool; creates the shape when enough points exist.
 pub fn tool_point(app: &mut CadApp, p: DVec2) {
     app.points.push(p);
+    if app.tool == Tool::Wall {
+        // Walls chain: each click ends one wall and starts the next; Escape stops.
+        if let [a, b] = app.points[..] {
+            app.points = vec![b];
+            app.add_wall(a, b);
+        }
+        return;
+    }
     let needed = match app.tool {
         Tool::Line | Tool::Circle | Tool::Rect | Tool::Polygon => 2,
         Tool::Arc | Tool::Dimension | Tool::Ellipse | Tool::RadiusDim | Tool::AngleDim => 3,

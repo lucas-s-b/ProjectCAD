@@ -139,9 +139,28 @@ Deferred to later phases:
 - NURBS curves and surfaces: Phase 7
 - STEP export of cones, spheres, tori and free-form faces (planes and cylinders done): Phase 7. Phase 5 parts are mesh-boolean solids checked with parry on meshes, so they do not need it first.
 
-## Phase 4: Architectural CAD (next)
+## Phase 4: Architectural CAD (in progress)
 Walls with automatic joins, doors, windows, floors, roofs, stairs, room detection and areas,
 multi-floor projects, BIM metadata designed for later IFC export.
+
+Done (unit-tested; levels, walls, joins and wall edits checked in the running app through MCP):
+- [x] Levels: a sketch on XY with a storey height; its offset expression is the elevation; several levels make a multi-floor project; file format version 15 (older files load without levels)
+- [x] Straight walls (baseline, thickness, height, centre/left/right alignment) drawn with the Wall tool on a level, edited in Properties, moved, copied and mirrored like other entities
+- [x] Automatic joins (`cad-arch`): L mitres, T ends stop at the through wall's face, X crossings, three or more walls at a point share the hub
+- [x] Plan view: wall outlines filled, join lines hidden; 3D: one extruded solid per wall on its level
+
+Limits of this slice:
+- Wall height is copied from the level when the wall is drawn; it does not follow later level edits, and no wall attaches to the level above.
+- Ends join only within 0.001 mm of each other or of another wall's baseline; joins sharper than about 6 degrees get square ends.
+- 3D wall solids are separate per wall (join lines show as edges), not pickable above the floor, and get no section caps.
+- The plan shows the whole wall outline; there is no cut height yet.
+
+Remaining:
+1. Doors and windows: openings on a wall baseline, cut from the wall solid and the plan
+2. Rooms: detection from the wall outlines, names, areas (IfcSpace)
+3. Floors (slabs) and roofs
+4. Stairs
+5. IFC export: storeys, walls, openings, spaces, property sets from entity metadata
 
 ## Phase 5: Mechanical CAD
 Parametric generators (gears, shafts, bearings, springs, fasteners, threads), assemblies, joints,
