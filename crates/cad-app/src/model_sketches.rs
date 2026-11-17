@@ -7,6 +7,7 @@ fn describe(plane: &PlaneDef) -> String {
     match plane {
         PlaneDef::Principal { base, offset } => format!("{base:?} + {offset}"),
         PlaneDef::Fixed { .. } => "face plane".to_string(),
+        PlaneDef::Face { body, .. } => format!("face of body {body}"),
     }
 }
 
@@ -16,7 +17,7 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     let rows: Vec<(SketchId, String, String, Option<String>)> = app
         .doc
         .sketches()
-        .map(|s| (s.id, s.name.clone(), describe(&s.plane), app.doc.resolve_plane(s.id).err()))
+        .map(|s| (s.id, s.name.clone(), describe(&s.plane), app.sketch_plane(s.id).err()))
         .collect();
     for (id, name, text, error) in rows {
         ui.horizontal(|ui| {

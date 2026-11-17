@@ -281,7 +281,7 @@ pub(crate) fn ray(app: &CadApp, rect: egui::Rect, pos: egui::Pos2) -> (DVec3, DV
 fn pick(app: &CadApp, origin: DVec3, dir: DVec3) -> Option<EntityId> {
     let h = app.view_rect.height().max(1.0);
     let mut best: Option<(EntityId, f64)> = None;
-    let plane = app.doc.resolve_plane(app.sketch).ok();
+    let plane = app.sketch_plane(app.sketch).ok();
     for e in app.doc.entities_in(app.sketch).filter(|e| app.pickable(e)) {
         let t = if e.shape.is_solid() {
             ray_hit(&e.shape, origin, dir)

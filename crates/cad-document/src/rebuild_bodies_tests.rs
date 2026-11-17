@@ -293,3 +293,67 @@ fn version_6_feature_file_rebuilds() {
     assert_eq!(r.states[&1], FeatureState::Ok);
     close(r.total_volume(), 500.0, 1e-9);
 }
+
+fn param(d: &mut Document, name: &str, expr: &str) {
+    d.apply(Command::SetParam { name: name.into(), expr: Some(expr.into()) }).unwrap();
+}
+
+/// Plate 40 x 20 x h (h = 10 mm, feature 1), sketch 1 on its top face picked at `at`, circle r 4 at (20, 10) in it (entity 2).
+fn face_sketch(at: DVec3) -> Document {
+    let mut d = Document::new("face");
+    param(&mut d, "h", "10 mm");
+    put(&mut d, 1, 0, rect(0.0, 0.0, 40.0, 20.0));
+    push(&mut d, 1, 1, ex("h", BodyOp::Add));
+    let plane = PlaneDef::Face { origin: DVec3::new(0.0, 0.0, 10.0), x: DVec3::X, y: DVec3::Y, at, body: 1 };
+    d.apply(Command::AddSketch(Sketch { id: 1, name: "Top".into(), plane })).unwrap();
+    put(&mut d, 2, 1, circle(20.0, 10.0, 4.0));
+    d
+}
+
+#[test]
+fn sketch_on_face_follows_the_face() {
+    let fa = faceted_area();
+    let mut d = face_sketch(DVec3::new(20.0, 10.0, 10.0));
+    push(&mut d, 2, 2, ex("3 mm", BodyOp::Add));
+    let mut rb = Rebuilder::default();
+    let r = rb.rebuild(&d);
+    assert_eq!(r.states[&2], FeatureState::Ok);
+    close(r.total_volume(), 8000.0 + 3.0 * fa, 1e-4);
+    close(r.planes[&1].clone().unwrap().origin.z, 10.0, 1e-9);
+    param(&mut d, "h", "15 mm");
+    let r = rb.rebuild(&d);
+    assert_eq!(r.states[&2], FeatureState::Ok);
+    close(r.total_volume(), 12000.0 + 3.0 * fa, 1e-4);
+    close(r.planes[&1].clone().unwrap().origin.z, 15.0, 1e-9);
+}
+
+#[test]
+fn sketch_on_a_lost_face_reports_it() {
+    let mut d = face_sketch(DVec3::new(60.0, 10.0, 10.0));
+    push(&mut d, 2, 2, ex("3 mm", BodyOp::Add));
+    let r = Rebuilder::default().rebuild(&d);
+    assert_eq!(r.states[&2], FeatureState::Error("face not found; pick it again".into()));
+    assert!(r.planes[&1].is_err());
+    assert_eq!(ids(&r), [1]);
+    close(r.total_volume(), 8000.0, 1e-9);
+}
+
+#[test]
+fn face_sketch_is_placed_once_per_rebuild() {
+    let fa = faceted_area();
+    let mut d = face_sketch(DVec3::new(20.0, 10.0, 10.0));
+    push(&mut d, 2, 2, ex("3 mm", BodyOp::Add));
+    push(&mut d, 3, 2, ex("2 mm", BodyOp::Add));
+    let r = Rebuilder::default().rebuild(&d);
+    // Placed again on the boss top, feature 3 would add 5 fa in all.
+    close(r.total_volume(), 8000.0 + 3.0 * fa, 1e-4);
+}
+
+#[test]
+fn unused_face_sketch_follows_the_last_bodies() {
+    let mut d = face_sketch(DVec3::new(20.0, 10.0, 10.0));
+    param(&mut d, "h", "15 mm");
+    let r = Rebuilder::default().rebuild(&d);
+    close(r.planes[&1].clone().unwrap().origin.z, 15.0, 1e-9);
+    close(d.resolve_plane(1).unwrap().origin.z, 10.0, 1e-9);
+}

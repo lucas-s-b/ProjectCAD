@@ -218,3 +218,12 @@ fn sketches_roundtrip_and_load_is_checked() {
     let mut d = load_text("ok", &file(&ok)).unwrap();
     assert_eq!(d.alloc_sketch_id(), 4);
 }
+
+#[test]
+fn face_plane_must_hold_its_point() {
+    let face = |at: DVec3| PlaneDef::Face { origin: DVec3::new(0.0, 0.0, 10.0), x: DVec3::X, y: DVec3::Y, at, body: 1 };
+    let mut d = Document::new("f");
+    let bad = d.apply(Command::AddSketch(sketch(1, "off", face(DVec3::new(1.0, 2.0, 11.0)))));
+    assert!(matches!(bad, Err(DocError::BadPlane)));
+    d.apply(Command::AddSketch(sketch(1, "on", face(DVec3::new(1.0, 2.0, 10.0))))).unwrap();
+}

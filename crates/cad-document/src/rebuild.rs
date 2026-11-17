@@ -4,6 +4,8 @@ use crate::rebuild_blend::Blend;
 use crate::rebuild_pattern::{Pattern, resolve_pattern};
 use crate::rebuild_shell::Shell;
 use crate::rebuild_sweep::resolve_sweep;
+use crate::refs::face_plane;
+use crate::sketch::{PlaneDef, Sketch, SketchPlanes};
 use cad_geometry::profile::Profile;
 use cad_geometry::{DVec2, Shape};
 use cad_modeler::{Body, BoolOp, ModelError, PathPiece, Plane3, Section, boolean, extrude, loft, revolve, sweep};
@@ -28,6 +30,8 @@ pub struct RebuildResult {
     pub states: BTreeMap<FeatureId, FeatureState>,
     /// Features whose geometry was computed in this call (not taken from the cache).
     pub recomputed: usize,
+    /// Planes of the sketches on faces, as this rebuild placed them.
+    pub planes: SketchPlanes,
 }
 
 impl RebuildResult {
@@ -91,25 +95,25 @@ enum Step {
     Shell(Shell),
 }
 
-fn resolve(doc: &Document, f: &Feature, states: &BTreeMap<FeatureId, FeatureState>) -> Result<Step, String> {
+fn resolve(doc: &Document, f: &Feature, states: &BTreeMap<FeatureId, FeatureState>, planes: &SketchPlanes) -> Result<Step, String> {
     match &f.kind {
-        FeatureKind::Fillet { edges, radius: size } | FeatureKind::Chamfer { edges, distance: size } => {
+        FeatureKind::Fillet { edges, faces, radius: size } | FeatureKind::Chamfer { edges, faces, distance: size } => {
             let fillet = matches!(f.kind, FeatureKind::Fillet { .. });
-            Ok(Step::Blend(Blend { edges: edges.clone(), size: eval(doc, size, false)?, fillet }))
+            Ok(Step::Blend(Blend { edges: edges.clone(), faces: faces.clone(), size: eval(doc, size, false)?, fillet }))
         }
         FeatureKind::LinearPattern { .. } | FeatureKind::CircularPattern { .. } | FeatureKind::Mirror { .. } => {
-            resolve_pattern(doc, f, states).map(Step::Pattern)
+            resolve_pattern(doc, f, states, planes).map(Step::Pattern)
         }
         FeatureKind::Shell { thickness, open, at } => {
             Ok(Step::Shell(Shell { thickness: eval(doc, thickness, false)?, open: *open, at: *at }))
         }
-        _ => resolve_solid(doc, f).map(Step::Solid),
+        _ => resolve_solid(doc, f, planes).map(Step::Solid),
     }
 }
 
-pub(crate) fn resolve_solid(doc: &Document, f: &Feature) -> Result<Inputs, String> {
+pub(crate) fn resolve_solid(doc: &Document, f: &Feature, planes: &SketchPlanes) -> Result<Inputs, String> {
     if matches!(f.kind, FeatureKind::Sweep { .. } | FeatureKind::Loft { .. }) {
-        return resolve_sweep(doc, f);
+        return resolve_sweep(doc, f, planes);
     }
     let (profile_ids, op, target, numbers) = match &f.kind {
         FeatureKind::Extrude { profile, distance, offset, op, target, .. } => {
@@ -124,7 +128,7 @@ pub(crate) fn resolve_solid(doc: &Document, f: &Feature) -> Result<Inputs, Strin
     let shapes_json = serde_json::to_string(&shapes).map_err(|e| e.to_string())?;
     // A profile is never empty and all its entities share a sketch (both checked when the feature is added).
     let sketch = profile_ids.first().and_then(|id| doc.get(*id)).map_or(0, |e| e.sketch);
-    let plane = doc.resolve_plane(sketch)?;
+    let plane = doc.plane_in(sketch, planes)?;
     let tool = match &f.kind {
         FeatureKind::Extrude { flip, .. } => Tool::Extrude { distance: numbers.0, offset: numbers.1, flip: *flip },
         FeatureKind::Revolve { axis, .. } => {
@@ -274,6 +278,15 @@ impl Step {
     }
 }
 
+/// Puts the plane of `sketch` into `planes` when it lies on a face and this rebuild has not placed it yet.
+fn place_sketch(sketch: &Sketch, bodies: &Bodies, planes: &mut SketchPlanes) {
+    if let PlaneDef::Face { origin, x, y, at, body } = &sketch.plane
+        && !planes.contains_key(&sketch.id)
+    {
+        planes.insert(sketch.id, face_plane(Plane3 { origin: *origin, x: *x, y: *y }, *at, *body, bodies));
+    }
+}
+
 impl Rebuilder {
     /// Walks the features in order; features whose inputs and predecessors are unchanged come from the cache.
     /// A suppressed or failed feature leaves the bodies as they were and never stops the features after it.
@@ -287,6 +300,7 @@ impl Rebuilder {
         let mut bodies: Bodies = Vec::new();
         let (mut prev, mut recomputed) = (0u64, 0);
         let mut states = BTreeMap::new();
+        let mut planes = SketchPlanes::new();
         for f in doc.features() {
             if stop() {
                 return None;
@@ -296,7 +310,10 @@ impl Rebuilder {
                 prev = hash_of((prev, f.id, "suppressed"));
                 continue;
             }
-            let step = match resolve(doc, f, &states) {
+            for s in f.entities().iter().filter_map(|id| doc.get(*id)).filter_map(|e| doc.sketch(e.sketch)) {
+                place_sketch(s, &bodies, &mut planes);
+            }
+            let step = match resolve(doc, f, &states, &planes) {
                 Ok(i) => i,
                 Err(msg) => {
                     prev = hash_of((prev, f.id, "error", &msg));
@@ -324,8 +341,11 @@ impl Rebuilder {
             self.cache.insert(f.id, (key, bodies.clone(), state.clone()));
             states.insert(f.id, state);
         }
+        for s in doc.sketches() {
+            place_sketch(s, &bodies, &mut planes);
+        }
         self.cache.retain(|id, _| doc.feature(*id).is_some());
-        Some(RebuildResult { bodies, states, recomputed })
+        Some(RebuildResult { bodies, states, recomputed, planes })
     }
 }
 

@@ -1,5 +1,6 @@
 use crate::*;
 use cad_geometry::{DVec2, DVec3, Shape};
+use crate::FaceKey;
 use std::f64::consts::PI;
 
 const EDGE_ERROR: &str = "edge not found; pick it again";
@@ -18,7 +19,7 @@ fn push(d: &mut Document, f: Feature) {
 }
 
 fn fillet(id: FeatureId, edges: &[DVec3], radius: &str) -> Feature {
-    feature(id, FeatureKind::Fillet { edges: edges.to_vec(), radius: radius.into() })
+    feature(id, FeatureKind::Fillet { edges: edges.to_vec(), faces: Vec::new(), radius: radius.into() })
 }
 
 fn param(d: &mut Document, name: &str, expr: &str) {
@@ -96,7 +97,7 @@ fn a_moved_edge_is_not_found_until_it_is_back() {
 #[test]
 fn a_blend_that_is_too_large_reports_the_kernel_error() {
     let mut d = plate();
-    push(&mut d, feature(2, FeatureKind::Chamfer { edges: vec![corner_edge()], distance: "0 mm".into() }));
+    push(&mut d, feature(2, FeatureKind::Chamfer { faces: Vec::new(), edges: vec![corner_edge()], distance: "0 mm".into() }));
     let r = Rebuilder::default().rebuild(&d);
     assert_eq!(r.states[&2], FeatureState::Error("blend size must be positive".into()));
     close(r.total_volume(), 8000.0, 1e-9);
@@ -105,7 +106,7 @@ fn a_blend_that_is_too_large_reports_the_kernel_error() {
 #[test]
 fn chamfer_of_a_top_edge() {
     let mut d = plate();
-    push(&mut d, feature(2, FeatureKind::Chamfer { edges: vec![DVec3::new(20.0, 0.0, 10.0)], distance: "2 mm".into() }));
+    push(&mut d, feature(2, FeatureKind::Chamfer { faces: Vec::new(), edges: vec![DVec3::new(20.0, 0.0, 10.0)], distance: "2 mm".into() }));
     let r = Rebuilder::default().rebuild(&d);
     assert_eq!(r.states[&2], FeatureState::Ok);
     close(r.total_volume(), 8000.0 - 2.0 * 40.0, 1e-6);
@@ -138,7 +139,7 @@ fn blends_are_validated_and_survive_save_and_load() {
     assert!(matches!(bad(&[DVec3::new(f64::NAN, 0.0, 0.0)], "r"), Err(DocError::BadFeature("edge point is not finite"))));
     assert!(bad(&[corner_edge()], "3 +").is_err());
     let fillet_f = fillet(2, &[corner_edge()], "r");
-    let chamfer_f = feature(3, FeatureKind::Chamfer { edges: vec![DVec3::new(20.0, 0.0, 10.0)], distance: "2 mm".into() });
+    let chamfer_f = feature(3, FeatureKind::Chamfer { faces: Vec::new(), edges: vec![DVec3::new(20.0, 0.0, 10.0)], distance: "2 mm".into() });
     assert!(fillet_f.entities().is_empty() && fillet_f.expressions() == ["r"] && chamfer_f.expressions() == ["2 mm"]);
     push(&mut d, fillet_f.clone());
     push(&mut d, chamfer_f.clone());
@@ -148,4 +149,66 @@ fn blends_are_validated_and_survive_save_and_load() {
     let loaded = Document::load(&path).unwrap();
     std::fs::remove_file(&path).unwrap();
     assert_eq!(loaded.features()[1..], [fillet_f, chamfer_f]);
+}
+
+fn top_front() -> [FaceKey; 2] {
+    [FaceKey::Plane(DVec3::Z), FaceKey::Plane(-DVec3::Y)]
+}
+
+fn keyed(id: FeatureId, edges: &[DVec3], faces: Vec<[FaceKey; 2]>, radius: &str) -> Feature {
+    feature(id, FeatureKind::Fillet { edges: edges.to_vec(), faces, radius: radius.into() })
+}
+
+#[test]
+fn keyed_chamfer_follows_a_taller_plate() {
+    let mut d = plate();
+    let kind = FeatureKind::Chamfer { edges: vec![DVec3::new(20.0, 0.0, 10.0)], faces: vec![top_front()], distance: "2 mm".into() };
+    push(&mut d, feature(2, kind));
+    let mut rb = Rebuilder::default();
+    let r = rb.rebuild(&d);
+    assert_eq!(r.states[&2], FeatureState::Ok);
+    close(r.total_volume(), 7920.0, 1e-6);
+    param(&mut d, "h", "15 mm");
+    let r = rb.rebuild(&d);
+    assert_eq!(r.states[&2], FeatureState::Ok);
+    close(r.total_volume(), 11920.0, 1e-6);
+    assert_eq!(r.recomputed, 2);
+}
+
+#[test]
+fn keyed_fillet_finds_a_shorter_corner() {
+    let mut d = plate();
+    push(&mut d, keyed(2, &[corner_edge()], vec![[FaceKey::Plane(-DVec3::X), FaceKey::Plane(-DVec3::Y)]], "r"));
+    param(&mut d, "h", "4 mm");
+    let r = Rebuilder::default().rebuild(&d);
+    assert_eq!(r.states[&2], FeatureState::Ok);
+    close(r.total_volume(), 3200.0 - (9.0 - 9.0 * PI / 4.0) * 4.0, 0.05);
+}
+
+#[test]
+fn keyed_edge_without_a_match_fails() {
+    let mut d = plate();
+    push(&mut d, keyed(2, &[corner_edge()], vec![[FaceKey::Plane(DVec3::Z), FaceKey::Plane(-DVec3::Z)]], "r"));
+    let r = Rebuilder::default().rebuild(&d);
+    assert_eq!(r.states[&2], FeatureState::Error(EDGE_ERROR.into()));
+    close(r.total_volume(), 8000.0, 1e-9);
+}
+
+#[test]
+fn face_pairs_must_match_the_edges() {
+    let d = plate();
+    let f = keyed(2, &[corner_edge()], vec![top_front(), top_front()], "r");
+    assert!(matches!(d.clone().apply(Command::AddFeature { index: 1, feature: f }), Err(DocError::BadFeature("one face pair per edge"))));
+}
+
+#[test]
+fn keyed_blends_survive_save_and_load() {
+    let mut d = plate();
+    let f = feature(2, FeatureKind::Chamfer { edges: vec![DVec3::new(20.0, 0.0, 10.0)], faces: vec![top_front()], distance: "2 mm".into() });
+    push(&mut d, f.clone());
+    let path = std::env::temp_dir().join(format!("projectcad_keyed_blend_{}.cad", std::process::id()));
+    d.save(&path).unwrap();
+    let loaded = Document::load(&path).unwrap();
+    std::fs::remove_file(&path).unwrap();
+    assert_eq!(loaded.features()[1], f);
 }

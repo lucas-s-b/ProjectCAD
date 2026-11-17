@@ -1,5 +1,6 @@
 use crate::document::Document;
 use crate::feature::{Axis3, Feature, FeatureId, FeatureKind, MirrorSource};
+use crate::sketch::SketchPlanes;
 use crate::rebuild::{Bodies, FeatureState, Inputs, eval, hash_of, resolve_solid};
 use crate::sketch::BasePlane;
 use cad_geometry::{DAffine3, DQuat, DVec3};
@@ -85,12 +86,12 @@ fn forms(doc: &Document, f: &Feature, states: &BTreeMap<FeatureId, FeatureState>
 }
 
 /// `states` holds the features before `f`, so a source that is missing from it comes later.
-pub(crate) fn resolve_pattern(doc: &Document, f: &Feature, states: &BTreeMap<FeatureId, FeatureState>) -> Result<Pattern, String> {
+pub(crate) fn resolve_pattern(doc: &Document, f: &Feature, states: &BTreeMap<FeatureId, FeatureState>, planes: &SketchPlanes) -> Result<Pattern, String> {
     if let FeatureKind::Mirror { source: MirrorSource::Bodies, plane, offset } = &f.kind {
         return Ok(Pattern::Bodies(mirror_matrix(*plane, eval(doc, offset, false)?)));
     }
     let fr = forms(doc, f, states)?;
-    let root = resolve_solid(doc, doc.feature(fr.root).ok_or("source feature not found")?)?;
+    let root = resolve_solid(doc, doc.feature(fr.root).ok_or("source feature not found")?, planes)?;
     Ok(Pattern::Copies { root, forms: fr.fresh })
 }
 

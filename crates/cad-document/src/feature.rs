@@ -1,4 +1,5 @@
 use crate::document::{Command, DocError, Document, EntityId};
+use crate::refs::FaceKey;
 use crate::sketch::BasePlane;
 use cad_geometry::DVec3;
 use cad_params::parse;
@@ -73,11 +74,23 @@ pub enum FeatureKind {
         #[serde(default)]
         target: Target,
     },
-    /// Each point lies on an edge of a body, as picked. The point is a snapshot: if earlier features move the
-    /// edge, the feature reports an error until the edge is picked again.
-    Fillet { edges: Vec<DVec3>, radius: String },
+    /// Each point lies on an edge of a body, as picked. `faces[i]` holds which way the two faces of edge `i` pointed
+    /// when it was picked: the rebuild takes the nearest edge between faces that still point that way, so the edge
+    /// follows when earlier features move it. `faces` is empty in files before version 13; each point must then lie
+    /// within `EDGE_PICK_TOLERANCE` of its edge.
+    Fillet {
+        edges: Vec<DVec3>,
+        #[serde(default)]
+        faces: Vec<[FaceKey; 2]>,
+        radius: String,
+    },
     /// Like `Fillet`, with a chamfer distance.
-    Chamfer { edges: Vec<DVec3>, distance: String },
+    Chamfer {
+        edges: Vec<DVec3>,
+        #[serde(default)]
+        faces: Vec<[FaceKey; 2]>,
+        distance: String,
+    },
     /// Repeats the solid of `source` `count` times in total, each copy shifted by one more step (dx, dy, dz) in world axes.
     LinearPattern { source: FeatureId, count: String, dx: String, dy: String, dz: String },
     /// Repeats the solid of `source` `count` times in total around a world axis through (cx, cy, cz).
@@ -214,12 +227,15 @@ impl Document {
             self.feature_index(source)?;
         }
         match (&f.kind, f.profile()) {
-            (FeatureKind::Fillet { edges, .. } | FeatureKind::Chamfer { edges, .. }, _) => {
+            (FeatureKind::Fillet { edges, faces, .. } | FeatureKind::Chamfer { edges, faces, .. }, _) => {
                 if edges.is_empty() {
                     return Err(bad("no edges"));
                 }
                 if !edges.iter().all(|p| p.is_finite()) {
                     return Err(bad("edge point is not finite"));
+                }
+                if !faces.is_empty() && faces.len() != edges.len() {
+                    return Err(bad("one face pair per edge"));
                 }
             }
             (FeatureKind::Shell { open, at, .. }, _) => {

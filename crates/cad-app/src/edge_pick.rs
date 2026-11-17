@@ -1,17 +1,19 @@
 use crate::app::{CadApp, PickFace, ViewMode};
-use cad_document::{BodyEdge, Command, Convexity, EdgeGeom, Feature, FeatureId, FeatureKind};
+use cad_document::{BodyEdge, Command, Convexity, EdgeGeom, FaceKey, Feature, FeatureId, FeatureKind, edge_keys};
 use cad_geometry::DVec3;
 
 pub struct EdgePick {
     pub chamfer: bool,
     pub replace: Option<FeatureId>,
     pub points: Vec<DVec3>,
+    /// One face pair per point, from `edge_keys`.
+    pub faces: Vec<[FaceKey; 2]>,
 }
 
 /// Starts picking; edge and face picking exclude each other.
 pub fn start(app: &mut CadApp, chamfer: bool, replace: Option<FeatureId>) {
     app.pick_face = PickFace::Off;
-    app.pick_edges = Some(EdgePick { chamfer, replace, points: Vec::new() });
+    app.pick_edges = Some(EdgePick { chamfer, replace, points: Vec::new(), faces: Vec::new() });
     app.view = ViewMode::ThreeD;
     app.status = "Click the edges to blend".into();
 }
@@ -52,17 +54,23 @@ fn nearest_edge(app: &mut CadApp, origin: DVec3, dir: DVec3, pixel: f64) -> Opti
 
 /// Toggles the edge under the ray; `pixel` is the world size of one screen pixel per unit of ray distance.
 pub fn click(app: &mut CadApp, origin: DVec3, dir: DVec3, pixel: f64) {
-    let best = nearest_edge(app, origin, dir, pixel);
-    let mid = best.map(|(_, e, _)| e.midpoint());
-    let (Some(mid), Some(pick)) = (mid, app.pick_edges.as_mut()) else {
+    let picked = nearest_edge(app, origin, dir, pixel).and_then(|(id, e, _)| {
+        let body = app.model.iter().flat_map(|(_, m)| &m.bodies).find(|(i, _)| *i == id).map(|(_, b)| b)?;
+        Some((e.midpoint(), edge_keys(body, &e)))
+    });
+    let (Some((mid, keys)), Some(pick)) = (picked, app.pick_edges.as_mut()) else {
         app.status = "No edge there".into();
         return;
     };
     match pick.points.iter().position(|p| p.distance(mid) < 1e-6) {
         Some(i) => {
             pick.points.remove(i);
+            pick.faces.remove(i);
         }
-        None => pick.points.push(mid),
+        None => {
+            pick.points.push(mid);
+            pick.faces.push(keys);
+        }
     }
 }
 
@@ -95,13 +103,13 @@ pub fn finish(app: &mut CadApp) {
         app.status = "No edges picked".into();
         return;
     };
-    let (edges, chamfer, replace) = (pick.points.clone(), pick.chamfer, pick.replace);
+    let (edges, faces, chamfer, replace) = (pick.points.clone(), pick.faces.clone(), pick.chamfer, pick.replace);
     let old = replace.and_then(|id| app.doc.feature(id).cloned());
     let size = match old.as_ref().map(|f| &f.kind) {
         Some(FeatureKind::Fillet { radius: s, .. } | FeatureKind::Chamfer { distance: s, .. }) => s.clone(),
         _ => app.blend_size.clone(),
     };
-    let kind = if chamfer { FeatureKind::Chamfer { edges, distance: size } } else { FeatureKind::Fillet { edges, radius: size } };
+    let kind = if chamfer { FeatureKind::Chamfer { edges, faces, distance: size } } else { FeatureKind::Fillet { edges, faces, radius: size } };
     let cmd = match old {
         Some(f) => Command::SetFeature(Feature { kind, ..f }),
         None => {

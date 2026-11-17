@@ -149,8 +149,8 @@ all UI clicks, so adding rows does not break them. Picks inside the 3D viewport 
   feature's result is cached under a key hashed from its resolved inputs and the previous feature's key, so
   unchanged features are not recomputed. A failed or suppressed feature leaves the body as it was.
 - Entities used by a feature cannot be removed while the feature exists.
-- Every entity belongs to a sketch; a sketch has a plane: a principal plane with an offset expression, or a fixed
-  plane captured from a picked face. The 2D view edits the active sketch only. Features take their plane from
+- Every entity belongs to a sketch; a sketch has a plane: a principal plane with an offset expression, or a plane
+  on a picked face. The 2D view edits the active sketch only. Features take their plane from
   the sketch of their profile.
 - The rebuild keeps a list of bodies. A body's id is the id of the feature that created it. `Add`, `Cut` and
   `Intersect` act on a target set (automatic, all bodies, or one body); `New` starts a body.
@@ -158,3 +158,4 @@ all UI clicks, so adding rows does not break them. Picks inside the 3D viewport 
   surface are merged. A fillet or chamfer builds a tool solid along the edge (extruded for a straight edge,
   revolved for a circular rim) whose cross-section is the corner outside the fillet arc or the chamfer triangle,
   then subtracts it on a convex edge or adds it on a concave edge. The tool is tessellated finer than the body.
+- Picks are references, not snapshots: a sketch on a face stores the plane, the picked point and the body; a fillet or chamfer edge stores a point and the keys of its two faces (outward plane normal or cylinder axis). The rebuild places each face sketch once, before the first feature that uses it (unused ones on the final bodies), on the planar face with the same normal under the picked point, nearest to it; edges are the nearest edge between faces with matching keys. Placed planes are returned in `RebuildResult::planes` and shown by the app.
