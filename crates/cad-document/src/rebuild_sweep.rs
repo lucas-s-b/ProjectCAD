@@ -1,15 +1,16 @@
 use crate::document::{Document, EntityId};
 use crate::feature::{BODY_TOLERANCE, Feature, FeatureKind};
 use crate::rebuild::{Inputs, Tool, profile_shapes};
+use crate::sketch::SketchPlanes;
 use cad_geometry::profile::{Profile, chain};
 use cad_geometry::{DVec3, Shape};
 use cad_modeler::{PathPiece, Plane3, path_pieces};
 
 /// The shapes of one group of entities (all in one sketch, checked when the feature is added) and that sketch's plane.
-fn group<'a>(doc: &'a Document, ids: &[EntityId]) -> Result<(Vec<&'a Shape>, Plane3), String> {
+fn group<'a>(doc: &'a Document, ids: &[EntityId], planes: &SketchPlanes) -> Result<(Vec<&'a Shape>, Plane3), String> {
     let shapes = profile_shapes(doc, ids)?;
     let sketch = ids.first().and_then(|id| doc.get(*id)).map_or(0, |e| e.sketch);
-    Ok((shapes, doc.resolve_plane(sketch)?))
+    Ok((shapes, doc.plane_in(sketch, planes)?))
 }
 
 fn plane_key(p: &Plane3) -> [[f64; 3]; 3] {
@@ -27,11 +28,11 @@ fn nearest_end_first(pieces: &mut [PathPiece], profile_plane: &Plane3) {
 }
 
 /// Inputs of a sweep or loft feature.
-pub(crate) fn resolve_sweep(doc: &Document, f: &Feature) -> Result<Inputs, String> {
+pub(crate) fn resolve_sweep(doc: &Document, f: &Feature, planes: &SketchPlanes) -> Result<Inputs, String> {
     let from_shapes = |shapes: &[&Shape]| Profile::from_shapes(shapes).map_err(|e| e.to_string());
     match &f.kind {
         FeatureKind::Sweep { profile, path, op, target } => {
-            let ((shapes, plane), (path_shapes, path_plane)) = (group(doc, profile)?, group(doc, path)?);
+            let ((shapes, plane), (path_shapes, path_plane)) = (group(doc, profile, planes)?, group(doc, path, planes)?);
             let (segs, closed) = chain(&path_shapes).map_err(|e| e.to_string())?;
             let mut pieces = path_pieces(&segs, &path_plane, BODY_TOLERANCE);
             if !closed {
@@ -45,7 +46,7 @@ pub(crate) fn resolve_sweep(doc: &Document, f: &Feature) -> Result<Inputs, Strin
             let mut built = Vec::new();
             let mut json = Vec::new();
             for ids in sections {
-                let (shapes, plane) = group(doc, ids)?;
+                let (shapes, plane) = group(doc, ids, planes)?;
                 built.push((from_shapes(&shapes)?, plane));
                 json.push((shapes, plane_key(&plane)));
             }

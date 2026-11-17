@@ -39,9 +39,9 @@ pub fn click(app: &mut CadApp, origin: DVec3, dir: DVec3) {
     let best = ray_body(app, origin, dir).and_then(|(id, tri, t)| {
         let body = app.model.iter().flat_map(|(_, m)| &m.bodies).find(|(i, _)| *i == id).map(|(_, b)| b)?;
         let f = &body.faces[body.tri_face[tri] as usize];
-        Some((t, plane_normal(&f.surface), f.outward))
+        Some((id, t, plane_normal(&f.surface), f.outward))
     });
-    let Some((t, normal, outward)) = best else {
+    let Some((id, t, normal, outward)) = best else {
         app.status = "No face there".into();
         return;
     };
@@ -49,8 +49,8 @@ pub fn click(app: &mut CadApp, origin: DVec3, dir: DVec3) {
         app.status = "Pick a planar face".into();
         return;
     };
+    let hit = origin + dir * t;
     if app.pick_face == PickFace::Shell {
-        let hit = origin + dir * t;
         let kind = FeatureKind::Shell { thickness: app.shell_thickness.clone(), open: Some(hit), at: hit };
         let id = crate::model_features::add_feature(app, "Shell", kind);
         if app.doc.feature(id).is_some() {
@@ -62,11 +62,11 @@ pub fn click(app: &mut CadApp, origin: DVec3, dir: DVec3) {
     let n = if outward { normal } else { -normal }.normalize();
     let x = DVec3::Z.cross(n);
     let x = if x.length() < 1e-9 { DVec3::X } else { x.normalize() };
-    let id = app.doc.alloc_sketch_id();
-    let plane = PlaneDef::Fixed { origin: n * n.dot(origin + dir * t), x, y: n.cross(x) };
-    app.exec(vec![Command::AddSketch(Sketch { id, name: format!("Sketch {id}"), plane })]);
-    if app.doc.sketch(id).is_some() {
-        app.set_sketch(id);
+    let sketch = app.doc.alloc_sketch_id();
+    let plane = PlaneDef::Face { origin: n * n.dot(hit), x, y: n.cross(x), at: hit, body: id };
+    app.exec(vec![Command::AddSketch(Sketch { id: sketch, name: format!("Sketch {sketch}"), plane })]);
+    if app.doc.sketch(sketch).is_some() {
+        app.set_sketch(sketch);
         app.view = ViewMode::TwoD;
         app.pick_face = PickFace::Off;
     }

@@ -228,7 +228,7 @@ fn bad_sources_report_errors_and_keep_the_bodies() {
     assert_eq!(state(&d), err("source feature is not active"));
 
     let mut d = holed_plate();
-    let kind = FeatureKind::Fillet { edges: vec![DVec3::new(0.0, 0.0, 2.5)], radius: "1 mm".into() };
+    let kind = FeatureKind::Fillet { edges: vec![DVec3::new(0.0, 0.0, 2.5)], faces: Vec::new(), radius: "1 mm".into() };
     push(&mut d, Feature { id: 3, name: "fil".into(), suppressed: false, kind });
     push(&mut d, linear(4, 3, "2", ["20 mm", "0", "0"]));
     assert_eq!(Rebuilder::default().rebuild(&d).states[&4], err("this feature cannot be used as a source"));

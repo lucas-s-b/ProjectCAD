@@ -78,7 +78,7 @@ fn run(ctx: &egui::Context, jobs: &Receiver<Msg>, done: &Sender<Finished>, lates
                     rebuilder = Rebuilder::default();
                     let msg = format!("internal error during rebuild: {}", cad_document::panic_message(p.as_ref()));
                     let states = doc.features().iter().map(|f| (f.id, cad_document::FeatureState::Error(msg.clone()))).collect();
-                    RebuildResult { bodies: Vec::new(), states, recomputed: 0 }
+                    RebuildResult { bodies: Vec::new(), states, recomputed: 0, planes: Default::default() }
                 }
             };
             if done.send((epoch, revision, result)).is_err() {

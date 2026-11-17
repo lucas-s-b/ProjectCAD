@@ -93,7 +93,7 @@ Done (unit-tested; the plate-with-hole flow checked in the running app through M
 - [x] Feature history in the document: extrude and revolve with add / cut / intersect, suppress, reorder, edit, undo
 - [x] Incremental rebuild: only features whose inputs changed are recomputed; a failed feature does not stop the rest
 - [x] Model tab: parameters, features, body properties; the body in the 3D view
-- [x] Sketches on XY, XZ, YZ planes with offset expressions; sketch on a picked planar face (a snapshot of the plane)
+- [x] Sketches on XY, XZ, YZ planes with offset expressions; sketch on a picked planar face (follows the face on rebuild since file format 13)
 - [x] Several bodies: New body, targets (auto, all, one body), flip for cuts into the material; file format version 7
 - [x] 2D view per active sketch with the bodies as grey reference edges; sketches placed on their planes in 3D
 - [x] Faces on the same surface merged; body edges (line, circle, other; convex, concave, smooth)
@@ -108,6 +108,7 @@ Done (unit-tested; the plate-with-hole flow checked in the running app through M
 - [x] STEP export of the bodies as faceted B-Reps (AP214, one planar face per triangle), units mm; read back in tests and compared by volume
 - [x] Trimmed B-Rep faces rebuilt from the tessellation for planes and cylinders (boundary loops, snapped vertices); plane-cylinder edges are exact lines, circles or ellipses
 - [x] STEP export with analytic faces: ADVANCED_FACEs on PLANE and CYLINDRICAL_SURFACE with LINE, CIRCLE and ELLIPSE edges; other bodies are written faceted in the same file
+- [x] Face and edge references: a sketch on a face and fillet/chamfer edges keep which way their faces point and are found again on every rebuild, so they follow when earlier features move them; file format version 13
 - [x] BVH over body triangles for 3D ray picks (cached per body)
 - [x] Face selection in the 3D view: click a body face to highlight it and show its surface kind and area
 - [x] Section plane in the 3D view (axis, offset, flip); display only, picks still hit hidden parts
@@ -119,17 +120,16 @@ Done (unit-tested; the plate-with-hole flow checked in the running app through M
 Limits of this slice (state them wherever results are shown):
 - Booleans run on the tessellation (0.02 mm): curved faces take part as facets, intersection curves are polylines.
   Volumes of curved bodies are approximate and labelled so in the UI.
-- A sketch on a face stores the plane as it was when picked; it does not follow later changes of the body.
+- A sketch on a face follows the face along its normal (the picked point must still fall on a face pointing the same way); it does not follow a face that tilts. Sketches from files before version 13 keep the plane as picked.
 - The feature history is linear: changing an early feature recomputes everything after it.
 - Ellipse and spline cannot be part of a profile. Crossing profile loops are not detected.
 - STEP: a body with any face other than a plane or cylinder, or an edge other than a line, circle or ellipse, is exported faceted.
 - Shell: the offset tool is a faceted sphere, so walls next to curved or slanted faces are slightly thicker than asked; an open shell needs a thickness of at most about a quarter of the body depth along the opening direction.
-- Fillets and chamfers: no blending at corners where filleted edges meet; a stored edge is a picked point, so a
-  feature reports "edge not found" when earlier features move that edge. A rim fillet on a round hole carries a
+- Fillets and chamfers: no blending at corners where filleted edges meet; a stored edge is found again as the nearest edge between faces pointing the same ways as when picked; if the picked edge is gone, another such edge may be blended. Edges from files before version 13 are picked points and report "edge not found" when moved. A rim fillet on a round hole carries a
   few percent volume error at the 0.02 mm body tolerance (mesh slivers between facets and the true circle).
 
 Remaining:
-1. Face references that survive rebuilds (needs trimmed faces); a dependency graph between sketches, features and bodies instead of the linear history
+1. A dependency graph between sketches, features and bodies instead of the linear history; references for shell faces and for faces that tilt (face and edge references that follow moved faces done)
 2. Trimmed faces and analytic curves beyond plane and cylinder (cones, spheres, tori, cylinder-cylinder); booleans still run on the mesh
 3. Smooth loft through three or more sections, loft sections with holes, self-intersection checks, draft; corner blending where filleted edges meet; fillets on other edge types
 4. NURBS curves and surfaces

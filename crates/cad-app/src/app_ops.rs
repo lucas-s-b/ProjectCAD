@@ -52,7 +52,7 @@ impl CadApp {
 
     /// Maps a point of the sketch plane into world space; None when the plane does not resolve.
     pub fn sketch_to_world(&self, sketch: SketchId) -> Option<impl Fn(DVec2) -> DVec3 + use<>> {
-        let plane = self.doc.resolve_plane(sketch).ok()?;
+        let plane = self.sketch_plane(sketch).ok()?;
         Some(move |p| plane.point(p))
     }
 

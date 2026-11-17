@@ -67,7 +67,7 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
 /// Body edges projected onto the active sketch plane; not pickable, not snappable.
 // shortcut: edges are recomputed every frame, cache them per document revision when models get large
 fn draw_reference(app: &CadApp, painter: &egui::Painter, rect: egui::Rect) {
-    let (Ok(plane), Some((_, model))) = (app.doc.resolve_plane(app.sketch), app.model.as_ref()) else { return };
+    let (Ok(plane), Some((_, model))) = (app.sketch_plane(app.sketch), app.model.as_ref()) else { return };
     let project = |p: DVec3| {
         let d = p - plane.origin;
         app.cam2d.world_to_screen(rect, DVec2::new(d.dot(plane.x), d.dot(plane.y)))

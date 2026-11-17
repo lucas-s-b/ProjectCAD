@@ -1,4 +1,5 @@
 use crate::document::{Command, DocError, Document, Entity};
+use crate::feature::FeatureId;
 use cad_geometry::DVec3;
 use cad_modeler::Plane3;
 use cad_params::parse;
@@ -6,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 pub type SketchId = u32;
-pub const FORMAT_VERSION: u32 = 12;
+pub const FORMAT_VERSION: u32 = 13;
 
 /// Axes (x, y, normal): XY = (X, Y, +Z); XZ = (X, Z, -Y); YZ = (Y, Z, +X).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -31,8 +32,22 @@ impl BasePlane {
 pub enum PlaneDef {
     /// `offset` is a length expression along the base plane's normal.
     Principal { base: BasePlane, offset: String },
-    /// Captured from a face of a body; it does not follow later changes.
+    /// Captured from a face of a body; it does not follow later changes (files before version 13).
     Fixed { origin: DVec3, x: DVec3, y: DVec3 },
+    /// On a planar face of a body: the plane as picked (normal `x × y` pointing out of the body), the picked point
+    /// `at` on it, and the id of the body. The rebuild moves the plane along its normal onto that face as it is now
+    /// (`refs::face_plane`); `resolve_plane` gives the plane as picked.
+    Face { origin: DVec3, x: DVec3, y: DVec3, at: DVec3, body: FeatureId },
+}
+
+/// Planes of the sketches on faces as one rebuild placed them; an error when the face was not found.
+pub type SketchPlanes = BTreeMap<SketchId, Result<Plane3, String>>;
+
+impl Document {
+    /// The plane of `sketch`: from `planes` when the rebuild placed it there, else `resolve_plane`.
+    pub(crate) fn plane_in(&self, sketch: SketchId, planes: &SketchPlanes) -> Result<Plane3, String> {
+        planes.get(&sketch).cloned().unwrap_or_else(|| self.resolve_plane(sketch))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -57,9 +72,13 @@ fn check_sketch(s: &Sketch) -> Result<(), DocError> {
     }
     match &s.plane {
         PlaneDef::Principal { offset, .. } => parse(offset).map(drop)?,
-        PlaneDef::Fixed { origin, x, y } => {
+        PlaneDef::Fixed { origin, x, y } | PlaneDef::Face { origin, x, y, .. } => {
             let unit = |v: &DVec3| (v.length() - 1.0).abs() <= 1e-9;
-            if !(origin.is_finite() && x.is_finite() && y.is_finite() && unit(x) && unit(y) && x.dot(*y).abs() <= 1e-9) {
+            let on_plane = match &s.plane {
+                PlaneDef::Face { at, .. } => at.is_finite() && x.cross(*y).dot(*at - *origin).abs() <= 1e-6,
+                _ => true,
+            };
+            if !(origin.is_finite() && x.is_finite() && y.is_finite() && unit(x) && unit(y) && x.dot(*y).abs() <= 1e-9 && on_plane) {
                 return Err(DocError::BadPlane);
             }
         }
@@ -94,7 +113,7 @@ impl Document {
                 let d = crate::rebuild::eval(self, offset, false)?;
                 Ok(Plane3 { origin: plane.normal() * d, ..plane })
             }
-            PlaneDef::Fixed { origin, x, y } => Ok(Plane3 { origin: *origin, x: *x, y: *y }),
+            PlaneDef::Fixed { origin, x, y } | PlaneDef::Face { origin, x, y, .. } => Ok(Plane3 { origin: *origin, x: *x, y: *y }),
         }
     }
 

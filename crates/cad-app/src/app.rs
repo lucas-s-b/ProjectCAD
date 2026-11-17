@@ -2,7 +2,7 @@ use crate::camera::{Camera2D, OrbitCamera};
 use crate::mcp::{self, bridge::Bridge};
 use crate::rebuild_worker::RebuildWorker;
 use crate::{panels, view2d, view3d};
-use cad_document::{Command, ConstraintId, Document, Entity, EntityId, History, LayerId, BodyOp, Feature, FeatureId, PointRef, RebuildResult, RevolveAxis, SketchId, BasePlane, Target};
+use cad_document::{Plane3, Command, ConstraintId, Document, Entity, EntityId, History, LayerId, BodyOp, Feature, FeatureId, PointRef, RebuildResult, RevolveAxis, SketchId, BasePlane, Target};
 use cad_geometry::snap::Snap;
 use cad_geometry::{DVec2, DVec3, HatchPattern, Shape};
 use std::collections::BTreeSet;
@@ -331,6 +331,11 @@ impl CadApp {
 
     pub fn model_result(&self) -> Option<&RebuildResult> {
         self.model.as_ref().map(|(_, r)| r)
+    }
+
+    /// The plane of `sketch` as the last rebuild placed it (a sketch on a face follows its face), else as stored.
+    pub fn sketch_plane(&self, sketch: SketchId) -> Result<Plane3, String> {
+        self.model_result().and_then(|r| r.planes.get(&sketch).cloned()).unwrap_or_else(|| self.doc.resolve_plane(sketch))
     }
 
     /// Ids of the bodies of the latest rebuild.

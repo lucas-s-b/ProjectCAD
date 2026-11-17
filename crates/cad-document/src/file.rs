@@ -255,7 +255,7 @@ mod tests {
         let text = format!(r#"{{"version":7,"name":"x","next_id":2,"next_feature_id":1,"entities":{{{entity}}},"features":[{FEATURE},{fillet}]}}"#);
         let mut d = load_text("v7", &text).unwrap();
         assert_eq!(d.features().len(), 2);
-        assert!(matches!(&d.features()[1].kind, FeatureKind::Fillet { edges, radius } if edges == &[DVec3::new(0.0, 0.0, 5.0)] && radius == "3 mm"));
+        assert!(matches!(&d.features()[1].kind, FeatureKind::Fillet { edges, faces, radius } if edges == &[DVec3::new(0.0, 0.0, 5.0)] && faces.is_empty() && radius == "3 mm"));
         assert_eq!(d.alloc_feature_id(), 6);
     }
 
