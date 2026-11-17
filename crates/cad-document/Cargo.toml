@@ -6,6 +6,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+cad-arch = { version = "0.1.0", path = "../cad-arch" }
 cad-constraints = { version = "0.1.0", path = "../cad-constraints" }
 cad-geometry = { version = "0.1.0", path = "../cad-geometry" }
 cad-modeler = { version = "0.1.0", path = "../cad-modeler" }

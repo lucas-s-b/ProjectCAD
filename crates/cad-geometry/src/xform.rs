@@ -1,4 +1,5 @@
 use crate::shape::{GeomError, Shape};
+use crate::wall::{Wall, WallAlign};
 use glam::{DAffine2, DMat2, DVec2};
 
 pub fn rotation_about(c: DVec2, angle: f64) -> DAffine2 {
@@ -100,6 +101,16 @@ impl Shape {
                     radius: radius * s,
                     text_height: text_height * s,
                 }
+            }
+            Shape::Wall(w) => {
+                // Thickness and height are kept under scaling. A mirror turns the baseline around, so the wall would
+                // land on the other side unless the side swaps too.
+                let align = match w.align {
+                    WallAlign::Left if mirrored => WallAlign::Right,
+                    WallAlign::Right if mirrored => WallAlign::Left,
+                    a => a,
+                };
+                Shape::Wall(Wall { a: m.transform_point2(w.a), b: m.transform_point2(w.b), align, ..*w })
             }
             Shape::Box { .. } | Shape::Cylinder { .. } | Shape::Sphere { .. } => {
                 return Err(GeomError::Unsupported("2D transform of a solid"));

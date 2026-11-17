@@ -33,12 +33,14 @@ nothing for the Windows target. Licenses are listed with `cargo tree --format "{
 cad-app ──► cad-document ──► cad-constraints ──► cad-geometry ──► glam
                   ├──► cad-params
                   └──► cad-modeler ──► cad-topology, cad-geometry, manifold-rust, earcutr
+                  └──► cad-arch ──► cad-modeler, cad-geometry
    │
    └──────► cad-renderer ──► wgpu
 ```
 
 - `cad-geometry`: shapes, tolerance, validation, tessellation, picking math. No UI, no GPU.
 - `cad-document`: entities, commands, undo/redo history, native file format.
+- `cad-arch` (Phase 4): wall joins, plan outlines and wall solids on a level. Works on shapes, not on the document; `cad-document` (rebuild) and `cad-app` (plan drawing) depend on it.
 - `cad-renderer`: wgpu pipelines and WGSL. Knows only vertices and matrices; it does not depend on the kernel.
 - `cad-app`: egui UI, cameras, tools, viewports.
 - `cad-import-export` (added in Phase 2): `to_svg` and `to_dxf`. Depends on `cad-document` and `cad-geometry`;
@@ -46,7 +48,7 @@ cad-app ──► cad-document ──► cad-constraints ──► cad-geometry 
 
 The brief lists 23 crates. A crate is created when its first real code exists; empty crates are not created.
 Planned splits: `cad-topology` and `cad-modeler` (Phase 3), `cad-constraints` and `cad-drafting` (Phase 2),
-`cad-architecture` (Phase 4), `cad-mechanical` and `cad-assembly` (Phase 5), `cad-analysis` (Phase 6),
+`cad-arch` (Phase 4, built), `cad-mechanical` and `cad-assembly` (Phase 5), `cad-analysis` (Phase 6),
 `cad-import-export` and `cad-plugin-api` (Phase 7).
 
 ## 3. Geometry representation
@@ -160,3 +162,12 @@ all UI clicks, so adding rows does not break them. Picks inside the 3D viewport 
   revolved for a circular rim) whose cross-section is the corner outside the fillet arc or the chamfer triangle,
   then subtracts it on a convex edge or adds it on a concave edge. The tool is tessellated finer than the body.
 - Picks are references, not snapshots: a sketch on a face stores the plane, the picked point and the body; a fillet or chamfer edge stores a point and the keys of its two faces (outward plane normal or cylinder axis). The rebuild places each face sketch once, before the first feature that uses it (unused ones on the final bodies), on the planar face with the same normal under the picked point, nearest to it; edges are the nearest edge between faces with matching keys. Placed planes are returned in `RebuildResult::planes` and shown by the app.
+
+## 10. Architecture (Phase 4)
+
+- Architectural elements are entities with their own `Shape` variant (`Wall` now), so selection, transforms, undo, layers, snapping and the file format come from the entity code.
+- A level is a sketch on XY with `level: Some(Level { height })`: name = storey name, offset expression = elevation, height = floor-to-floor height. Walls live only on levels (`NotALevel`).
+- Joins (`cad_arch::footprints`): ends within 0.001 mm meet; around the meeting point the ends are sorted by angle and each pair of neighbours meets where their facing faces cross. Three or more ends add the meeting point to each outline, so the hub is covered once. An end on another wall's baseline meets that wall's faces (T); crossing walls stay whole (X). Corners farther than 5 x the two thicknesses fall back to square ends.
+- Plan (`cad_arch::plan`): every outline is filled; an outline edge is drawn only where no other outline covers it, which cleans L, T and X joins without a polygon boolean.
+- Solids: the rebuild extrudes each outline from the level plane by the wall height into `RebuildResult::walls`. Walls are not features and are recomputed on every rebuild.
+- BIM: the entity `meta` map is the property bag (`Pset_X.Prop` keys become IFC property sets). IFC class from the shape kind, storey from the level, quantities computed from the solids and GlobalIds derived at export.

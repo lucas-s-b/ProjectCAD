@@ -129,7 +129,7 @@ fn only_the_requested_sketch_is_exported() {
     use cad_document::{BasePlane, Command, Entity, PlaneDef, Sketch};
     let mut d = sample::doc();
     let plane = PlaneDef::Principal { base: BasePlane::XZ, offset: "0".into() };
-    d.apply(Command::AddSketch(Sketch { id: 1, name: "S1".into(), plane })).unwrap();
+    d.apply(Command::AddSketch(Sketch { id: 1, name: "S1".into(), plane, level: None })).unwrap();
     let id = d.alloc_id();
     let circle = Shape::Circle { center: DVec2::new(7.0, 8.0), radius: 3.0 };
     d.apply(Command::Add(Entity { id, name: "c".into(), shape: circle, layer: 0, sketch: 1, construction: false, group: None, meta: Default::default() })).unwrap();

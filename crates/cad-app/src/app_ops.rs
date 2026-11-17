@@ -1,9 +1,20 @@
 use crate::app::CadApp;
 use cad_document::{Command, Entity, EntityId, LayerId, SketchId};
 use cad_geometry::xform::rotation_about;
-use cad_geometry::{DAffine2, DVec2, DVec3, Shape};
+use cad_geometry::{DAffine2, DVec2, DVec3, Shape, Wall};
 
 impl CadApp {
+    /// Adds a wall from `a` to `b` on the active sketch with the Wall tool settings; its height is the level height.
+    pub fn add_wall(&mut self, a: DVec2, b: DVec2) {
+        match self.doc.level_height(self.sketch) {
+            Ok(height) => self.add_shape(Shape::Wall(Wall { a, b, thickness: self.wall_thickness, height, align: self.wall_align })),
+            Err(e) => {
+                self.points.clear();
+                self.status = format!("Walls go on a level ({e}): add one in the Model tab");
+            }
+        }
+    }
+
     /// Drops selected entities that are gone, hidden or locked; falls back to layer 0 when the current layer is gone.
     pub fn sanitize(&mut self) {
         let keep: Vec<EntityId> =

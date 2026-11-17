@@ -1,9 +1,9 @@
 use crate::*;
-use cad_geometry::{DVec2, DVec3, Shape};
+use cad_geometry::{DVec2, DVec3, Shape, Wall, WallAlign};
 use cad_modeler::Plane3;
 
 fn sketch(id: SketchId, name: &str, plane: PlaneDef) -> Sketch {
-    Sketch { id, name: name.into(), plane }
+    Sketch { id, name: name.into(), plane, level: None }
 }
 
 fn principal(base: BasePlane, offset: &str) -> PlaneDef {
@@ -226,4 +226,52 @@ fn face_plane_must_hold_its_point() {
     let bad = d.apply(Command::AddSketch(sketch(1, "off", face(DVec3::new(1.0, 2.0, 11.0)))));
     assert!(matches!(bad, Err(DocError::BadPlane)));
     d.apply(Command::AddSketch(sketch(1, "on", face(DVec3::new(1.0, 2.0, 10.0))))).unwrap();
+}
+
+fn wall_in(id: EntityId, sketch: SketchId) -> Entity {
+    let w = Wall { a: DVec2::ZERO, b: DVec2::new(4000.0, 0.0), thickness: 200.0, height: 2500.0, align: WallAlign::Center };
+    Entity { id, name: format!("w{id}"), shape: Shape::Wall(w), layer: 0, sketch, construction: false, group: None, meta: Default::default() }
+}
+
+fn level(id: SketchId, offset: &str) -> Sketch {
+    Sketch { id, name: format!("L{id}"), plane: principal(BasePlane::XY, offset), level: Some(Level { height: "3000 mm".into() }) }
+}
+
+#[test]
+fn walls_only_on_levels() {
+    let mut d = doc_with_sketch_1();
+    assert!(matches!(d.apply(Command::Add(wall_in(1, 1))), Err(DocError::NotALevel(1))));
+    assert!(matches!(d.apply(Command::Add(wall_in(1, 0))), Err(DocError::NotALevel(0))));
+    d.apply(Command::AddSketch(level(2, "0"))).unwrap();
+    d.apply(Command::Add(wall_in(1, 2))).unwrap();
+    assert_eq!(d.level_height(2), Ok(3000.0));
+    assert!(d.level_height(1).is_err());
+    d.apply(Command::Add(line_in(5, 1))).unwrap();
+    let shape = d.get(1).unwrap().shape.clone();
+    assert!(matches!(d.apply(Command::SetShape { id: 5, shape }), Err(DocError::NotALevel(1))));
+    assert!(matches!(d.apply(Command::SetSketch(Sketch { level: None, ..level(2, "0") })), Err(DocError::NotALevel(2))));
+    let xz = Sketch { plane: principal(BasePlane::XZ, "0"), ..level(3, "0") };
+    assert!(matches!(d.apply(Command::AddSketch(xz)), Err(DocError::BadPlane)));
+}
+
+#[test]
+fn version_14_file_loads_without_levels() {
+    let old = r#"{"version":14,"name":"x","next_id":1,"entities":{},"sketches":{"0":{"id":0,"name":"Sketch 0","plane":{"Principal":{"base":"XY","offset":"0"}}}}}"#;
+    let d = load_text("v14", old).unwrap();
+    assert_eq!(d.sketch(0).unwrap().level, None);
+    let bad = r#"{"version":15,"name":"x","next_id":2,"entities":{"1":{"id":1,"name":"w","shape":{"Wall":{"a":[0.0,0.0],"b":[1000.0,0.0],"thickness":200.0,"height":2500.0,"align":"Center"}}}}}"#;
+    assert!(matches!(load_text("v15bad", bad), Err(DocError::NotALevel(0))));
+}
+
+#[test]
+fn levels_and_walls_roundtrip() {
+    let mut d = Document::new("lv");
+    d.apply(Command::AddSketch(level(1, "3000 mm"))).unwrap();
+    d.apply(Command::Add(wall_in(1, 1))).unwrap();
+    let p = temp("levels");
+    d.save(&p).unwrap();
+    let back = Document::load(&p).unwrap();
+    std::fs::remove_file(&p).unwrap();
+    assert_eq!(back.sketches().cloned().collect::<Vec<_>>(), d.sketches().cloned().collect::<Vec<_>>());
+    assert_eq!(back.get(1), d.get(1));
 }

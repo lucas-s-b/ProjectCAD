@@ -1,5 +1,5 @@
 use crate::document::{DocError, Document, FORMAT_VERSION};
-use cad_geometry::Tolerance;
+use cad_geometry::{Shape, Tolerance};
 use std::path::Path;
 
 impl Document {
@@ -53,6 +53,9 @@ impl Document {
         }
         if let Some(e) = doc.entities.values().find(|e| !doc.sketches.contains_key(&e.sketch)) {
             return Err(DocError::SketchNotFound(e.sketch));
+        }
+        if let Some(e) = doc.entities.values().find(|e| matches!(e.shape, Shape::Wall(_)) && !doc.is_level(e.sketch)) {
+            return Err(DocError::NotALevel(e.sketch));
         }
         if let Some(max) = doc.sketches.keys().next_back() {
             doc.next_sketch_id = doc.next_sketch_id.max(max.saturating_add(1));

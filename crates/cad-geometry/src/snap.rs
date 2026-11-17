@@ -26,6 +26,9 @@ pub fn snap_points(shape: &Shape) -> Vec<Snap> {
         Shape::Line { a, b } => {
             out.extend([s(*a, SnapKind::Endpoint), s(*b, SnapKind::Endpoint), s((*a + *b) / 2.0, SnapKind::Midpoint)]);
         }
+        Shape::Wall(w) => {
+            out.extend([s(w.a, SnapKind::Endpoint), s(w.b, SnapKind::Endpoint), s((w.a + w.b) / 2.0, SnapKind::Midpoint)]);
+        }
         Shape::Rect { min, max } => {
             let c = [*min, DVec2::new(max.x, min.y), *max, DVec2::new(min.x, max.y)];
             for i in 0..4 {
@@ -85,6 +88,7 @@ enum Prim {
 fn prims(shape: &Shape) -> Vec<Prim> {
     match shape {
         Shape::Line { a, b } => vec![Prim::Seg(*a, *b)],
+        Shape::Wall(w) => vec![Prim::Seg(w.a, w.b)],
         Shape::Rect { min, max } => {
             let c = [*min, DVec2::new(max.x, min.y), *max, DVec2::new(min.x, max.y)];
             (0..4).map(|i| Prim::Seg(c[i], c[(i + 1) % 4])).collect()

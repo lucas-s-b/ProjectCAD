@@ -123,6 +123,7 @@ fn shape(w: &mut W, s: &Shape, layer: &str, doc: &Document) {
             w.polyline(layer, &c, true);
         }
         Shape::Polyline { points, closed } => w.polyline(layer, points, *closed),
+        Shape::Wall(wall) => w.polyline(layer, &wall.corners(), true),
         // shortcut: R12 has no ELLIPSE or SPLINE entity, curves are exported as a flattened POLYLINE, upgrade with a newer DXF version
         Shape::Ellipse { .. } => w.polyline(layer, &flattened(s, true), true),
         Shape::Spline { closed, .. } => w.polyline(layer, &flattened(s, *closed), *closed),

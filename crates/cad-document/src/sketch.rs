@@ -1,13 +1,13 @@
 use crate::document::{Command, DocError, Document, Entity};
 use crate::feature::FeatureId;
-use cad_geometry::DVec3;
+use cad_geometry::{DVec3, Shape};
 use cad_modeler::Plane3;
 use cad_params::parse;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 pub type SketchId = u32;
-pub const FORMAT_VERSION: u32 = 14;
+pub const FORMAT_VERSION: u32 = 15;
 
 /// Axes (x, y, normal): XY = (X, Y, +Z); XZ = (X, Z, -Y); YZ = (Y, Z, +X).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -50,11 +50,21 @@ impl Document {
     }
 }
 
+/// A storey. Its sketch lies on the XY plane: the sketch name is the storey name, the plane offset its elevation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Level {
+    /// Floor-to-floor height, a length expression; new walls on the level take it as their height.
+    pub height: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Sketch {
     pub id: SketchId,
     pub name: String,
     pub plane: PlaneDef,
+    /// Present when the sketch is a level; walls live only on levels. None before version 15.
+    #[serde(default)]
+    pub level: Option<Level>,
 }
 
 pub(crate) fn first_sketch_id() -> SketchId {
@@ -63,7 +73,7 @@ pub(crate) fn first_sketch_id() -> SketchId {
 
 pub(crate) fn default_sketches() -> BTreeMap<SketchId, Sketch> {
     let plane = PlaneDef::Principal { base: BasePlane::XY, offset: "0".into() };
-    BTreeMap::from([(0, Sketch { id: 0, name: "Sketch 0".into(), plane })])
+    BTreeMap::from([(0, Sketch { id: 0, name: "Sketch 0".into(), plane, level: None })])
 }
 
 fn check_sketch(s: &Sketch) -> Result<(), DocError> {
@@ -83,10 +93,28 @@ fn check_sketch(s: &Sketch) -> Result<(), DocError> {
             }
         }
     }
+    if let Some(level) = &s.level {
+        if !matches!(s.plane, PlaneDef::Principal { base: BasePlane::XY, .. }) {
+            return Err(DocError::BadPlane);
+        }
+        parse(&level.height).map(drop)?;
+    }
     Ok(())
 }
 
 impl Document {
+    /// The sketch exists and is a level.
+    pub fn is_level(&self, sketch: SketchId) -> bool {
+        self.sketch(sketch).is_some_and(|s| s.level.is_some())
+    }
+
+    /// The evaluated storey height of a level.
+    pub fn level_height(&self, sketch: SketchId) -> Result<f64, String> {
+        let level = self.sketch(sketch).and_then(|s| s.level.as_ref()).ok_or("not a level")?;
+        let h = crate::rebuild::eval(self, &level.height, false)?;
+        if h > 0.0 { Ok(h) } else { Err("level height must be positive".into()) }
+    }
+
     pub fn sketches(&self) -> impl Iterator<Item = &Sketch> {
         self.sketches.values()
     }
@@ -156,6 +184,9 @@ impl Document {
                     return Err(DocError::SketchNotFound(s.id));
                 }
                 check_sketch(&s)?;
+                if s.level.is_none() && self.entities_in(s.id).any(|e| matches!(e.shape, Shape::Wall(_))) {
+                    return Err(DocError::NotALevel(s.id));
+                }
                 let old = self.sketches.insert(s.id, s).expect("checked above");
                 Ok(Command::SetSketch(old))
             }

@@ -4,7 +4,7 @@ use crate::rebuild_worker::RebuildWorker;
 use crate::{panels, view2d, view3d};
 use cad_document::{Plane3, Command, ConstraintId, Document, Entity, EntityId, History, LayerId, BodyOp, Feature, FeatureId, PointRef, RebuildResult, RevolveAxis, SketchId, BasePlane, Target};
 use cad_geometry::snap::Snap;
-use cad_geometry::{DVec2, DVec3, HatchPattern, Shape};
+use cad_geometry::{DVec2, DVec3, HatchPattern, Shape, WallAlign};
 use std::collections::BTreeSet;
 use eframe::egui;
 use std::path::PathBuf;
@@ -51,6 +51,7 @@ pub enum Tool {
     Leader,
     RadiusDim,
     AngleDim,
+    Wall,
     Trim,
     Extend,
     Offset,
@@ -148,6 +149,13 @@ pub struct CadApp {
     pub text_height: f64,
     pub dim_text_height: f64,
     pub polygon_sides: u32,
+    /// Thickness of new walls, mm.
+    pub wall_thickness: f64,
+    /// Alignment of new walls.
+    pub wall_align: WallAlign,
+    /// Elevation and height fields of the Levels controls.
+    pub level_elevation: String,
+    pub level_height: String,
     pub radial_diameter: bool,
     pub hatch_angle_deg: f64,
     pub hatch_spacing: f64,
@@ -255,6 +263,10 @@ impl CadApp {
             text_height: 5.0,
             dim_text_height: 3.5,
             polygon_sides: 6,
+            wall_thickness: 200.0,
+            wall_align: WallAlign::Center,
+            level_elevation: "0".into(),
+            level_height: "3000 mm".into(),
             radial_diameter: false,
             hatch_angle_deg: 45.0,
             hatch_spacing: 2.0,
@@ -469,10 +481,12 @@ impl CadApp {
     /// Union of all entity bboxes; a default box for an empty document.
     pub fn scene_bounds(&self) -> (DVec3, DVec3) {
         let bodies = self.model.iter().flat_map(|(_, m)| &m.bodies).map(|(_, b)| b.bbox());
+        let walls = self.model.iter().flat_map(|(_, m)| &m.walls).map(|(_, b)| b.bbox());
         self.doc
             .entities()
             .filter_map(|e| self.entity_bounds(e))
             .chain(bodies)
+            .chain(walls)
             .reduce(|(a, b), (c, d)| (a.min(c), b.max(d)))
             .unwrap_or((DVec3::new(-50.0, -50.0, 0.0), DVec3::new(50.0, 50.0, 50.0)))
     }

@@ -1,7 +1,7 @@
 use crate::app::CadApp;
 use cad_document::{Command, LayerId};
 use cad_geometry::xform::{mirror_across, rotation_about, scale_about};
-use cad_geometry::{DVec2, DVec3, Shape};
+use cad_geometry::{DVec2, DVec3, Shape, WallAlign};
 use crate::widgets as w;
 use eframe::egui;
 use std::collections::BTreeSet;
@@ -257,6 +257,18 @@ fn edit_shape(ui: &mut egui::Ui, shape: &mut Shape) {
             degrees(ui, "sweep", sweep);
             num(ui, "radius", radius);
             num(ui, "text height", text_height);
+        }
+        Shape::Wall(wall) => {
+            vec2(ui, "a", &mut wall.a);
+            vec2(ui, "b", &mut wall.b);
+            num(ui, "thickness", &mut wall.thickness);
+            num(ui, "height", &mut wall.height);
+            let align = wall.align;
+            w::combo(ui, "align", egui::ComboBox::from_id_salt("wall_align_inspector").selected_text(format!("{align:?}")), |ui| {
+                for a in [WallAlign::Center, WallAlign::Left, WallAlign::Right] {
+                    w::selectable_value(ui, &mut wall.align, a, &format!("{a:?}"));
+                }
+            });
         }
     }
 }

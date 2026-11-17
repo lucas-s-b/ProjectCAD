@@ -45,7 +45,7 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     if w::button(ui, "Add sketch").clicked() {
         let id = app.doc.alloc_sketch_id();
         let plane = PlaneDef::Principal { base: app.new_sketch_base, offset: app.new_sketch_offset.clone() };
-        app.exec(vec![Command::AddSketch(Sketch { id, name: format!("Sketch {id}"), plane })]);
+        app.exec(vec![Command::AddSketch(Sketch { id, name: format!("Sketch {id}"), plane, level: None })]);
         if app.doc.sketch(id).is_some() {
             app.set_sketch(id);
         }

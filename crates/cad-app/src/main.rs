@@ -15,6 +15,7 @@ mod glyphs;
 mod groups;
 mod hatch_panel;
 mod mcp;
+mod model_levels;
 mod model_sketches;
 mod model_features;
 mod model_shell;
@@ -30,6 +31,7 @@ mod view2d;
 mod view2d_annot;
 mod view2d_edit;
 mod view2d_tools;
+mod view2d_walls;
 mod view3d;
 mod widgets;
 

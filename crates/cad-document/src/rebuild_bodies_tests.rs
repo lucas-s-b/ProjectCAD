@@ -18,7 +18,7 @@ fn put(d: &mut Document, id: EntityId, sketch: SketchId, shape: Shape) {
 
 fn sketch_at(d: &mut Document, id: SketchId, base: BasePlane, offset: &str) {
     let plane = PlaneDef::Principal { base, offset: offset.into() };
-    d.apply(Command::AddSketch(Sketch { id, name: format!("S{id}"), plane })).unwrap();
+    d.apply(Command::AddSketch(Sketch { id, name: format!("S{id}"), plane, level: None })).unwrap();
 }
 
 struct Ex<'a> {
@@ -149,7 +149,7 @@ fn revolve_uses_the_sketch_plane() {
 fn fixed_plane_on_a_side_face() {
     let mut d = Document::new("fixed");
     let plane = PlaneDef::Fixed { origin: DVec3::new(40.0, 0.0, 0.0), x: DVec3::Y, y: DVec3::Z };
-    d.apply(Command::AddSketch(Sketch { id: 1, name: "Side".into(), plane })).unwrap();
+    d.apply(Command::AddSketch(Sketch { id: 1, name: "Side".into(), plane, level: None })).unwrap();
     put(&mut d, 1, 0, rect(0.0, 0.0, 40.0, 20.0));
     put(&mut d, 2, 1, circle(10.0, 2.5, 2.0));
     push(&mut d, 1, 1, ex("5 mm", BodyOp::Add));
@@ -308,7 +308,7 @@ fn face_sketch(at: DVec3) -> Document {
     put(&mut d, 1, 0, rect(0.0, 0.0, 40.0, 20.0));
     push(&mut d, 1, 1, ex("h", BodyOp::Add));
     let plane = PlaneDef::Face { origin: DVec3::new(0.0, 0.0, 10.0), x: DVec3::X, y: DVec3::Y, at, body: 1 };
-    d.apply(Command::AddSketch(Sketch { id: 1, name: "Top".into(), plane })).unwrap();
+    d.apply(Command::AddSketch(Sketch { id: 1, name: "Top".into(), plane, level: None })).unwrap();
     put(&mut d, 2, 1, circle(20.0, 10.0, 4.0));
     d
 }

@@ -7,6 +7,7 @@ pub mod profile;
 pub mod shape;
 pub mod snap;
 pub mod tol;
+pub mod wall;
 pub mod xform;
 
 #[cfg(test)]
@@ -19,3 +20,4 @@ pub use mesh::{Mesh, outline, outline_paths, tessellate};
 pub use pick::{distance_2d, point_segment_distance, ray_hit};
 pub use shape::{GeomError, HatchPattern, Shape};
 pub use tol::Tolerance;
+pub use wall::{Wall, WallAlign};

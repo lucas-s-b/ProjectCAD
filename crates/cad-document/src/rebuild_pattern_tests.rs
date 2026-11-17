@@ -144,7 +144,7 @@ fn count_is_an_expression_and_is_checked() {
 fn bossed_plate(op: BodyOp, at_x: f64) -> Document {
     let mut d = Document::new("boss");
     let plane = PlaneDef::Principal { base: BasePlane::XY, offset: "5 mm".into() };
-    d.apply(Command::AddSketch(Sketch { id: 1, name: "top".into(), plane })).unwrap();
+    d.apply(Command::AddSketch(Sketch { id: 1, name: "top".into(), plane, level: None })).unwrap();
     put(&mut d, 1, 0, rect(-50.0, -30.0, 50.0, 30.0));
     put(&mut d, 2, 1, circle(at_x, 10.0, 3.0));
     push(&mut d, extrude(1, 1, "5 mm", BodyOp::Add));
