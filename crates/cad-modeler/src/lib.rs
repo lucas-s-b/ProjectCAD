@@ -1,5 +1,6 @@
 mod blend;
 mod body;
+mod bvh;
 mod boolean;
 mod cap;
 mod edges;
@@ -10,12 +11,14 @@ mod loft;
 mod mass;
 mod plane;
 mod revolve;
+mod section;
 mod shell;
 mod sweep;
 mod tess;
 
 pub use blend::{chamfer_edge, fillet_edge};
 pub use body::{Body, BodyFace, union_all};
+pub use bvh::{Bvh, ray_triangle};
 pub use boolean::{BoolOp, boolean};
 pub use edges::{BodyEdge, Convexity, EdgeGeom};
 pub use cad_geometry::shape::GeomError;

@@ -12,8 +12,7 @@ fn escape(s: &str) -> String {
 }
 
 fn color(c: [u8; 3]) -> String {
-    // light screen colours would vanish on white paper
-    let c = if c.iter().all(|v| *v >= 200) { [0, 0, 0] } else { c };
+    let c = crate::paper_color(c);
     format!("#{:02x}{:02x}{:02x}", c[0], c[1], c[2])
 }
 

@@ -13,6 +13,8 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     model_features::show(app, ui);
     ui.separator();
     body(app, ui);
+    ui.separator();
+    crate::model_section::controls(app, ui);
     crate::model_sketches::show(app, ui);
 }
 

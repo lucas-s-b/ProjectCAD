@@ -39,6 +39,10 @@ pub enum Constraint {
     Collinear(Id, Id),
     /// Two points mirrored about a line.
     Symmetric(PointRef, PointRef, Id),
+    /// A point and a line.
+    PointOnLine(PointRef, Id),
+    /// A point and a circle/arc.
+    PointOnCircle(PointRef, Id),
     Fixed { point: PointRef, at: DVec2 },
     Distance(PointRef, PointRef, f64),
     /// Radians from the first line's direction to the second's, in (-PI, PI].
@@ -52,6 +56,7 @@ impl Constraint {
     pub fn entities(&self) -> Vec<Id> {
         let all = match self {
             Constraint::Coincident(p, q) | Constraint::Distance(p, q, _) => vec![p.entity, q.entity],
+            Constraint::PointOnLine(p, e) | Constraint::PointOnCircle(p, e) => vec![p.entity, *e],
             Constraint::Horizontal(a) | Constraint::Vertical(a) | Constraint::Radius(a, _) | Constraint::Diameter(a, _) => {
                 vec![*a]
             }
@@ -86,6 +91,8 @@ impl Constraint {
             Constraint::Equal(..) => "Equal",
             Constraint::Collinear(..) => "Collinear",
             Constraint::Symmetric(..) => "Symmetric",
+            Constraint::PointOnLine(..) => "Point on line",
+            Constraint::PointOnCircle(..) => "Point on circle",
             Constraint::Fixed { .. } => "Fixed",
             Constraint::Distance(..) => "Distance",
             Constraint::Angle(..) => "Angle",

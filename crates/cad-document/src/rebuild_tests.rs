@@ -5,7 +5,7 @@ use cad_modeler::Plane3;
 use std::f64::consts::{PI, TAU};
 
 fn entity(id: EntityId, shape: Shape) -> Command {
-    Command::Add(Entity { id, name: format!("e{id}"), shape, layer: 0, sketch: 0 })
+    Command::Add(Entity { id, name: format!("e{id}"), shape, layer: 0, sketch: 0, construction: false, group: None, meta: Default::default() })
 }
 
 fn circle(cx: f64, cy: f64, r: f64) -> Shape {
@@ -191,4 +191,27 @@ fn removed_features_leave_the_cache() {
     let r = rb.rebuild(&d);
     assert_eq!((r.recomputed, r.states.len()), (0, 1));
     close(volume(&r), 800.0 * 5.0, 1e-9);
+}
+
+#[test]
+fn rebuild_until_stops_and_keeps_cache() {
+    let d = plate();
+    let mut rb = Rebuilder::default();
+    let calls = std::cell::Cell::new(0usize);
+    let stop = || {
+        calls.set(calls.get() + 1);
+        calls.get() > 1
+    };
+    assert!(rb.rebuild_until(&d, &stop).is_none());
+    assert_eq!(rb.rebuild(&d).recomputed, 1);
+}
+
+#[test]
+fn panic_message_reads_str_and_string() {
+    let p: Box<dyn std::any::Any + Send> = Box::new("a");
+    assert_eq!(panic_message(p.as_ref()), "a");
+    let p: Box<dyn std::any::Any + Send> = Box::new(String::from("b"));
+    assert_eq!(panic_message(p.as_ref()), "b");
+    let p: Box<dyn std::any::Any + Send> = Box::new(3);
+    assert_eq!(panic_message(p.as_ref()), "unknown panic");
 }

@@ -59,17 +59,26 @@ Milestone 6 (done; checked in the running app through MCP unless noted):
 
 What the baseline says (see `docs/BENCHMARKS.md`):
 - Snap over 100 000 lines takes about 1 ms and picking about 11 ms: no spatial index is needed yet.
-- The solver takes about 0.22 s for a 150-line chain: the dense numeric Jacobian is the first thing to replace (Phase 3, before the feature graph relies on it).
+- The solver takes about 15 ms for a 150-line chain after the move to sparse normal equations (Phase 3).
 - A 100 000-line project is 31 MB of JSON and saves in about 80 ms: a binary format is not urgent.
 
-Leftovers from the brief's 2D scope (not built; picked up when their phase needs them):
-1. Blocks, groups and object metadata (with Phase 3 components)
-2. Construction and infinite lines; split, join, stretch, align, distribute; transforms with a picked base point
-3. Trim, extend, offset and intersections for ellipse and spline; fillet with arcs; hatch patterns and islands
-4. Constraints: glyphs on the canvas, point-on-curve, rectangle and polyline, pinned dragging, Symmetric in the UI
-5. Associative dimensions and hatches; true DXF DIMENSION entities; SVG import; PDF export
+Leftovers batch (done; unit-tested, main paths checked in the running app through MCP):
+- [x] Construction geometry; split, join, align, distribute
+- [x] Trim, split and intersection snap for ellipse and spline (through a 1e-4 mm flattening, not exact)
+- [x] Constraints: point on line, point on circle, Symmetric button, glyphs in the 2D view, pinned dragging
+- [x] Groups and object metadata; associative linear dimensions; hatch patterns (lines, cross, solid)
+- [x] SVG import; PDF export (hand-written vector PDF); file format version 11
+- [ ] Not exercised in the app: hatch pattern combo, Unlink, metadata remove, group selection in 3D and in the Objects list, File menu import/export dialogs
+- [ ] PDF never opened in a viewer; DXF, SVG, STL never opened in another program
+
+Still open from the brief's 2D scope:
+1. Blocks with shared definitions and instances
+2. Infinite construction lines, stretch, transforms with a picked base point
+3. Extend and offset for ellipse and spline; exact conic and spline intersections; fillet with arcs; hatch islands
+4. Constraints on rectangle and polyline
+5. Associative radial and angular dimensions and hatches; true DXF DIMENSION entities
 6. Parallel snap, user coordinate systems, line types and annotation text in the 3D view
-7. (done) MCP scripts click widgets by name (`click_widget`, `set_text`, `widgets`) and use no sleeps; 3D picks still use pixels
+7. Speed of ellipse and spline snapping (about 2000 segments per ellipse on every mouse move; not measured)
 
 ## Phase 3: Geometry and parametric modeling (in progress)
 Kernel decisions, both from measured spikes: truck rejected (`docs/KERNEL_EVAL.md`), own B-Rep kernel;
@@ -94,6 +103,15 @@ Done (unit-tested; the plate-with-hole flow checked in the running app through M
 - [x] Shell feature: hollow a body, optionally open on a picked planar face (Minkowski erosion in manifold-rust); file format version 10
 - [x] Rebuild runs on a worker thread; the window stays responsive and shows "Rebuilding..."
 - [x] Linear pattern, circular pattern and mirror features (of a feature or of all bodies); pattern of a pattern gives a grid; count is an expression; file format version 8
+- [x] Rebuild worker: a running rebuild stops when a newer request or a reset arrives (checked between features); a panic in a feature is reported as that feature's error, a panic outside a feature as an error on all features
+- [x] Sparse constraint solver (faer sparse Cholesky on the normal equations); a 400-line chain takes 178 ms (was 3.1 s)
+- [x] STEP export of the bodies as faceted B-Reps (AP214, one planar face per triangle), units mm; read back in tests and compared by volume
+- [x] BVH over body triangles for 3D ray picks (cached per body)
+- [x] Face selection in the 3D view: click a body face to highlight it and show its surface kind and area
+- [x] Section plane in the 3D view (axis, offset, flip); display only, picks still hit hidden parts
+- [x] Section caps: cut faces of feature bodies filled in the section view (not on Box/Cylinder/Sphere primitives)
+- [x] Edge selection in the 3D view: click an edge to see its kind, length or radius and convexity; hidden edges are not picked (blend picking too)
+- [x] Translate gizmo in the 3D view for selected Box, Cylinder and Sphere entities (drag an axis arrow); no grid snap
 - [ ] Built, not exercised in the app: Circular pattern and Mirror feature buttons, Revolve button, Intersect, Target other than Auto, reorder and delete buttons, feature editor fields other than distance, parameter and sketch delete, non-planar face pick, Re-pick edges, the highlight of picked edges
 
 Limits of this slice (state them wherever results are shown):
@@ -103,7 +121,6 @@ Limits of this slice (state them wherever results are shown):
 - The feature history is linear: changing an early feature recomputes everything after it.
 - Ellipse and spline cannot be part of a profile. Crossing profile loops are not detected.
 - Shell: the offset tool is a faceted sphere, so walls next to curved or slanted faces are slightly thicker than asked; an open shell needs a thickness of at most about a quarter of the body depth along the opening direction.
-- A panic in the rebuild worker is not handled: the UI would stay on "Rebuilding...".
 - Fillets and chamfers: no blending at corners where filleted edges meet; a stored edge is a picked point, so a
   feature reports "edge not found" when earlier features move that edge. A rim fillet on a round hole carries a
   few percent volume error at the 0.02 mm body tolerance (mesh slivers between facets and the true circle).
@@ -113,10 +130,10 @@ Remaining:
 2. Trimmed B-Rep faces rebuilt from boolean results; analytic intersection curves (plane with cylinder first)
 3. Smooth loft through three or more sections, loft sections with holes, self-intersection checks, draft; corner blending where filleted edges meet; fillets on other edge types
 4. NURBS curves and surfaces
-5. Parameters in sketch constraints and dimensions; analytic sparse Jacobian for the solver
-6. 3D gizmo, face and edge selection, section planes, BVH picking
-7. STEP export (truck writer as a reference)
-8. Handle a rebuild worker panic; cancel a running rebuild when a newer request arrives
+5. (done) Constraint values from parameter expressions; solver Jacobian restricted per variable. Sparse normal equations (faer); a 400-line chain now takes 178 ms
+6. (done) 3D gizmo, edge selection, section caps
+7. STEP export with analytic faces (faceted export done)
+8. (done) Handle a rebuild worker panic; cancel a running rebuild when a newer request arrives
 
 ## Phase 4: Architectural CAD
 Walls with automatic joins, doors, windows, floors, roofs, stairs, room detection and areas,

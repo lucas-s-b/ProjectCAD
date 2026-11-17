@@ -18,8 +18,8 @@ subsystem is first built (rule 7 of the brief).
 | Booleans | `manifold-rust` on the tessellation, face ids kept | boolmesh, csgrs, baby_shark, truck-shapeops | Passed all 11 measured cases with closed meshes; Apache-2.0; no C (`docs/BOOLEAN_EVAL.md`). boolmesh is the fallback. | Phase 3 |
 | Polygon triangulation | `earcutr` | own ear clipping | Small, pure Rust port of a well-tested algorithm. | Phase 3 |
 | Robust predicates | `robust` crate (Shewchuk port) | own implementation | Pure Rust, proven algorithm. | Phase 3 |
-| Constraint solver | Own dense Levenberg-Marquardt on nalgebra (`cad-constraints`) | ezpz (KittyCAD) | ezpz exists (MIT, crate `kcl-ezpz`, 0.2.x) but is pre-1.0 and built around the KCL data model; we need degrees-of-freedom and redundancy reports over our own shapes. Not benchmarked against ours (re-verify). Dense numeric Jacobian now; sparse analytic after a benchmark. | Phase 2 |
-| Spatial index | Linear scan; rstar (2D snap), BVH (3D pick) when needed | octree, k-d tree, grid | Measured: snap over 100 000 lines about 1 ms, pick about 11 ms (`docs/BENCHMARKS.md`). No index needed yet. | Phase 7 |
+| Constraint solver | Own Levenberg-Marquardt on faer sparse normal equations (`cad-constraints`) | ezpz (KittyCAD) | ezpz exists (MIT, crate `kcl-ezpz`, 0.2.x) but is pre-1.0 and built around the KCL data model; we need degrees-of-freedom and redundancy reports over our own shapes. Not benchmarked against ours (re-verify). Sparse numeric Jacobian, sparse Cholesky (faer); rank from dense pivoted QR. | Phase 2 |
+| Spatial index | Linear scan; rstar (2D snap) when needed; BVH over body triangles for 3D picks (Phase 3) | octree, k-d tree, grid | Measured: snap over 100 000 lines about 1 ms, pick about 11 ms (`docs/BENCHMARKS.md`). No index needed yet. | Phase 7 |
 | Parallelism | rayon | scoped threads | Added with the first measured hot loop (tessellation). | Phase 3 |
 | Collision / physics | parry, rapier | own | Pure Rust, mature. | Phase 5 |
 | Text | egui built-in now; cosmic-text for drawing text | — | Dimension text needs shaping and outlines. | Phase 2 |
@@ -112,7 +112,7 @@ FEA solvers; hidden-line removal. DWG has no acceptable pure-Rust path and stays
 - Units change only how lengths are displayed (dimensions, status bar). The model and the Properties fields stay in millimetres.
 - Text width is estimated (0.6 x height per character) until real text shaping is added. The 3D view shows text
   and dimensions as outlines. Export is 2D only: solids are skipped, dimensions are exploded in DXF.
-- Entities move in the 2D view or by numeric input; there is no 3D gizmo yet (Phase 3).
+- Entities move in the 2D view, by numeric input, or (solids) with the translate gizmo of the 3D view.
 
 ## 8. MCP mode (test and automation interface)
 

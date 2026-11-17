@@ -1,6 +1,6 @@
-use crate::{exported, flattened, num};
+use crate::{exported, flattened, label_origin, num};
 use cad_document::{Document, LayerId, LineType, SketchId};
-use cad_geometry::annot::{Align, fills, labels, strokes, text_box};
+use cad_geometry::annot::{fills, labels, strokes};
 use cad_geometry::{DVec2, Shape};
 use std::f64::consts::TAU;
 use std::fmt::{Display, Write};
@@ -68,6 +68,13 @@ impl W {
         self.pt(10, a);
         self.pt(11, b);
     }
+    /// A triangle: the fourth corner repeats the third.
+    fn solid(&mut self, layer: &str, t: &[DVec2; 3]) {
+        self.ent("SOLID", layer);
+        for (code, p) in [(10, t[0]), (11, t[1]), (12, t[2]), (13, t[2])] {
+            self.pt(code, p);
+        }
+    }
     fn circle(&mut self, layer: &str, c: DVec2, r: f64) {
         self.ent("CIRCLE", layer);
         self.pt(10, c);
@@ -130,7 +137,7 @@ fn shape(w: &mut W, s: &Shape, layer: &str, doc: &Document) {
     }
 }
 
-/// Strokes as LINE or open POLYLINE, arrow heads as 3 lines, labels as TEXT.
+/// Strokes as LINE or open POLYLINE, arrow heads as 3 lines, solid hatch triangles as SOLID, labels as TEXT.
 fn annotation(w: &mut W, s: &Shape, layer: &str, doc: &Document) {
     for p in strokes(s) {
         if let [a, b] = p[..] {
@@ -140,6 +147,10 @@ fn annotation(w: &mut W, s: &Shape, layer: &str, doc: &Document) {
         }
     }
     for t in fills(s) {
+        if matches!(s, Shape::Hatch { .. }) {
+            w.solid(layer, &t);
+            continue;
+        }
         for i in 0..3 {
             w.line(layer, t[i], t[(i + 1) % 3]);
         }
@@ -149,14 +160,8 @@ fn annotation(w: &mut W, s: &Shape, layer: &str, doc: &Document) {
             // R12 has no Unicode: AutoCAD control codes for the degree and diameter signs
             .replace('\u{b0}', "%%d")
             .replace('\u{d8}', "%%c");
-        // DXF TEXT is anchored at its baseline-left: move the estimated box so the label anchor lands where it belongs
-        let b = text_box(DVec2::ZERO, l.height, l.angle, &value);
-        let origin = match l.align {
-            Align::Left => l.anchor,
-            Align::Center => l.anchor - (b[0] + b[2]) / 2.0,
-            Align::Right => l.anchor - (b[1] - b[0]),
-        };
-        w.text(layer, origin, l.height, l.angle, &value);
+        // DXF TEXT is anchored at its baseline-left
+        w.text(layer, label_origin(&l, &value), l.height, l.angle, &value);
     }
 }
 

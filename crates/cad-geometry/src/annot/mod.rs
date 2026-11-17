@@ -1,6 +1,8 @@
 mod extra;
+mod triangulate;
 
 pub use extra::{hatch_lines, inside_polygon};
+pub use triangulate::triangulate;
 use crate::shape::Shape;
 use glam::DVec2;
 use std::f64::consts::{FRAC_PI_2, PI};
@@ -118,6 +120,9 @@ pub fn strokes(shape: &Shape) -> Vec<Vec<DVec2>> {
         _ => crate::mesh::outline_paths(shape).iter().map(|p| p.iter().map(|v| v.truncate()).collect()).collect(),
     }
 }
+
+#[cfg(test)]
+mod hatch_tests;
 
 #[cfg(test)]
 mod tests {

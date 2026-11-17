@@ -10,7 +10,10 @@ use std::sync::Arc;
 type Geometry = (Vec<Vertex>, Vec<Vertex>);
 
 const SELECTED: [f32; 3] = [1.0, 0.63, 0.0];
+const CAP: [f32; 3] = [0.80, 0.42, 0.32];
 const CAPTURED: [f32; 3] = [0.3, 0.8, 1.0];
+/// Dash and gap of construction geometry in sketch millimetres.
+const DASH_MM: (f64, f64) = (3.0, 2.0);
 
 pub fn init_renderer(cc: &eframe::CreationContext<'_>) {
     let rs = cc.wgpu_render_state.as_ref().expect("wgpu backend required");
@@ -25,6 +28,7 @@ pub fn init_renderer(cc: &eframe::CreationContext<'_>) {
 
 struct SceneCallback {
     view_proj: [[f32; 4]; 4],
+    clip: [f32; 4],
     geometry: Option<Arc<Geometry>>,
 }
 
@@ -41,7 +45,7 @@ impl egui_wgpu::CallbackTrait for SceneCallback {
             if let Some(g) = &self.geometry {
                 r.set_geometry(device, &g.0, &g.1);
             }
-            r.set_camera(queue, self.view_proj);
+            r.set_camera(queue, self.view_proj, self.clip);
         }
         Vec::new()
     }
@@ -62,24 +66,49 @@ fn vertex(p: DVec3, normal: [f32; 3], c: [f32; 3]) -> Vertex {
     Vertex { pos: p.as_vec3().to_array(), normal, color: [c[0], c[1], c[2], 1.0] }
 }
 
+/// The "on" parts of a segment under a dash pattern; `phase` is the distance walked in the pattern and carries over to the next segment.
+fn dashed(a: DVec3, b: DVec3, phase: &mut f64) -> Vec<[DVec3; 2]> {
+    let (len, period) = ((b - a).length(), DASH_MM.0 + DASH_MM.1);
+    let (mut out, mut s) = (Vec::new(), 0.0);
+    while s < len {
+        let p = *phase % period;
+        let (on, left) = if p < DASH_MM.0 { (true, DASH_MM.0 - p) } else { (false, period - p) };
+        let e = (s + left.max(1e-9)).min(len);
+        if on {
+            out.push([a + (b - a) * (s / len), a + (b - a) * (e / len)]);
+        }
+        *phase += e - s;
+        s = e;
+    }
+    out
+}
+
 fn build_scene(app: &CadApp) -> Geometry {
     let (mut tris, mut lines) = (Vec::new(), Vec::new());
+    {
+        // Grid and axes never take part in the section (alpha 0, see scene.wgsl).
+        let mut fixed = |a: DVec3, b: DVec3, c: [f32; 3]| {
+            for p in [a, b] {
+                lines.push(Vertex { pos: p.as_vec3().to_array(), normal: [0.0; 3], color: [c[0], c[1], c[2], 0.0] });
+            }
+        };
+        let grey = [0.3, 0.3, 0.3];
+        for i in -10..=10 {
+            let t = f64::from(i) * 10.0;
+            fixed(DVec3::new(t, -100.0, 0.0), DVec3::new(t, 100.0, 0.0), grey);
+            fixed(DVec3::new(-100.0, t, 0.0), DVec3::new(100.0, t, 0.0), grey);
+        }
+        fixed(DVec3::ZERO, DVec3::new(50.0, 0.0, 0.0), [0.9, 0.2, 0.2]);
+        fixed(DVec3::ZERO, DVec3::new(0.0, 50.0, 0.0), [0.2, 0.8, 0.2]);
+        fixed(DVec3::ZERO, DVec3::new(0.0, 0.0, 50.0), [0.3, 0.4, 1.0]);
+    }
     let mut line = |a: DVec3, b: DVec3, c: [f32; 3]| {
         lines.push(vertex(a, [0.0; 3], c));
         lines.push(vertex(b, [0.0; 3], c));
     };
-    let grey = [0.3, 0.3, 0.3];
-    for i in -10..=10 {
-        let t = f64::from(i) * 10.0;
-        line(DVec3::new(t, -100.0, 0.0), DVec3::new(t, 100.0, 0.0), grey);
-        line(DVec3::new(-100.0, t, 0.0), DVec3::new(100.0, t, 0.0), grey);
-    }
-    line(DVec3::ZERO, DVec3::new(50.0, 0.0, 0.0), [0.9, 0.2, 0.2]);
-    line(DVec3::ZERO, DVec3::new(0.0, 50.0, 0.0), [0.2, 0.8, 0.2]);
-    line(DVec3::ZERO, DVec3::new(0.0, 0.0, 50.0), [0.3, 0.4, 1.0]);
     for e in app.doc.entities().filter(|e| app.visible(e)) {
         let shape = app.display_shape(e);
-        let col = app.color(e).map(|c| f32::from(c) / 255.0);
+        let col = (if e.construction { crate::view2d::CONSTRUCTION_RGB } else { app.color(e) }).map(|c| f32::from(c) / 255.0);
         let selected = app.selection.contains(&e.id);
         let col = if !selected && app.captures.iter().any(|c| c.contains(&e.id)) { CAPTURED } else { col };
         // Solids are placed in world space; 2D shapes go through their sketch plane and vanish when it does not resolve.
@@ -87,12 +116,20 @@ fn build_scene(app: &CadApp) -> Geometry {
         if !shape.is_solid() && to_world.is_none() {
             continue;
         }
+        let mut phase = 0.0;
         for [a, b] in outline(&shape) {
             let (a, b) = match &to_world {
                 Some(f) if !shape.is_solid() => (f(a.truncate()), f(b.truncate())),
                 _ => (a, b),
             };
-            line(a, b, if selected { SELECTED } else { col });
+            let c = if selected { SELECTED } else { col };
+            if e.construction {
+                for [p, q] in dashed(a, b, &mut phase) {
+                    line(p, q, c);
+                }
+            } else {
+                line(a, b, c);
+            }
         }
         if let Some(mesh) = tessellate(&shape) {
             let color = if selected { SELECTED } else { col };
@@ -101,14 +138,25 @@ fn build_scene(app: &CadApp) -> Geometry {
             }
         }
     }
-    for (_, body) in app.model.iter().flat_map(|(_, m)| &m.bodies) {
+    for (id, body) in app.model.iter().flat_map(|(_, m)| &m.bodies) {
         let (mesh, grey) = (&body.mesh, [0.72, 0.75, 0.80]);
-        for (&i, n) in mesh.indices.iter().zip(&mesh.normals) {
-            tris.push(vertex(mesh.positions[i as usize], n.as_vec3().to_array(), grey));
+        for (corner, (&i, n)) in mesh.indices.iter().zip(&mesh.normals).enumerate() {
+            let color = if app.face_sel == Some((*id, body.tri_face[corner / 3])) { SELECTED } else { grey };
+            tris.push(vertex(mesh.positions[i as usize], n.as_vec3().to_array(), color));
         }
         for [a, b] in body.feature_edges() {
             lines.push(vertex(a, [0.0; 3], [0.12, 0.12, 0.14]));
             lines.push(vertex(b, [0.0; 3], [0.12, 0.12, 0.14]));
+        }
+        if let Some((axis, d)) = app.section.plane() {
+            let mut n = [0.0f32; 3];
+            n[axis] = if app.section.flip { -1.0 } else { 1.0 };
+            // Caps lie on the section plane: alpha 0 keeps the shader from clipping them.
+            for t in body.section_cap(axis, d) {
+                for p in t {
+                    tris.push(Vertex { pos: p.as_vec3().to_array(), normal: n, color: [CAP[0], CAP[1], CAP[2], 0.0] });
+                }
+            }
         }
     }
     for p in app.pick_edges.iter().flat_map(|p| &p.points) {
@@ -119,6 +167,14 @@ fn build_scene(app: &CadApp) -> Geometry {
                 for q in [e.points[i], e.points[(i + 1) % n]] {
                     lines.push(vertex(q, [0.0; 3], SELECTED));
                 }
+            }
+        }
+    }
+    if let Some((_, e)) = &app.edge_sel {
+        let n = e.points.len();
+        for i in 0..if e.closed { n } else { n - 1 } {
+            for q in [e.points[i], e.points[(i + 1) % n]] {
+                lines.push(vertex(q, [0.0; 3], SELECTED));
             }
         }
     }
@@ -133,6 +189,7 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
         app.pick_face = PickFace::Off;
         app.pick_edges = None;
+        app.gizmo = None;
     }
     if app.pick_edges.is_some() && !ui.ctx().egui_wants_keyboard_input() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
         crate::edge_pick::finish(app);
@@ -151,34 +208,38 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
             app.cam3d.zoom((-scroll * 0.002).exp());
         }
     }
+    crate::gizmo::input(app, ui, &resp, rect);
     if resp.clicked_by(PointerButton::Primary)
         && let Some(pos) = resp.interact_pointer_pos()
     {
         let (origin, dir) = ray(app, rect, pos);
         let hit = if app.pick_face != PickFace::Off || app.pick_edges.is_some() { None } else { pick(app, origin, dir) };
         let shift = ui.input(|i| i.modifiers.shift);
+        let pixel = 2.0 * 22.5f64.to_radians().tan() / f64::from(rect.height().max(1.0));
         match (hit, shift) {
             _ if app.pick_face != PickFace::Off => crate::face_pick::click(app, origin, dir),
-            _ if app.pick_edges.is_some() => {
-                let pixel = 2.0 * 22.5f64.to_radians().tan() / f64::from(rect.height().max(1.0));
-                crate::edge_pick::click(app, origin, dir, pixel);
-            }
-            (Some(id), true) => {
-                let mut ids = app.selection.clone();
-                if !ids.remove(&id) {
-                    ids.insert(id);
+            _ if app.pick_edges.is_some() => crate::edge_pick::click(app, origin, dir, pixel),
+            (hit, shift) => {
+                app.click_select(hit, shift);
+                let had_edge = app.edge_sel.take().is_some();
+                if hit.is_none() && !shift && crate::edge_pick::select_edge(app, origin, dir, pixel) {
+                    app.face_sel = None;
+                    app.sel_rev += 1;
+                } else if hit.is_none() && !shift {
+                    crate::face_pick::select_face(app, origin, dir);
+                    if had_edge {
+                        app.sel_rev += 1;
+                    }
+                } else if app.face_sel.take().is_some() || had_edge {
+                    app.sel_rev += 1;
                 }
-                app.set_selection(ids);
             }
-            (Some(id), false) => app.set_selection([id]),
-            (None, false) => app.set_selection([]),
-            (None, true) => {}
         }
     }
 
-    let stamp = (app.doc.revision(), app.model.as_ref().map_or(u64::MAX, |(r, _)| *r), app.sel_rev);
+    let stamp = (app.doc.revision(), app.model.as_ref().map_or(u64::MAX, |(r, _)| *r), app.sel_rev, app.section.clip());
     // The inspector buffer exists whenever one entity is selected; it only previews once it differs.
-    let preview = app.drag.is_some() || app.pick_edges.is_some()
+    let preview = app.drag.is_some() || app.pick_edges.is_some() || app.gizmo.is_some()
         || app.inspector.as_ref().is_some_and(|(id, s)| app.doc.get(*id).is_none_or(|e| e.shape != *s));
     let geometry = if preview || app.gpu_stamp != Some(stamp) {
         // While previewing the stamp stays unset, so the final state is uploaded afterwards.
@@ -188,7 +249,11 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
         None
     };
     let view_proj = app.cam3d.view_proj(aspect).to_cols_array_2d();
-    ui.painter().add(egui_wgpu::Callback::new_paint_callback(rect, SceneCallback { view_proj, geometry }));
+    ui.painter().add(egui_wgpu::Callback::new_paint_callback(rect, SceneCallback { view_proj, clip: app.section.clip(), geometry }));
+    app.gizmo_screen = crate::gizmo::screen(app, rect);
+    if let Some(p) = app.gizmo_screen {
+        crate::gizmo::paint(&ui.painter_at(rect), p, app.gizmo.as_ref().map(|g| g.axis));
+    }
     ui.painter_at(rect).text(
         rect.left_top() + egui::vec2(8.0, 8.0),
         egui::Align2::LEFT_TOP,
@@ -207,7 +272,7 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     }
 }
 
-fn ray(app: &CadApp, rect: egui::Rect, pos: egui::Pos2) -> (DVec3, DVec3) {
+pub(crate) fn ray(app: &CadApp, rect: egui::Rect, pos: egui::Pos2) -> (DVec3, DVec3) {
     let (w, h) = (rect.width(), rect.height().max(1.0));
     let ndc = Vec2::new(2.0 * (pos.x - rect.left()) / w - 1.0, 1.0 - 2.0 * (pos.y - rect.top()) / h);
     app.cam3d.ray(w / h, ndc)

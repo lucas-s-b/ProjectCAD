@@ -72,10 +72,11 @@ impl Shape {
             Shape::Spline { points, closed } => {
                 Shape::Spline { points: points.iter().map(|p| m.transform_point2(*p)).collect(), closed: *closed }
             }
-            Shape::Hatch { boundary, angle, spacing } => Shape::Hatch {
+            Shape::Hatch { boundary, angle, spacing, pattern } => Shape::Hatch {
                 boundary: boundary.iter().map(|p| m.transform_point2(*p)).collect(),
                 angle: m.transform_vector2(DVec2::from_angle(*angle)).to_angle(),
                 spacing: spacing * s,
+                pattern: *pattern,
             },
             Shape::Leader { points, text, text_height } => Shape::Leader {
                 points: points.iter().map(|p| m.transform_point2(*p)).collect(),

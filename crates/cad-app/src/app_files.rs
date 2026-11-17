@@ -53,12 +53,13 @@ impl CadApp {
                     let _ = self.open_path(p);
                 }
             }
-            Pending::Import => {
+            Pending::Import | Pending::ImportSvg => {
                 if self.mcp.is_some() {
                     self.status = "File dialogs are off in MCP mode; use import_project".into();
                     return;
                 }
-                if let Some(p) = rfd::FileDialog::new().add_filter("DXF", &["dxf"]).pick_file() {
+                let ext = if matches!(action, Pending::ImportSvg) { "svg" } else { "dxf" };
+                if let Some(p) = rfd::FileDialog::new().add_filter(ext.to_uppercase(), &[ext]).pick_file() {
                     let _ = self.import_path(p);
                 }
             }
@@ -87,11 +88,18 @@ impl CadApp {
         }
     }
 
-    /// Replaces the document with the contents of a DXF file, without a dialog and without the unsaved-changes guard.
+    /// Replaces the document with the contents of a DXF or SVG file (by extension), without a dialog and without the unsaved-changes guard.
     pub fn import_path(&mut self, p: PathBuf) -> Result<String, String> {
         let text = std::fs::read_to_string(&p).map_err(|e| format!("Import failed: {e}"));
         let name = p.file_stem().map_or_else(|| "Untitled".to_string(), |s| s.to_string_lossy().into_owned());
-        match text.and_then(|t| cad_import_export::from_dxf(&t, &name).map_err(|e| format!("Import failed: {e}"))) {
+        let ext = p.extension().map(|e| e.to_string_lossy().to_lowercase());
+        let parsed = text.and_then(|t| match ext.as_deref() {
+            Some("svg") => cad_import_export::from_svg(&t, &name),
+            Some("dxf") => cad_import_export::from_dxf(&t, &name),
+            _ => return Err("Import failed: unknown format; use .dxf or .svg".to_string()),
+        }
+        .map_err(|e| format!("Import failed: {e}")));
+        match parsed {
             Ok((doc, report)) => {
                 let skipped: Vec<String> = report.skipped.iter().map(|(k, n)| format!("{k} x{n}")).collect();
                 let mut msg = format!("Imported {} entities, skipped {}", report.imported, report.skipped.values().sum::<usize>());
@@ -144,19 +152,20 @@ impl CadApp {
         self.save_to(p)
     }
 
-    /// Writes SVG or DXF (visible 2D entities) or STL or OBJ (solid bodies), chosen by the file extension.
+    /// Writes SVG, DXF or PDF (visible 2D entities) or STL, OBJ or STEP (solid bodies), chosen by the file extension.
     pub fn export_path(&mut self, p: PathBuf) -> Result<(), String> {
         let ext = p.extension().map(|e| e.to_string_lossy().to_lowercase());
         let bytes = match ext.as_deref() {
             Some("svg") => cad_import_export::to_svg(&self.doc, self.sketch).into_bytes(),
             Some("dxf") => cad_import_export::to_dxf(&self.doc, self.sketch).into_bytes(),
-            Some(mesh @ ("stl" | "obj")) => {
+            Some("pdf") => cad_import_export::to_pdf(&self.doc, self.sketch),
+            Some(mesh @ ("stl" | "obj" | "step" | "stp")) => {
                 if !self.model_current() {
                     return Err("the model is still rebuilding; try again in a moment".into());
                 }
-                self.mesh_bytes(mesh == "obj")?
+                self.mesh_bytes(mesh)?
             }
-            _ => return Err("unknown export format; use .svg, .dxf, .stl or .obj".into()),
+            _ => return Err("unknown export format; use .svg, .dxf, .pdf, .stl, .obj or .step".into()),
         };
         // Write beside the target, then rename, like the project save.
         let mut tmp = p.clone().into_os_string();
@@ -171,16 +180,16 @@ impl CadApp {
         Ok(())
     }
 
-    /// STL or OBJ of the bodies of the current rebuild.
-    fn mesh_bytes(&self, obj: bool) -> Result<Vec<u8>, String> {
+    /// STL, OBJ or STEP (by extension) of the bodies of the current rebuild.
+    fn mesh_bytes(&self, ext: &str) -> Result<Vec<u8>, String> {
         let bodies: Vec<(u64, &cad_document::Body)> = self.model.iter().flat_map(|(_, m)| &m.bodies).map(|(id, b)| (*id, &**b)).collect();
         if bodies.is_empty() {
             return Err("no solid body to export".into());
         }
-        Ok(if obj {
-            cad_import_export::to_obj(&bodies).into_bytes()
-        } else {
-            cad_import_export::to_stl(&bodies.iter().map(|(_, b)| *b).collect::<Vec<_>>())
+        Ok(match ext {
+            "obj" => cad_import_export::to_obj(&bodies).into_bytes(),
+            "step" | "stp" => cad_import_export::to_step(&bodies, &self.doc.name).into_bytes(),
+            _ => cad_import_export::to_stl(&bodies.iter().map(|(_, b)| *b).collect::<Vec<_>>()),
         })
     }
 

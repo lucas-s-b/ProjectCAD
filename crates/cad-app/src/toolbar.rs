@@ -37,6 +37,7 @@ pub fn toolbar(app: &mut CadApp, ui: &mut egui::Ui) {
                 (Tool::Offset, "Offset"),
                 (Tool::Fillet, "Fillet"),
                 (Tool::Chamfer, "Chamfer"),
+                (Tool::Split, "Split"),
             ] {
                 w::selectable_value(ui, &mut app.tool, tool, label);
             }

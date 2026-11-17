@@ -216,3 +216,29 @@ fn bad_reference_reports_constraint_index() {
     let r = layout(&shapes, &[Constraint::Horizontal(1), Constraint::Vertical(8)]);
     assert!(matches!(r, Err(SolveError::BadReference { index: 1, reason: "entity not found" })));
 }
+
+#[test]
+fn point_on_line_and_circle() {
+    let on_line = |p: (f64, f64)| {
+        let shapes = vec![(1, line(0.0, 0.0, 2.0, 0.0)), (2, circle(p.0, p.1, 1.0))];
+        res(shapes, Constraint::PointOnLine(pt(2, Center), 1))
+    };
+    near(on_line((1.0, 0.0)), &[0.0]);
+    near(on_line((1.0, 3.0)), &[-3.0]);
+    let on_circle = |kind| res(vec![(1, circle(0.0, 0.0, 5.0)), (2, line(3.0, 4.0, 6.0, 8.0))], Constraint::PointOnCircle(pt(2, kind), 1));
+    near(on_circle(Start), &[0.0]);
+    near(on_circle(End), &[5.0]);
+}
+
+#[test]
+fn point_on_curve_references_are_checked() {
+    let l = || (1, line(0.0, 0.0, 1.0, 0.0));
+    let c = || (3, circle(0.0, 0.0, 1.0));
+    assert_eq!(reason(vec![l()], Constraint::PointOnLine(pt(1, Start), 1)), "same entity twice");
+    assert_eq!(reason(vec![c()], Constraint::PointOnLine(pt(3, Center), 3)), "wrong shape kind");
+    assert_eq!(reason(vec![c()], Constraint::PointOnCircle(pt(3, Center), 3)), "same entity twice");
+    assert_eq!(reason(vec![l(), c()], Constraint::PointOnCircle(pt(3, Center), 1)), "wrong shape kind");
+    assert_eq!(reason(vec![l(), c()], Constraint::PointOnLine(pt(1, Center), 1)), "no such point");
+    assert_eq!(Constraint::PointOnLine(pt(2, Start), 1).entities(), [2, 1]);
+    assert_eq!(Constraint::PointOnCircle(pt(2, Start), 1).name(), "Point on circle");
+}

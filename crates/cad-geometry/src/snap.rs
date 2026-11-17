@@ -98,13 +98,15 @@ fn prims(shape: &Shape) -> Vec<Prim> {
         Shape::Arc { center, radius, start, sweep } => {
             vec![Prim::Arc { c: *center, r: *radius, start: *start, sweep: *sweep }]
         }
+        // shortcut: ellipse and spline intersect through a 1e-4 mm flattening, replace with exact conic and NURBS intersection
+        Shape::Ellipse { .. } | Shape::Spline { .. } => {
+            crate::curve::flatten(shape, crate::curve::FLATTEN_TOL).windows(2).map(|w| Prim::Seg(w[0], w[1])).collect()
+        }
         Shape::Box { .. }
         | Shape::Cylinder { .. }
         | Shape::Sphere { .. }
         | Shape::Text { .. }
         | Shape::Dimension { .. }
-        | Shape::Ellipse { .. }
-        | Shape::Spline { .. }
         | Shape::Hatch { .. }
         | Shape::Leader { .. }
         | Shape::RadialDim { .. }
@@ -187,7 +189,14 @@ pub fn intersections(a: &Shape, b: &Shape) -> Vec<DVec2> {
             }
         }
     }
-    out
+    // a hit on the shared vertex of two flattened segments is found twice
+    let mut unique: Vec<DVec2> = Vec::with_capacity(out.len());
+    for p in out {
+        if !unique.iter().any(|q| q.distance(p) <= 1e-9) {
+            unique.push(p);
+        }
+    }
+    unique
 }
 
 /// Perpendicular feet and tangent points of the shape as seen from `f`.

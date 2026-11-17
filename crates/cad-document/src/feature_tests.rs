@@ -2,7 +2,7 @@ use crate::*;
 use cad_geometry::{DVec2, Shape};
 
 fn rect_entity(id: EntityId) -> Entity {
-    Entity { id, name: format!("r{id}"), shape: Shape::rect(DVec2::ZERO, DVec2::new(40.0, 20.0)), layer: 0, sketch: 0 }
+    Entity { id, name: format!("r{id}"), shape: Shape::rect(DVec2::ZERO, DVec2::new(40.0, 20.0)), layer: 0, sketch: 0, construction: false, group: None, meta: Default::default() }
 }
 
 fn extrude(id: FeatureId, profile: Vec<EntityId>, distance: &str) -> Feature {

@@ -2,7 +2,7 @@ use crate::linetype::LineType;
 use crate::feature::{Feature, FeatureId};
 use crate::sketch::{Sketch, SketchId, default_sketches, first_sketch_id};
 use crate::units::Settings;
-use cad_constraints::{Constraint, SolveError};
+use cad_constraints::{Constraint, PointRef, SolveError};
 use cad_geometry::{GeomError, Shape, Tolerance};
 use cad_params::{ParamError, ParamSet};
 use serde::{Deserialize, Serialize};
@@ -68,6 +68,10 @@ fn first_feature_id() -> FeatureId {
     1
 }
 
+fn first_group_id() -> u32 {
+    1
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Entity {
     pub id: EntityId,
@@ -77,6 +81,15 @@ pub struct Entity {
     pub layer: LayerId,
     #[serde(default)]
     pub sketch: SketchId,
+    /// Reference geometry: drawn dashed, snaps and takes constraints, but is not exported or used as a profile.
+    #[serde(default)]
+    pub construction: bool,
+    /// Entities sharing a group id are selected together. Not exported to DXF or SVG.
+    #[serde(default)]
+    pub group: Option<u32>,
+    /// Free key/value notes. Not exported to DXF or SVG.
+    #[serde(default)]
+    pub meta: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -95,6 +108,9 @@ pub struct Document {
     pub(crate) constraints: BTreeMap<ConstraintId, Constraint>,
     #[serde(default = "first_constraint_id")]
     pub(crate) next_constraint_id: ConstraintId,
+    /// Constraint id -> parameter expression that drives its value (distance, angle, radius, diameter).
+    #[serde(default)]
+    pub(crate) constraint_exprs: BTreeMap<ConstraintId, String>,
     #[serde(default)]
     pub(crate) params: ParamSet,
     #[serde(default)]
@@ -105,6 +121,11 @@ pub struct Document {
     pub(crate) sketches: BTreeMap<SketchId, Sketch>,
     #[serde(default = "first_sketch_id")]
     pub(crate) next_sketch_id: SketchId,
+    #[serde(default = "first_group_id")]
+    pub(crate) next_group_id: u32,
+    /// Linear dimension entity -> the two points it measures; the dimension follows them.
+    #[serde(default)]
+    pub(crate) dim_links: BTreeMap<EntityId, (PointRef, PointRef)>,
     #[serde(skip)]
     pub(crate) revision: u64,
 }
@@ -118,10 +139,15 @@ pub enum Command {
     RemoveLayer(LayerId),
     SetLayer(Layer),
     SetEntityLayer { id: EntityId, layer: LayerId },
+    SetConstruction { id: EntityId, on: bool },
     SetSettings(Settings),
     AddConstraint(ConstraintId, Constraint),
     RemoveConstraint(ConstraintId),
     SetConstraint(ConstraintId, Constraint),
+    /// `Some` makes the expression drive the constraint value, `None` removes it. The constraint must have a value.
+    SetConstraintExpr { id: ConstraintId, expr: Option<String> },
+    /// The inverse of removing a constraint that had an expression.
+    AddConstraintWithExpr(ConstraintId, Constraint, String),
     AddFeature { index: usize, feature: Feature },
     RemoveFeature(FeatureId),
     /// Replaces the feature with the same id.
@@ -133,6 +159,14 @@ pub enum Command {
     RemoveSketch(SketchId),
     /// Replaces the sketch with the same id.
     SetSketch(Sketch),
+    /// `None` removes the entities from their groups.
+    SetGroup { ids: Vec<EntityId>, group: Option<u32> },
+    /// The inverse of `SetGroup`: sets each entity's own previous group.
+    RestoreGroups(Vec<(EntityId, Option<u32>)>),
+    /// `None` removes the key.
+    SetMeta { id: EntityId, key: String, value: Option<String> },
+    /// `None` removes the link. The entity must be a linear dimension.
+    SetDimLink { id: EntityId, link: Option<(PointRef, PointRef)> },
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -171,6 +205,8 @@ pub enum DocError {
     EntityConstrained(EntityId),
     #[error(transparent)]
     Solve(#[from] SolveError),
+    #[error("constraint {id}: {message}")]
+    ConstraintExpr { id: ConstraintId, message: String },
     #[error("feature {0} not found")]
     FeatureNotFound(FeatureId),
     #[error("feature {0} already exists")]
@@ -211,11 +247,14 @@ impl Document {
             settings: Settings::default(),
             constraints: BTreeMap::new(),
             next_constraint_id: first_constraint_id(),
+            constraint_exprs: BTreeMap::new(),
             params: ParamSet::default(),
             features: Vec::new(),
             next_feature_id: first_feature_id(),
             sketches: default_sketches(),
             next_sketch_id: first_sketch_id(),
+            next_group_id: first_group_id(),
+            dim_links: BTreeMap::new(),
             revision: 0,
         }
     }
@@ -294,6 +333,9 @@ impl Document {
                 if self.features.iter().any(|f| f.entities().contains(&id)) {
                     return Err(DocError::EntityInFeature(id));
                 }
+                if self.dim_links.contains_key(&id) || self.dim_links.values().any(|(p, q)| p.entity == id || q.entity == id) {
+                    return Err(DocError::EntityConstrained(id));
+                }
                 let removed = self.entities.remove(&id).ok_or(DocError::NotFound(id))?;
                 Command::Add(removed)
             }
@@ -344,13 +386,22 @@ impl Document {
                 let old = std::mem::replace(&mut e.layer, layer);
                 Command::SetEntityLayer { id, layer: old }
             }
+            Command::SetConstruction { id, on } => {
+                let e = self.entities.get_mut(&id).ok_or(DocError::NotFound(id))?;
+                let old = std::mem::replace(&mut e.construction, on);
+                Command::SetConstruction { id, on: old }
+            }
             Command::SetSettings(s) => {
                 if s.precision > 8 {
                     return Err(DocError::BadPrecision);
                 }
                 Command::SetSettings(std::mem::replace(&mut self.settings, s))
             }
-            Command::AddConstraint(..) | Command::RemoveConstraint(_) | Command::SetConstraint(..) => {
+            Command::AddConstraint(..)
+            | Command::AddConstraintWithExpr(..)
+            | Command::RemoveConstraint(_)
+            | Command::SetConstraint(..)
+            | Command::SetConstraintExpr { .. } => {
                 self.apply_constraint(cmd)?
             }
             Command::AddFeature { .. }
@@ -359,6 +410,8 @@ impl Document {
             | Command::MoveFeature { .. }
             | Command::SetParam { .. } => self.apply_feature(cmd)?,
             Command::AddSketch(_) | Command::RemoveSketch(_) | Command::SetSketch(_) => self.apply_sketch(cmd)?,
+            Command::SetGroup { .. } | Command::RestoreGroups(_) | Command::SetMeta { .. } => self.apply_group(cmd)?,
+            Command::SetDimLink { .. } => self.apply_dim_link(cmd)?,
         };
         self.revision += 1;
         Ok(inverse)

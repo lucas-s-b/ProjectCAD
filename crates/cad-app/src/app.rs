@@ -2,12 +2,38 @@ use crate::camera::{Camera2D, OrbitCamera};
 use crate::mcp::{self, bridge::Bridge};
 use crate::rebuild_worker::RebuildWorker;
 use crate::{panels, view2d, view3d};
-use cad_document::{Command, ConstraintId, Document, Entity, EntityId, History, LayerId, BodyOp, Feature, FeatureId, RebuildResult, RevolveAxis, SketchId, BasePlane, Target};
+use cad_document::{Command, ConstraintId, Document, Entity, EntityId, History, LayerId, BodyOp, Feature, FeatureId, PointRef, RebuildResult, RevolveAxis, SketchId, BasePlane, Target};
 use cad_geometry::snap::Snap;
-use cad_geometry::{DVec2, DVec3, Shape};
+use cad_geometry::{DVec2, DVec3, HatchPattern, Shape};
 use std::collections::BTreeSet;
 use eframe::egui;
 use std::path::PathBuf;
+
+/// Display-only section: keeps the side of the plane `axis = offset` with smaller coordinates, or the other side when flipped.
+pub struct SectionView {
+    pub on: bool,
+    pub axis: usize,
+    pub offset: String,
+    pub flip: bool,
+}
+
+impl SectionView {
+    /// Axis and offset of the active plane; None when off or when the offset does not parse.
+    pub fn plane(&self) -> Option<(usize, f64)> {
+        let d = self.offset.trim().parse::<f64>().ok()?;
+        self.on.then_some((self.axis, d))
+    }
+
+    /// Plane for the shader; everything is kept when off or when the offset does not parse.
+    pub fn clip(&self) -> [f32; 4] {
+        let Some((axis, d)) = self.plane() else { return [0.0, 0.0, 0.0, 1.0] };
+        let s = if self.flip { -1.0 } else { 1.0 };
+        let mut c = [0.0f32; 4];
+        c[axis] = s;
+        c[3] = (d * f64::from(s)) as f32;
+        c
+    }
+}
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Tool {
@@ -30,12 +56,13 @@ pub enum Tool {
     Offset,
     Fillet,
     Chamfer,
+    Split,
 }
 
 impl Tool {
     /// Tools that collect points by clicking.
     pub fn is_draw(self) -> bool {
-        !matches!(self, Tool::Select | Tool::Trim | Tool::Extend | Tool::Offset | Tool::Fillet | Tool::Chamfer)
+        !matches!(self, Tool::Select | Tool::Trim | Tool::Extend | Tool::Offset | Tool::Fillet | Tool::Chamfer | Tool::Split)
     }
 }
 
@@ -67,6 +94,7 @@ pub enum Pending {
     New,
     Open,
     Import,
+    ImportSvg,
     Quit,
 }
 
@@ -91,8 +119,8 @@ pub struct CadApp {
     pub status: String,
     pub cursor_world: DVec2,
     pub confirm: Option<Pending>,
-    /// (doc.revision, model revision, sel_rev) last uploaded to the GPU.
-    pub gpu_stamp: Option<(u64, u64, u64)>,
+    /// (doc.revision, model revision, sel_rev, section clip) last uploaded to the GPU.
+    pub gpu_stamp: Option<(u64, u64, u64, [f32; 4])>,
     /// Central panel rect of the last frame, used to fit the 2D camera.
     pub view_rect: egui::Rect,
     pub last_title: String,
@@ -103,6 +131,8 @@ pub struct CadApp {
     pub sketch: SketchId,
     pub osnap: bool,
     pub grid_snap: bool,
+    /// Constraint labels in the 2D view.
+    pub show_glyphs: bool,
     /// Snap found this frame, for the marker.
     pub snap: Option<Snap>,
     pub rot_deg: f64,
@@ -121,11 +151,14 @@ pub struct CadApp {
     pub radial_diameter: bool,
     pub hatch_angle_deg: f64,
     pub hatch_spacing: f64,
+    pub hatch_pattern: HatchPattern,
+    /// Add-metadata row: (key, value).
+    pub meta_new: (String, String),
     pub array: crate::app_ops::ArrayParams,
     /// Text of the coordinate field in the status bar.
     pub coord_input: String,
-    /// Uncommitted value edit of a constraint.
-    pub constraint_edit: Option<(ConstraintId, f64)>,
+    /// Uncommitted text of a constraint value field.
+    pub constraint_edit: Option<(ConstraintId, String)>,
     /// Constraint status text per document revision.
     pub constraint_cache: Option<(u64, Option<String>)>,
     pub side_tab: SideTab,
@@ -159,6 +192,18 @@ pub struct CadApp {
     pub model: Option<(u64, RebuildResult)>,
     /// Fit the 3D camera to the first result after a document was replaced.
     pub fit_on_model: bool,
+    /// Ray-pick acceleration structures of the bodies in `model`, see `face_pick::ray_body`.
+    /// Selected body face: (body id, index into `body.faces`).
+    pub face_sel: Option<(FeatureId, u32)>,
+    /// Body edge selected in the 3D view, for its measurements.
+    pub edge_sel: Option<(FeatureId, cad_document::BodyEdge)>,
+    /// Gizmo drag in progress in the 3D view.
+    pub gizmo: Option<crate::gizmo::GizmoDrag>,
+    /// Gizmo screen points of the last frame; used for hit tests.
+    pub gizmo_screen: Option<[egui::Pos2; 4]>,
+    /// Section plane of the 3D view.
+    pub section: SectionView,
+    pub bvhs: Vec<(std::sync::Arc<cad_document::Body>, std::sync::Arc<cad_document::Bvh>)>,
     /// Named widgets of the last complete frame.
     pub widgets: Vec<crate::widgets::WidgetHit>,
     /// Present only with --mcp.
@@ -193,6 +238,7 @@ impl CadApp {
             sketch: 0,
             osnap: true,
             grid_snap: false,
+            show_glyphs: true,
             snap: None,
             rot_deg: 90.0,
             scale_factor: 2.0,
@@ -208,6 +254,8 @@ impl CadApp {
             radial_diameter: false,
             hatch_angle_deg: 45.0,
             hatch_spacing: 2.0,
+            hatch_pattern: HatchPattern::default(),
+            meta_new: Default::default(),
             array: Default::default(),
             coord_input: String::new(),
             constraint_edit: None,
@@ -234,6 +282,12 @@ impl CadApp {
             requested: None,
             model: None,
             fit_on_model: false,
+            bvhs: Vec::new(),
+            section: SectionView { on: false, axis: 2, offset: "0".into(), flip: false },
+            face_sel: None,
+            edge_sel: None,
+            gizmo: None,
+            gizmo_screen: None,
             widgets: Vec::new(),
             mcp: mcp.then(|| mcp::spawn(cc.egui_ctx.clone())),
         }
@@ -243,6 +297,8 @@ impl CadApp {
     pub fn sync_model(&mut self) {
         if let Some(m) = self.worker.poll() {
             self.model = Some(m);
+            self.face_sel = None;
+            self.edge_sel = None;
             if std::mem::take(&mut self.fit_on_model) {
                 let (lo, hi) = self.scene_bounds();
                 self.cam3d.fit(lo, hi);
@@ -260,6 +316,8 @@ impl CadApp {
         self.worker.reset();
         self.requested = None;
         self.model = None;
+        self.face_sel = None;
+        self.edge_sel = None;
         self.fit_on_model = true;
     }
 
@@ -294,6 +352,16 @@ impl CadApp {
         self.sanitize();
     }
 
+    /// Like `exec`, but the solve afterwards keeps the pinned entities where the commands put them.
+    pub fn exec_pinned(&mut self, cmds: Vec<Command>, pinned: &BTreeSet<EntityId>) {
+        self.inspector = None;
+        self.status.clear();
+        if let Err(e) = self.history.execute_pinned(&mut self.doc, cmds, pinned) {
+            self.status = e.to_string();
+        }
+        self.sanitize();
+    }
+
     /// Like `exec`, but a run with the same key is one undo step.
     pub fn exec_merged(&mut self, cmds: Vec<Command>, key: u64) {
         self.inspector = None;
@@ -305,13 +373,20 @@ impl CadApp {
     }
 
     pub fn add_shape(&mut self, shape: Shape) {
+        self.add_shape_linked(shape, None);
+    }
+
+    /// Adds the shape; a linear dimension also gets its link in the same undo step.
+    pub fn add_shape_linked(&mut self, shape: Shape, link: Option<(PointRef, PointRef)>) {
         if !self.doc.layer(self.layer).is_some_and(|l| l.visible && !l.locked) {
             self.status = "Current layer is hidden or locked".into();
             return;
         }
         let id = self.doc.alloc_id();
         let name = format!("{} {}", shape.kind(), id);
-        self.exec(vec![Command::Add(Entity { id, name, shape, layer: self.layer, sketch: self.sketch })]);
+        let mut cmds = vec![Command::Add(Entity { id, name, shape, layer: self.layer, sketch: self.sketch, construction: false, group: None, meta: Default::default() })];
+        cmds.extend(link.map(|l| Command::SetDimLink { id, link: Some(l) }));
+        self.exec(cmds);
         if self.doc.get(id).is_some() {
             self.set_selection([id]);
         }
@@ -319,9 +394,11 @@ impl CadApp {
 
     pub fn delete_selection(&mut self) {
         let constraints: BTreeSet<ConstraintId> = self.selection.iter().flat_map(|id| self.doc.constraints_of(*id)).collect();
+        let links = self.selection.iter().filter(|id| self.doc.dim_link(**id).is_some()).map(|id| Command::SetDimLink { id: *id, link: None });
         let cmds: Vec<Command> = constraints
             .into_iter()
             .map(Command::RemoveConstraint)
+            .chain(links)
             .chain(self.selection.iter().map(|id| Command::Remove(*id)))
             .collect();
         self.exec(cmds);
@@ -341,6 +418,13 @@ impl CadApp {
         {
             let mut s = e.shape.clone();
             s.translate((now - start).extend(0.0));
+            return s;
+        }
+        if let Some(g) = &self.gizmo
+            && self.selection.contains(&e.id)
+        {
+            let mut s = e.shape.clone();
+            s.translate(g.delta());
             return s;
         }
         e.shape.clone()

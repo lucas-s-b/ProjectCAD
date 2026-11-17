@@ -288,6 +288,9 @@ fn summary_fields(app: &CadApp) -> serde_json::Map<String, Value> {
         "selection": app.selection.iter().collect::<Vec<_>>(),
         "captures": app.captures.iter().map(Vec::len).collect::<Vec<_>>(),
         "dirty": app.is_dirty(),
+        "section": app.section.on.then(|| app.section.clip()),
+        "face_sel": app.face_sel.map(|(b, f)| [b, u64::from(f)]),
+        "edge_sel": app.edge_sel.as_ref().map(|(b, _)| b),
     }) else {
         unreachable!()
     };
@@ -347,6 +350,12 @@ fn state_json(app: &CadApp, ctx: &egui::Context) -> Value {
         }),
     );
     insert_model(app, &mut m);
+    let cap_area: Option<f64> = app.section.plane().map(|(axis, d)| {
+        app.model.iter().flat_map(|(_, m)| &m.bodies).flat_map(|(_, b)| b.section_cap(axis, d))
+            .map(|[a, b, c]| 0.5 * (b - a).cross(c - a).length()).sum()
+    });
+    m.insert("gizmo".into(), json!(app.gizmo_screen.map(|g| g.map(|p| [(p.x * ppp).round(), (p.y * ppp).round()]))));
+    m.insert("section_cap_area".into(), json!(cap_area));
     m.insert("constraint_status".into(), json!(crate::constraints_panel::status_text(&app.doc)));
     m.insert("document".into(), serde_json::to_value(&app.doc).unwrap_or(Value::Null));
     Value::Object(m)

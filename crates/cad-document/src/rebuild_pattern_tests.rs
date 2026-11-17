@@ -14,7 +14,7 @@ pub(crate) fn rect(x0: f64, y0: f64, x1: f64, y1: f64) -> Shape {
 }
 
 pub(crate) fn put(d: &mut Document, id: EntityId, sketch: SketchId, shape: Shape) {
-    d.apply(Command::Add(Entity { id, name: format!("e{id}"), shape, layer: 0, sketch })).unwrap();
+    d.apply(Command::Add(Entity { id, name: format!("e{id}"), shape, layer: 0, sketch, construction: false, group: None, meta: Default::default() })).unwrap();
 }
 
 pub(crate) fn extrude(id: FeatureId, profile: EntityId, distance: &str, op: BodyOp) -> Feature {

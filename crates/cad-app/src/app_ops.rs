@@ -69,7 +69,7 @@ impl CadApp {
 
     pub fn new_entity(&mut self, shape: Shape, layer: LayerId) -> Entity {
         let id = self.doc.alloc_id();
-        Entity { id, name: format!("{} {}", shape.kind(), id), shape, layer, sketch: self.sketch }
+        Entity { id, name: format!("{} {}", shape.kind(), id), shape, layer, sketch: self.sketch, construction: false, group: None, meta: Default::default() }
     }
 
     pub fn visible(&self, e: &Entity) -> bool {
@@ -119,7 +119,7 @@ impl CadApp {
         for (shape, layer) in src {
             let id = self.doc.alloc_id();
             ids.push(id);
-            cmds.push(Command::Add(Entity { id, name: format!("{} {}", shape.kind(), id), shape, layer, sketch: self.sketch }));
+            cmds.push(Command::Add(Entity { id, name: format!("{} {}", shape.kind(), id), shape, layer, sketch: self.sketch, construction: false, group: None, meta: Default::default() }));
         }
         self.exec(cmds);
         let made: Vec<EntityId> = ids.into_iter().filter(|id| self.doc.get(*id).is_some()).collect();

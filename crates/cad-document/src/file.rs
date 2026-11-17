@@ -60,12 +60,24 @@ impl Document {
         if let Some(missing) = doc.constraints.values().flat_map(|c| c.entities()).find(|e| !doc.entities.contains_key(e)) {
             return Err(DocError::NotFound(missing));
         }
+        if let Some(stray) = doc.constraint_exprs.keys().find(|id| !doc.constraints.contains_key(id)) {
+            return Err(DocError::ConstraintNotFound(*stray));
+        }
         if let Some(missing) = doc.features.iter().flat_map(|f| f.entities()).find(|e| !doc.entities.contains_key(e)) {
             return Err(DocError::NotFound(missing));
         }
         if let Some(missing) = doc.features.iter().filter_map(|f| f.source()).find(|s| doc.feature(*s).is_none()) {
             return Err(DocError::FeatureNotFound(missing));
         }
+        for (dim, (p, q)) in &doc.dim_links {
+            if let Some(missing) = [dim, &p.entity, &q.entity].into_iter().find(|e| !doc.entities.contains_key(e)) {
+                return Err(DocError::NotFound(*missing));
+            }
+        }
+        if let Some(max) = doc.entities.values().filter_map(|e| e.group).max() {
+            doc.next_group_id = doc.next_group_id.max(max.saturating_add(1));
+        }
+        doc.next_group_id = doc.next_group_id.max(1);
         if let Some(max) = doc.features.iter().map(|f| f.id).max() {
             doc.next_feature_id = doc.next_feature_id.max(max.saturating_add(1));
         }
@@ -109,7 +121,7 @@ mod tests {
         .enumerate()
         {
             let id = d.alloc_id();
-            d.apply(Command::Add(Entity { id, name: format!("e{i}"), shape, layer: 1, sketch: 0 })).unwrap();
+            d.apply(Command::Add(Entity { id, name: format!("e{i}"), shape, layer: 1, sketch: 0, construction: false, group: None, meta: Default::default() })).unwrap();
         }
         let p = temp("roundtrip");
         d.save(&p).unwrap();
@@ -202,7 +214,7 @@ mod tests {
     fn params_and_features_roundtrip() {
         let mut d = Document::new("f");
         let id = d.alloc_id();
-        d.apply(Command::Add(Entity { id, name: "r".into(), shape: Shape::rect(DVec2::ZERO, DVec2::ONE), layer: 0, sketch: 0 })).unwrap();
+        d.apply(Command::Add(Entity { id, name: "r".into(), shape: Shape::rect(DVec2::ZERO, DVec2::ONE), layer: 0, sketch: 0, construction: false, group: None, meta: Default::default() })).unwrap();
         d.apply(Command::SetParam { name: "t".into(), expr: Some("5 mm".into()) }).unwrap();
         let kind = FeatureKind::Revolve { profile: vec![id], axis: RevolveAxis::Line(id), angle: "90 deg".into(), op: BodyOp::Cut, target: Target::Auto };
         let feature = Feature { id: d.alloc_feature_id(), name: "rev".into(), suppressed: true, kind };

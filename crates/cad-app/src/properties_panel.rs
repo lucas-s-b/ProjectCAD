@@ -1,7 +1,7 @@
 use crate::app::CadApp;
 use cad_document::{Command, LayerId};
 use cad_geometry::xform::{mirror_across, rotation_about, scale_about};
-use cad_geometry::{DVec2, DVec3, Shape, outline_paths};
+use cad_geometry::{DVec2, DVec3, Shape};
 use crate::widgets as w;
 use eframe::egui;
 use std::collections::BTreeSet;
@@ -12,42 +12,25 @@ pub fn properties(app: &mut CadApp, ui: &mut egui::Ui, ctx: &egui::Context) {
         return;
     }
     layer_combo(app, ui);
+    construction_checkbox(app, ui);
+    crate::groups::group_buttons(app, ui);
     transform_group(app, ui);
+    crate::arrange::arrange_group(app, ui);
     array_group(app, ui);
     inspector(app, ui, ctx);
-    hatch_group(app, ui);
+    crate::dim_link::show(app, ui);
+    crate::groups::metadata(app, ui);
+    crate::hatch_panel::hatch_group(app, ui);
 }
 
-/// Boundary of a closed curve as its flattened path without the repeated last point.
-fn hatch_boundary(shape: &Shape) -> Option<Vec<DVec2>> {
-    let closed = match shape {
-        Shape::Rect { .. } | Shape::Circle { .. } | Shape::Ellipse { .. } => true,
-        Shape::Polyline { closed, .. } | Shape::Spline { closed, .. } => *closed,
-        _ => false,
-    };
-    if !closed {
-        return None;
+/// A mixed selection shows unchecked; a click sets every selected entity.
+fn construction_checkbox(app: &mut CadApp, ui: &mut egui::Ui) {
+    let all = app.selection.iter().filter_map(|id| app.doc.get(*id)).all(|e| e.construction);
+    let mut on = all;
+    if w::checkbox(ui, &mut on, "Construction").clicked() {
+        let cmds = app.selection.iter().map(|id| Command::SetConstruction { id: *id, on }).collect();
+        app.exec(cmds);
     }
-    let mut path = outline_paths(shape).into_iter().next()?;
-    path.pop();
-    Some(path.iter().map(|p| p.truncate()).collect())
-}
-
-fn hatch_group(app: &mut CadApp, ui: &mut egui::Ui) {
-    let Some(id) = (app.selection.len() == 1).then(|| app.selection.iter().next().copied()).flatten() else { return };
-    let Some((boundary, layer)) = app.doc.get(id).and_then(|e| Some((hatch_boundary(&e.shape)?, e.layer))) else { return };
-    ui.group(|ui| {
-        ui.label("Hatch");
-        ui.horizontal(|ui| {
-            w::add(ui, "Hatch angle", egui::DragValue::new(&mut app.hatch_angle_deg).speed(0.5));
-            w::add(ui, "Hatch spacing", egui::DragValue::new(&mut app.hatch_spacing).speed(0.1).range(0.0..=f64::MAX));
-        });
-        if w::button(ui, "Hatch").clicked() {
-            let shape = Shape::Hatch { boundary, angle: app.hatch_angle_deg.to_radians(), spacing: app.hatch_spacing };
-            let e = app.new_entity(shape, layer);
-            app.exec(vec![Command::Add(e)]);
-        }
-    });
 }
 
 fn layer_combo(app: &mut CadApp, ui: &mut egui::Ui) {
@@ -250,10 +233,11 @@ fn edit_shape(ui: &mut egui::Ui, shape: &mut Shape) {
             num(ui, "offset", offset);
             num(ui, "text height", text_height);
         }
-        Shape::Hatch { boundary, angle, spacing } => {
+        Shape::Hatch { boundary, angle, spacing, pattern } => {
             ui.label(format!("{} boundary points", boundary.len()));
             degrees(ui, "angle", angle);
             num(ui, "spacing", spacing);
+            crate::hatch_panel::pattern_combo(ui, "hatch_pattern_inspector", pattern);
         }
         Shape::Leader { points, text, text_height } => {
             ui.label(format!("{} points", points.len()));

@@ -25,7 +25,7 @@ fn top() -> DVec3 {
 /// A 40 x 20 x 10 plate (feature 1) and t = 2 mm.
 fn plate() -> Document {
     let mut d = Document::new("plate");
-    d.apply(Command::Add(Entity { id: 1, name: "r".into(), shape: Shape::rect(DVec2::ZERO, DVec2::new(40.0, 20.0)), layer: 0, sketch: 0 })).unwrap();
+    d.apply(Command::Add(Entity { id: 1, name: "r".into(), shape: Shape::rect(DVec2::ZERO, DVec2::new(40.0, 20.0)), layer: 0, sketch: 0, construction: false, group: None, meta: Default::default() })).unwrap();
     d.apply(Command::SetParam { name: "t".into(), expr: Some("2 mm".into()) }).unwrap();
     let kind = FeatureKind::Extrude { profile: vec![1], distance: "10 mm".into(), offset: "0".into(), op: BodyOp::Add, flip: false, target: Target::Auto };
     push(&mut d, feature(1, kind));

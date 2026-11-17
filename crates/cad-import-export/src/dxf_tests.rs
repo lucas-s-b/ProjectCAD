@@ -65,7 +65,7 @@ fn layers_are_sanitised_unique_and_coloured() {
     let names: Vec<&str> = n.iter().map(|(_, s)| s.as_str()).collect();
     assert_eq!(names, ["0", "A_B", "A-B", "X_Y", "A_B_4"]);
     let id = d.alloc_id();
-    d.apply(Command::Add(Entity { id, name: "x".into(), shape: Shape::Line { a: DVec2::ZERO, b: DVec2::X }, layer: 1, sketch: 0 })).unwrap();
+    d.apply(Command::Add(Entity { id, name: "x".into(), shape: Shape::Line { a: DVec2::ZERO, b: DVec2::X }, layer: 1, sketch: 0, construction: false, group: None, meta: Default::default() })).unwrap();
     let dr = load(&d);
     let layers: Vec<_> = dr.layers().map(|l| (l.name.clone(), l.color.index())).collect();
     assert_eq!(layers[1], ("A_B".to_string(), Some(1)));
@@ -84,7 +84,7 @@ fn hidden_layers_and_solids_are_skipped() {
 fn full_arc_is_a_circle() {
     let mut d = Document::new("a");
     let arc = Shape::Arc { center: DVec2::ZERO, radius: 3.0, start: 1.0, sweep: TAU };
-    d.apply(Command::Add(Entity { id: 1, name: "a".into(), shape: arc, layer: 0, sketch: 0 })).unwrap();
+    d.apply(Command::Add(Entity { id: 1, name: "a".into(), shape: arc, layer: 0, sketch: 0, construction: false, group: None, meta: Default::default() })).unwrap();
     let dr = load(&d);
     assert!(matches!(dr.entities().next().unwrap().specific, EntityType::Circle(_)));
 }
@@ -113,7 +113,7 @@ fn ellipse_and_spline_become_polylines() {
     ];
     for shape in shapes {
         let id = d.alloc_id();
-        d.apply(Command::Add(Entity { id, name: "e".into(), shape, layer: 0, sketch: 0 })).unwrap();
+        d.apply(Command::Add(Entity { id, name: "e".into(), shape, layer: 0, sketch: 0, construction: false, group: None, meta: Default::default() })).unwrap();
     }
     let dr = load(&d);
     let es: Vec<_> = dr.entities().collect();
@@ -135,4 +135,26 @@ fn annotation_shapes_read_back() {
     assert_eq!(count(|e| matches!(e, EntityType::Line(_))), 5 + 3 + 4 + 6);
     let texts: Vec<_> = es.iter().filter_map(|e| if let EntityType::Text(t) = &e.specific { Some(t.value.clone()) } else { None }).collect();
     assert_eq!(texts, ["Note", "R20.00", "90.00%%d"]);
+}
+
+#[test]
+fn solid_hatch_is_written_as_solid_triangles() {
+    use cad_geometry::HatchPattern;
+    let l = [DVec2::new(0.0, 0.0), DVec2::new(10.0, 0.0), DVec2::new(10.0, 4.0), DVec2::new(4.0, 4.0), DVec2::new(4.0, 10.0), DVec2::new(0.0, 10.0)];
+    let mut d = Document::new("c");
+    let shape = Shape::Hatch { boundary: l.to_vec(), angle: 0.0, spacing: 2.0, pattern: HatchPattern::Solid };
+    let id = d.alloc_id();
+    d.apply(Command::Add(Entity { id, name: "h".into(), shape, layer: 0, sketch: 0, construction: false, group: None, meta: Default::default() })).unwrap();
+    let dr = load(&d);
+    let tris: Vec<_> = dr
+        .entities()
+        .filter_map(|e| if let EntityType::Solid(s) = &e.specific { Some([&s.first_corner, &s.second_corner, &s.third_corner]) } else { None })
+        .collect();
+    assert_eq!(tris.len(), 4);
+    let area: f64 = tris.iter().map(|t| ((t[1].x - t[0].x) * (t[2].y - t[0].y) - (t[2].x - t[0].x) * (t[1].y - t[0].y)).abs() / 2.0).sum();
+    // the L: 10 x 10 minus the 6 x 6 notch
+    assert!(close(area, 64.0), "{area}");
+    // one outline ring, no hatch lines
+    assert_eq!(dr.entities().filter(|e| matches!(e.specific, EntityType::Polyline(_))).count(), 1);
+    assert_eq!(dr.entities().filter(|e| matches!(e.specific, EntityType::Line(_))).count(), 0);
 }

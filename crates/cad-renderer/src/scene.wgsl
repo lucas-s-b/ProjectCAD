@@ -1,10 +1,12 @@
-struct Camera { view_proj: mat4x4<f32> };
+// clip: keep points with dot(clip.xyz, p) <= clip.w; (0, 0, 0, 1) keeps everything.
+struct Camera { view_proj: mat4x4<f32>, clip: vec4<f32> };
 @group(0) @binding(0) var<uniform> camera: Camera;
 
 struct VsOut {
     @builtin(position) pos: vec4<f32>,
     @location(0) normal: vec3<f32>,
     @location(1) color: vec4<f32>,
+    @location(2) world: vec3<f32>,
 };
 
 @vertex
@@ -15,13 +17,15 @@ fn vs_main(@location(0) pos: vec3<f32>, @location(1) normal: vec3<f32>, @locatio
     if (dot(normal, normal) < 0.01) { out.pos.z -= 0.0002 * out.pos.w; }
     out.normal = normal;
     out.color = color;
+    out.world = pos;
     return out;
 }
 
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-    if (dot(in.normal, in.normal) < 0.01) { return in.color; }
+    if (in.color.a > 0.5 && dot(camera.clip.xyz, in.world) > camera.clip.w) { discard; }
+    if (dot(in.normal, in.normal) < 0.01) { return vec4<f32>(in.color.rgb, 1.0); }
     let l = normalize(vec3<f32>(0.4, 0.3, 0.85));
     let shade = 0.35 + 0.65 * abs(dot(normalize(in.normal), l));
-    return vec4<f32>(in.color.rgb * shade, in.color.a);
+    return vec4<f32>(in.color.rgb * shade, 1.0);
 }

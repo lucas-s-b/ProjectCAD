@@ -1,16 +1,13 @@
 use crate::document::{Document, EntityId};
 use crate::feature::{BODY_TOLERANCE, Feature, FeatureKind};
-use crate::rebuild::{Inputs, Tool};
+use crate::rebuild::{Inputs, Tool, profile_shapes};
 use cad_geometry::profile::{Profile, chain};
 use cad_geometry::{DVec3, Shape};
 use cad_modeler::{PathPiece, Plane3, path_pieces};
 
 /// The shapes of one group of entities (all in one sketch, checked when the feature is added) and that sketch's plane.
 fn group<'a>(doc: &'a Document, ids: &[EntityId]) -> Result<(Vec<&'a Shape>, Plane3), String> {
-    let shapes = ids
-        .iter()
-        .map(|&id| doc.get(id).map(|e| &e.shape).ok_or_else(|| format!("entity {id} not found")))
-        .collect::<Result<Vec<_>, _>>()?;
+    let shapes = profile_shapes(doc, ids)?;
     let sketch = ids.first().and_then(|id| doc.get(*id)).map_or(0, |e| e.sketch);
     Ok((shapes, doc.resolve_plane(sketch)?))
 }

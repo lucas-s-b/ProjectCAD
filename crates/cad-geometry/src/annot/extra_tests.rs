@@ -18,7 +18,7 @@ fn ok(s: &Shape) -> bool {
 
 #[test]
 fn validation() {
-    let hatch = |boundary: Vec<DVec2>, spacing: f64| Shape::Hatch { boundary, angle: 0.0, spacing };
+    let hatch = |boundary: Vec<DVec2>, spacing: f64| Shape::Hatch { boundary, angle: 0.0, spacing, pattern: HatchPattern::Lines };
     assert!(ok(&hatch(square(), 2.0)));
     assert!(!ok(&hatch(square()[..2].to_vec(), 2.0)));
     assert!(!ok(&hatch(vec![v2(0.0, 0.0), v2(0.0, 0.0), v2(5.0, 5.0)], 2.0)));
@@ -148,7 +148,7 @@ fn angular_layout() {
 
 fn samples() -> Vec<Shape> {
     vec![
-        Shape::Hatch { boundary: square(), angle: 0.3, spacing: 2.0 },
+        Shape::Hatch { boundary: square(), angle: 0.3, spacing: 2.0, pattern: HatchPattern::Lines },
         Shape::Leader { points: vec![v2(0.0, 0.0), v2(10.0, 10.0), v2(30.0, 10.0)], text: "Note".into(), text_height: 2.0 },
         Shape::RadialDim { center: v2(1.0, 2.0), radius: 5.0, angle: 1.0, text_height: 2.0, diameter: true },
         Shape::AngularDim { center: v2(1.0, 1.0), start: 0.5, sweep: 2.0, radius: 10.0, text_height: 2.0 },
@@ -181,17 +181,17 @@ fn kinds_and_snaps() {
 
 #[test]
 fn distance_inside_hatch_is_zero() {
-    let h = Shape::Hatch { boundary: square(), angle: 0.0, spacing: 2.5 };
+    let h = Shape::Hatch { boundary: square(), angle: 0.0, spacing: 2.5, pattern: HatchPattern::Lines };
     assert_eq!(crate::distance_2d(&h, v2(5.0, 5.1)), 0.0);
     assert!((crate::distance_2d(&h, v2(13.0, 5.0)) - 3.0).abs() < 1e-9);
 }
 
 #[test]
 fn rotate_hatch_by_90() {
-    let h = Shape::Hatch { boundary: square(), angle: 0.0, spacing: 2.0 };
-    let Shape::Hatch { boundary, angle, spacing } = h.transformed(&rotation_about(DVec2::ZERO, FRAC_PI_2)).unwrap() else { panic!() };
+    let h = Shape::Hatch { boundary: square(), angle: 0.0, spacing: 2.0, pattern: HatchPattern::Cross };
+    let Shape::Hatch { boundary, angle, spacing, pattern } = h.transformed(&rotation_about(DVec2::ZERO, FRAC_PI_2)).unwrap() else { panic!() };
     assert!(close(boundary[1], v2(0.0, 10.0)) && close(boundary[2], v2(-10.0, 10.0)));
-    assert!((angle - FRAC_PI_2).abs() < 1e-9 && spacing == 2.0);
+    assert!((angle - FRAC_PI_2).abs() < 1e-9 && spacing == 2.0 && pattern == HatchPattern::Cross);
 }
 
 #[test]

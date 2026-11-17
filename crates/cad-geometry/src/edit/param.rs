@@ -1,3 +1,4 @@
+use crate::curve::{FLATTEN_TOL, ellipse_point, flatten_param, spline_point, spline_spans};
 use crate::shape::{GeomError, Shape};
 use crate::tol::Tolerance;
 use glam::DVec2;
@@ -24,6 +25,8 @@ pub(crate) fn domain(shape: &Shape) -> Option<(f64, bool)> {
         Shape::Line { .. } => Some((1.0, false)),
         Shape::Arc { sweep, .. } => Some((*sweep, false)),
         Shape::Circle { .. } => Some((TAU, true)),
+        Shape::Ellipse { .. } => Some((TAU, true)),
+        Shape::Spline { points, closed } => Some((spline_spans(points, *closed) as f64, *closed)),
         Shape::Polyline { .. } | Shape::Rect { .. } => {
             let (pts, closed) = poly(shape)?;
             Some((seg_count(pts.len(), closed) as f64, closed))
@@ -32,12 +35,28 @@ pub(crate) fn domain(shape: &Shape) -> Option<(f64, bool)> {
     }
 }
 
-/// Error for edit operations on a shape that has no curve parameter.
+/// Error for edit operations that ellipses and splines do not support (extend, offset), or on a shape that has no curve parameter.
 pub(crate) fn not_curve(shape: &Shape) -> GeomError {
     match shape {
         Shape::Ellipse { .. } | Shape::Spline { .. } => GeomError::Unsupported("not supported for this shape yet"),
         _ => GeomError::Unsupported("this shape is not a curve"),
     }
+}
+
+// shortcut: ellipse and spline parameters come from a 1e-4 mm flattening, replace with exact projection onto the conic and the spline
+/// Parameter of the point of the flattening nearest to `p`, interpolated along its chord.
+fn nearest_on_flattening(shape: &Shape, p: DVec2) -> f64 {
+    let flat = flatten_param(shape, FLATTEN_TOL);
+    let mut best = (f64::INFINITY, 0.0);
+    for w in flat.windows(2) {
+        let ((t0, a), (t1, b)) = (w[0], w[1]);
+        let s = project(a, b, p);
+        let d = (a + (b - a) * s).distance(p);
+        if d < best.0 {
+            best = (d, t0 + (t1 - t0) * s);
+        }
+    }
+    best.1
 }
 
 fn project(a: DVec2, b: DVec2, p: DVec2) -> f64 {
@@ -49,6 +68,7 @@ pub(crate) fn param_of(shape: &Shape, p: DVec2) -> f64 {
     match shape {
         Shape::Line { a, b } => project(*a, *b, p),
         Shape::Circle { center, .. } => (p - *center).to_angle().rem_euclid(TAU),
+        Shape::Ellipse { .. } | Shape::Spline { .. } => nearest_on_flattening(shape, p),
         Shape::Arc { center, start, sweep, .. } => {
             let off = ((p - *center).to_angle() - start).rem_euclid(TAU);
             if off <= *sweep {
@@ -80,6 +100,13 @@ pub(crate) fn point_at(shape: &Shape, u: f64) -> DVec2 {
     match shape {
         Shape::Line { a, b } => *a + (*b - *a) * u,
         Shape::Circle { center, radius } => *center + DVec2::from_angle(u) * *radius,
+        Shape::Ellipse { center, rx, ry, angle } => ellipse_point(*center, *rx, *ry, *angle, u),
+        Shape::Spline { points, closed } => {
+            let spans = spline_spans(points, *closed);
+            let u = if *closed { u.rem_euclid(spans as f64) } else { u };
+            let i = (u.floor().max(0.0) as usize).min(spans - 1);
+            spline_point(points, *closed, i, u - i as f64)
+        }
         Shape::Arc { center, radius, start, .. } => *center + DVec2::from_angle(start + u) * *radius,
         _ => {
             let Some((pts, closed)) = poly(shape) else { return DVec2::ZERO };
@@ -101,6 +128,29 @@ pub(crate) fn sub(shape: &Shape, u0: f64, u1: f64) -> Option<Shape> {
         }
         Shape::Circle { center, radius } => {
             Shape::Arc { center: *center, radius: *radius, start: u0, sweep: u1 - u0 }
+        }
+        Shape::Ellipse { .. } => {
+            // an ellipse piece is not an ellipse: it becomes the polyline of the flattening between the two angles
+            let flat = flatten_param(shape, FLATTEN_TOL);
+            let mut out = vec![point_at(shape, u0)];
+            for lap in [0.0, TAU] {
+                out.extend(flat[..flat.len() - 1].iter().filter(|(t, _)| t + lap > u0 + 1e-9 && t + lap < u1 - 1e-9).map(|(_, p)| *p));
+            }
+            out.push(point_at(shape, u1));
+            Shape::Polyline { points: out, closed: false }
+        }
+        Shape::Spline { points, .. } => {
+            // shortcut: the piece is a new spline through the cut points and the original fit points between them, its shape differs slightly near the cuts, replace with exact knot insertion
+            let mut out = vec![point_at(shape, u0)];
+            let n = points.len() as i64;
+            let first = (u0 + 1e-9).floor() as i64 + 1;
+            for i in first..=(u1 - 1e-9).ceil() as i64 {
+                if (i as f64) > u0 + 1e-9 && (i as f64) < u1 - 1e-9 {
+                    out.push(points[(i % n) as usize]);
+                }
+            }
+            out.push(point_at(shape, u1));
+            Shape::Spline { points: out, closed: false }
         }
         _ => {
             let (pts, _) = poly(shape)?;

@@ -1,4 +1,4 @@
-use crate::document::Document;
+use crate::document::{Document, EntityId};
 use crate::feature::{BODY_TOLERANCE, BodyOp, Feature, FeatureId, FeatureKind, RevolveAxis, Target};
 use crate::rebuild_blend::Blend;
 use crate::rebuild_pattern::{Pattern, resolve_pattern};
@@ -119,7 +119,7 @@ pub(crate) fn resolve_solid(doc: &Document, f: &Feature) -> Result<Inputs, Strin
         _ => return Err(NOT_SOLID.to_string()),
     };
     let shape = |id| doc.get(id).map(|e| &e.shape).ok_or_else(|| format!("entity {id} not found"));
-    let shapes = profile_ids.iter().map(|&id| shape(id)).collect::<Result<Vec<&Shape>, _>>()?;
+    let shapes = profile_shapes(doc, profile_ids)?;
     let profile = Profile::from_shapes(&shapes).map_err(|e| e.to_string())?;
     let shapes_json = serde_json::to_string(&shapes).map_err(|e| e.to_string())?;
     // A profile is never empty and all its entities share a sketch (both checked when the feature is added).
@@ -141,6 +141,18 @@ pub(crate) fn resolve_solid(doc: &Document, f: &Feature) -> Result<Inputs, Strin
         _ => return Err(NOT_SOLID.to_string()),
     };
     Ok(Inputs { profile, shapes_json, plane, tool, op, target })
+}
+
+/// The shapes of the entities that make up a profile or path; construction entities are left out.
+pub(crate) fn profile_shapes<'a>(doc: &'a Document, ids: &[EntityId]) -> Result<Vec<&'a Shape>, String> {
+    let mut shapes = Vec::new();
+    for &id in ids {
+        let e = doc.get(id).ok_or_else(|| format!("entity {id} not found"))?;
+        if !e.construction {
+            shapes.push(&e.shape);
+        }
+    }
+    Ok(shapes)
 }
 
 /// `a` combined with `b`; an empty result is `None`.
@@ -266,10 +278,19 @@ impl Rebuilder {
     /// Walks the features in order; features whose inputs and predecessors are unchanged come from the cache.
     /// A suppressed or failed feature leaves the bodies as they were and never stops the features after it.
     pub fn rebuild(&mut self, doc: &Document) -> RebuildResult {
+        self.rebuild_until(doc, &|| false).expect("never stopped")
+    }
+
+    /// Like `rebuild`, but returns `None` as soon as `stop` says so; `stop` is checked before every feature.
+    /// Features finished before the stop stay cached.
+    pub fn rebuild_until(&mut self, doc: &Document, stop: &dyn Fn() -> bool) -> Option<RebuildResult> {
         let mut bodies: Bodies = Vec::new();
         let (mut prev, mut recomputed) = (0u64, 0);
         let mut states = BTreeMap::new();
         for f in doc.features() {
+            if stop() {
+                return None;
+            }
             if f.suppressed {
                 states.insert(f.id, FeatureState::Suppressed);
                 prev = hash_of((prev, f.id, "suppressed"));
@@ -291,7 +312,9 @@ impl Rebuilder {
                 continue;
             }
             recomputed += 1;
-            let state = match step.apply(f.id, &bodies) {
+            let applied = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| step.apply(f.id, &bodies)))
+                .unwrap_or_else(|p| Err(format!("internal error: {}", panic_message(p.as_ref()))));
+            let state = match applied {
                 Ok(b) => {
                     bodies = b;
                     FeatureState::Ok
@@ -302,8 +325,13 @@ impl Rebuilder {
             states.insert(f.id, state);
         }
         self.cache.retain(|id, _| doc.feature(*id).is_some());
-        RebuildResult { bodies, states, recomputed }
+        Some(RebuildResult { bodies, states, recomputed })
     }
+}
+
+/// Text of a panic payload (`panic!` gives `&str` or `String`).
+pub fn panic_message(p: &(dyn std::any::Any + Send)) -> String {
+    p.downcast_ref::<&str>().map(|s| s.to_string()).or_else(|| p.downcast_ref::<String>().cloned()).unwrap_or_else(|| "unknown panic".into())
 }
 
 #[cfg(test)]

@@ -1,21 +1,29 @@
 use crate::app::{CadApp, PickFace, ViewMode};
-use cad_document::{Command, FeatureKind, PlaneDef, Sketch, Surface};
+use cad_document::{Body, Bvh, Command, FeatureId, FeatureKind, PlaneDef, Sketch, Surface};
 use cad_geometry::DVec3;
+use std::sync::Arc;
 
-/// Distance along the ray to the triangle, Moller-Trumbore.
-fn ray_triangle(origin: DVec3, dir: DVec3, [a, b, c]: [DVec3; 3]) -> Option<f64> {
-    let (e1, e2) = (b - a, c - a);
-    let p = dir.cross(e2);
-    let det = e1.dot(p);
-    if det.abs() < 1e-12 {
-        return None;
+/// Nearest body triangle under the ray: (body id, triangle index, distance). BVHs are cached per body and dropped with it.
+pub fn ray_body(app: &mut CadApp, origin: DVec3, dir: DVec3) -> Option<(FeatureId, usize, f64)> {
+    let bodies: Vec<(FeatureId, Arc<Body>)> = app.model.iter().flat_map(|(_, m)| &m.bodies).cloned().collect();
+    app.bvhs.retain(|(b, _)| bodies.iter().any(|(_, cur)| Arc::ptr_eq(b, cur)));
+    let mut best: Option<(FeatureId, usize, f64)> = None;
+    for (id, body) in &bodies {
+        let bvh = match app.bvhs.iter().find(|(b, _)| Arc::ptr_eq(b, body)) {
+            Some((_, bvh)) => bvh.clone(),
+            None => {
+                let bvh = Arc::new(Bvh::build(&body.mesh));
+                app.bvhs.push((body.clone(), bvh.clone()));
+                bvh
+            }
+        };
+        if let Some((t, tri)) = bvh.ray(&body.mesh, origin, dir)
+            && best.is_none_or(|(.., b)| t < b)
+        {
+            best = Some((*id, tri, t));
+        }
     }
-    let s = origin - a;
-    let u = s.dot(p) / det;
-    let q = s.cross(e1);
-    let v = dir.dot(q) / det;
-    let t = e2.dot(q) / det;
-    (u >= 0.0 && v >= 0.0 && u + v <= 1.0 && t > 0.0).then_some(t)
+    best
 }
 
 /// Normal of a planar surface; None for any other surface.
@@ -28,20 +36,11 @@ fn plane_normal(surface: &Surface) -> Option<DVec3> {
 
 /// Handles a click while a face is being picked: a hit on a planar face creates and activates a sketch on it, or adds a shell open at it.
 pub fn click(app: &mut CadApp, origin: DVec3, dir: DVec3) {
-    let mut best: Option<(f64, Option<DVec3>, bool)> = None;
-    // shortcut: scans all triangles, add a BVH when picking shows up in a profile
-    for (_, body) in app.model.iter().flat_map(|(_, m)| &m.bodies) {
-        let tris = body.mesh.indices.as_chunks::<3>().0;
-        for (tri, &face) in tris.iter().zip(&body.tri_face) {
-            let corners = tri.map(|i| body.mesh.positions[i as usize]);
-            if let Some(t) = ray_triangle(origin, dir, corners)
-                && best.is_none_or(|(b, ..)| t < b)
-            {
-                let f = &body.faces[face as usize];
-                best = Some((t, plane_normal(&f.surface), f.outward));
-            }
-        }
-    }
+    let best = ray_body(app, origin, dir).and_then(|(id, tri, t)| {
+        let body = app.model.iter().flat_map(|(_, m)| &m.bodies).find(|(i, _)| *i == id).map(|(_, b)| b)?;
+        let f = &body.faces[body.tri_face[tri] as usize];
+        Some((t, plane_normal(&f.surface), f.outward))
+    });
     let Some((t, normal, outward)) = best else {
         app.status = "No face there".into();
         return;
@@ -70,5 +69,42 @@ pub fn click(app: &mut CadApp, origin: DVec3, dir: DVec3) {
         app.set_sketch(id);
         app.view = ViewMode::TwoD;
         app.pick_face = PickFace::Off;
+    }
+}
+
+/// Selects the body face hit by the ray, or clears the face selection; the status shows its surface kind and area.
+pub fn select_face(app: &mut CadApp, origin: DVec3, dir: DVec3) {
+    let before = app.face_sel;
+    app.face_sel = None;
+    if let Some((id, tri, _)) = ray_body(app, origin, dir)
+        && let Some(body) = app.model.iter().flat_map(|(_, m)| &m.bodies).find(|(i, _)| *i == id).map(|(_, b)| b)
+    {
+        let face = body.tri_face[tri];
+        let m = &body.mesh;
+        let area: f64 = m
+            .indices
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .zip(&body.tri_face)
+            .filter(|(_, f)| **f == face)
+            .map(|(t, _)| {
+                let [a, b, c] = t.map(|i| m.positions[i as usize]);
+                0.5 * (b - a).cross(c - a).length()
+            })
+            .sum();
+        let kind = match body.faces[face as usize].surface {
+            Surface::Plane { .. } => "plane",
+            Surface::Cylinder { .. } => "cylinder",
+            Surface::Cone { .. } => "cone",
+            Surface::Sphere { .. } => "sphere",
+            Surface::Torus { .. } => "torus",
+            _ => "free-form",
+        };
+        app.status = format!("Face: {kind}, area \u{2248} {area:.3} mm\u{b2}");
+        app.face_sel = Some((id, face));
+    }
+    if app.face_sel != before {
+        app.sel_rev += 1;
     }
 }

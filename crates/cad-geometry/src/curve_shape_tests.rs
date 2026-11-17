@@ -85,11 +85,10 @@ fn snap_point_counts() {
 }
 
 #[test]
-fn edits_are_unsupported_for_ellipse_and_spline() {
+fn extend_and_offset_are_unsupported_for_ellipse_and_spline() {
     let cutter = Shape::Line { a: v2(-9.0, -9.0), b: v2(9.0, 9.0) };
     for s in [ellipse(2.0, 1.0, 0.0), spline(&[(0.0, 0.0), (1.0, 1.0)], false)] {
         let want = GeomError::Unsupported("not supported for this shape yet");
-        assert_eq!(trim(&s, v2(0.0, 0.0), &[&cutter]), Err(want.clone()));
         assert_eq!(extend(&s, v2(0.0, 0.0), &[&cutter]), Err(want.clone()));
         assert_eq!(offset(&s, 1.0, v2(0.0, 0.0)), Err(want));
     }
