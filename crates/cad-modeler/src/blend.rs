@@ -47,7 +47,7 @@ fn cross_section(body: &Body, edge: &BodyEdge) -> Result<(DVec3, DVec3, DVec3, D
             let r = (mid - center).reject_from(axis).normalize();
             (center + r * radius, axis.cross(r))
         }
-        EdgeGeom::Other => return Err(NOT_YET),
+        EdgeGeom::Other | EdgeGeom::Ellipse { .. } => return Err(NOT_YET),
     };
     let (p, q) = edge.segments().min_by(|x, y| point_segment(mid, x.0, x.1).total_cmp(&point_segment(mid, y.0, y.1))).ok_or(NOT_YET)?;
     let mut u = [DVec3::ZERO; 2];
@@ -106,7 +106,11 @@ fn blend(body: &Body, edge: &BodyEdge, kind: Kind, size: f64, tol: f64) -> Resul
     if !(size.is_finite() && size > 1e-6) {
         return Err(ModelError::Invalid("blend size must be positive"));
     }
-    if edge.convexity == Convexity::Smooth || edge.geom == EdgeGeom::Other {
+    if edge.convexity == Convexity::Smooth || matches!(edge.geom, EdgeGeom::Other | EdgeGeom::Ellipse { .. }) {
+        return Err(NOT_YET);
+    }
+    let planar = |f: u32| matches!(body.faces[f as usize].surface, crate::Surface::Plane { .. });
+    if matches!(edge.geom, EdgeGeom::Line { .. }) && !edge.faces.iter().all(|&f| planar(f)) {
         return Err(NOT_YET);
     }
     let (m, _, ua, ub) = cross_section(body, edge)?;
@@ -128,7 +132,7 @@ fn blend(body: &Body, edge: &BodyEdge, kind: Kind, size: f64, tol: f64) -> Resul
             let rot = DQuat::from_axis_angle(axis, -phi);
             (Wedge { o: center + r0 * radius, ua: rot * ua, e2: rot * e2, theta }, Plane3 { origin: center, x: r0, y: axis }, sweep)
         }
-        EdgeGeom::Other => return Err(NOT_YET),
+        EdgeGeom::Other | EdgeGeom::Ellipse { .. } => return Err(NOT_YET),
     };
     let to2 = |p: DVec3| DVec2::new((p - plane.origin).dot(plane.x), (p - plane.origin).dot(plane.y));
     let profile = section(&wedge, kind, size, delta, &to2)?;

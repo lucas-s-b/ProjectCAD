@@ -100,3 +100,15 @@ pub fn triangle_prism(h: f64) -> crate::Body {
     let lines: Vec<Shape> = (0..3).map(|i| Shape::Line { a: pts[i], b: pts[(i + 1) % 3] }).collect();
     crate::Body::from_brep(&crate::extrude(&make(&lines), &Plane3::XY, h).unwrap(), 0.01).unwrap()
 }
+
+/// A cylinder (r 5, z 0..10) with the part beyond the plane x = 3 cut off.
+pub fn d_flat() -> crate::Body {
+    crate::boolean(&cylinder_body(0.0, 0.0, 5.0, 0.0, 10.0), &box_body([3.0, -10.0, -1.0], [10.0, 10.0, 11.0]), crate::BoolOp::Difference).unwrap()
+}
+
+pub fn oblique_cut() -> crate::Body {
+    let tool = box_body([-20.0, -20.0, 0.0], [20.0, 20.0, 20.0])
+        .transformed(&(glam::DAffine3::from_translation(DVec3::new(0.0, 0.0, 10.0)) * glam::DAffine3::from_rotation_x(30f64.to_radians())))
+        .unwrap();
+    crate::boolean(&cylinder_body(0.0, 0.0, 5.0, 0.0, 20.0), &tool, crate::BoolOp::Difference).unwrap()
+}

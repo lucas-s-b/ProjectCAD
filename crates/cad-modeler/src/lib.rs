@@ -15,6 +15,7 @@ mod section;
 mod shell;
 mod sweep;
 mod tess;
+mod trimmed;
 
 pub use blend::{chamfer_edge, fillet_edge};
 pub use body::{Body, BodyFace, union_all};
@@ -31,6 +32,7 @@ pub use revolve::revolve;
 pub use shell::shell;
 pub use sweep::{PathPiece, path_pieces, sweep};
 pub use tess::{TriMesh, tessellate, tessellate_with_faces};
+pub use trimmed::{TrimEdge, TrimFace, TrimmedBody};
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum ModelError {

@@ -9,6 +9,9 @@ pub enum EdgeGeom {
     Line { a: DVec3, b: DVec3 },
     /// Arc of a circle: from `start`, by `sweep` radians counter-clockwise about `axis` (TAU for a closed circle).
     Circle { center: DVec3, axis: DVec3, radius: f64, start: DVec3, sweep: f64 },
+    /// Arc or closed loop of an ellipse, running counter-clockwise about `axis` (the plane normal).
+    /// `major_dir` is the unit direction of the major semi-axis `major`; `minor` lies along `axis × major_dir`.
+    Ellipse { center: DVec3, axis: DVec3, major_dir: DVec3, major: f64, minor: f64 },
     Other,
 }
 
@@ -115,12 +118,28 @@ fn chains(segs: &[(u32, u32)]) -> Vec<(Vec<u32>, bool)> {
     out
 }
 
-fn circle_geom(plane: (DVec3, DVec3), cyl: (DVec3, DVec3, f64), pts: &[DVec3], closed: bool) -> EdgeGeom {
-    let ((po, n), (co, axis, radius)) = (plane, cyl);
-    if axis.cross(n).length() > AXIS_TOL {
+fn line_geom(pts: &[DVec3], closed: bool) -> EdgeGeom {
+    if closed {
         return EdgeGeom::Other;
     }
-    let center = co + axis * ((po - co).dot(n) / axis.dot(n));
+    let (a, b) = (pts[0], pts[pts.len() - 1]);
+    let d = (b - a).normalize_or_zero();
+    if d != DVec3::ZERO && pts.iter().all(|p| (*p - a).cross(d).length() <= LINE_TOL) {
+        EdgeGeom::Line { a, b }
+    } else {
+        EdgeGeom::Other
+    }
+}
+
+/// Intersection of a plane and a cylinder: a line when the plane is parallel to the axis,
+/// a circle when the axis is along the normal, otherwise an ellipse.
+fn plane_cylinder_geom(plane: (DVec3, DVec3), cyl: (DVec3, DVec3, f64), pts: &[DVec3], closed: bool) -> EdgeGeom {
+    let ((po, n), (co, axis, radius)) = (plane, cyl);
+    let cos = axis.dot(n);
+    if cos.abs() <= AXIS_TOL {
+        return line_geom(pts, closed);
+    }
+    let center = co + axis * ((po - co).dot(n) / cos);
     let count = if closed { pts.len() } else { pts.len() - 1 };
     let turns: Vec<(f64, f64)> = (0..count)
         .map(|i| {
@@ -134,23 +153,19 @@ fn circle_geom(plane: (DVec3, DVec3), cyl: (DVec3, DVec3, f64), pts: &[DVec3], c
     }
     let sign = sign.signum();
     let sweep = if closed { TAU } else { turns.iter().map(|&(c, d)| (c * sign).atan2(d)).sum() };
-    EdgeGeom::Circle { center, axis: n * sign, radius, start: pts[0], sweep }
+    if axis.cross(n).length() <= AXIS_TOL {
+        EdgeGeom::Circle { center, axis: n * sign, radius, start: pts[0], sweep }
+    } else {
+        EdgeGeom::Ellipse { center, axis: n * sign, major_dir: (axis - n * cos).normalize(), major: radius / cos.abs(), minor: radius }
+    }
 }
 
 fn edge_geom(surfaces: [&Surface; 2], pts: &[DVec3], closed: bool) -> EdgeGeom {
     match surfaces {
-        [Surface::Plane { .. }, Surface::Plane { .. }] if !closed => {
-            let (a, b) = (pts[0], pts[pts.len() - 1]);
-            let d = (b - a).normalize_or_zero();
-            if d != DVec3::ZERO && pts.iter().all(|p| (*p - a).cross(d).length() <= LINE_TOL) {
-                EdgeGeom::Line { a, b }
-            } else {
-                EdgeGeom::Other
-            }
-        }
+        [Surface::Plane { .. }, Surface::Plane { .. }] => line_geom(pts, closed),
         [Surface::Plane { origin, normal }, Surface::Cylinder { origin: o, axis, radius }]
         | [Surface::Cylinder { origin: o, axis, radius }, Surface::Plane { origin, normal }] => {
-            circle_geom((*origin, *normal), (*o, *axis, *radius), pts, closed)
+            plane_cylinder_geom((*origin, *normal), (*o, *axis, *radius), pts, closed)
         }
         // Also any pair with a Faceted face.
         _ => EdgeGeom::Other,
@@ -159,6 +174,12 @@ fn edge_geom(surfaces: [&Surface; 2], pts: &[DVec3], closed: bool) -> EdgeGeom {
 
 impl Body {
     pub fn edges(&self) -> Vec<BodyEdge> {
+        self.edge_paths().into_iter().map(|(e, _)| e).collect()
+    }
+
+    /// Every edge with the mesh vertex indices of its polyline, in the same order as `points`
+    /// (a closed edge does not repeat its first vertex).
+    pub(crate) fn edge_paths(&self) -> Vec<(BodyEdge, Vec<u32>)> {
         let tris = self.mesh.indices.as_chunks::<3>().0;
         let mut tri_of: HashMap<(u32, u32), usize> = HashMap::new();
         for (i, t) in tris.iter().enumerate() {
@@ -184,7 +205,7 @@ impl Body {
                 let surfaces = faces.map(|f| &self.faces[f as usize].surface);
                 let geom = edge_geom(surfaces, &points, closed);
                 let convexity = self.convexity(faces, [path[0], path[1]], &tri_of);
-                out.push(BodyEdge { faces, points, closed, geom, convexity });
+                out.push((BodyEdge { faces, points, closed, geom, convexity }, path));
             }
         }
         out
