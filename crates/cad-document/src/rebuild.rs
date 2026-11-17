@@ -278,10 +278,19 @@ impl Rebuilder {
     /// Walks the features in order; features whose inputs and predecessors are unchanged come from the cache.
     /// A suppressed or failed feature leaves the bodies as they were and never stops the features after it.
     pub fn rebuild(&mut self, doc: &Document) -> RebuildResult {
+        self.rebuild_until(doc, &|| false).expect("never stopped")
+    }
+
+    /// Like `rebuild`, but returns `None` as soon as `stop` says so; `stop` is checked before every feature.
+    /// Features finished before the stop stay cached.
+    pub fn rebuild_until(&mut self, doc: &Document, stop: &dyn Fn() -> bool) -> Option<RebuildResult> {
         let mut bodies: Bodies = Vec::new();
         let (mut prev, mut recomputed) = (0u64, 0);
         let mut states = BTreeMap::new();
         for f in doc.features() {
+            if stop() {
+                return None;
+            }
             if f.suppressed {
                 states.insert(f.id, FeatureState::Suppressed);
                 prev = hash_of((prev, f.id, "suppressed"));
@@ -303,7 +312,9 @@ impl Rebuilder {
                 continue;
             }
             recomputed += 1;
-            let state = match step.apply(f.id, &bodies) {
+            let applied = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| step.apply(f.id, &bodies)))
+                .unwrap_or_else(|p| Err(format!("internal error: {}", panic_message(p.as_ref()))));
+            let state = match applied {
                 Ok(b) => {
                     bodies = b;
                     FeatureState::Ok
@@ -314,8 +325,13 @@ impl Rebuilder {
             states.insert(f.id, state);
         }
         self.cache.retain(|id, _| doc.feature(*id).is_some());
-        RebuildResult { bodies, states, recomputed }
+        Some(RebuildResult { bodies, states, recomputed })
     }
+}
+
+/// Text of a panic payload (`panic!` gives `&str` or `String`).
+pub fn panic_message(p: &(dyn std::any::Any + Send)) -> String {
+    p.downcast_ref::<&str>().map(|s| s.to_string()).or_else(|| p.downcast_ref::<String>().cloned()).unwrap_or_else(|| "unknown panic".into())
 }
 
 #[cfg(test)]

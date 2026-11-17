@@ -126,6 +126,9 @@ pub fn menu_bar(app: &mut CadApp, ui: &mut egui::Ui) {
                 if menu_item(ui, true, "Export OBJ...", "") {
                     app.export_dialog("obj");
                 }
+                if menu_item(ui, true, "Export STEP...", "") {
+                    app.export_dialog("step");
+                }
             });
             w::menu_button(ui, "Edit", |ui| {
                 if menu_item(ui, app.history.can_undo(), "Undo", "Ctrl+Z") {

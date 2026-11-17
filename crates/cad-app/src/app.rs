@@ -9,6 +9,29 @@ use std::collections::BTreeSet;
 use eframe::egui;
 use std::path::PathBuf;
 
+/// Display-only section: keeps the side of the plane `axis = offset` with smaller coordinates, or the other side when flipped.
+pub struct SectionView {
+    pub on: bool,
+    pub axis: usize,
+    pub offset: String,
+    pub flip: bool,
+}
+
+impl SectionView {
+    /// Plane for the shader; everything is kept when off or when the offset does not parse.
+    pub fn clip(&self) -> [f32; 4] {
+        let Ok(d) = self.offset.trim().parse::<f64>() else { return [0.0, 0.0, 0.0, 1.0] };
+        if !self.on {
+            return [0.0, 0.0, 0.0, 1.0];
+        }
+        let s = if self.flip { -1.0 } else { 1.0 };
+        let mut c = [0.0f32; 4];
+        c[self.axis] = s;
+        c[3] = (d * f64::from(s)) as f32;
+        c
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Tool {
     Select,
@@ -166,6 +189,12 @@ pub struct CadApp {
     pub model: Option<(u64, RebuildResult)>,
     /// Fit the 3D camera to the first result after a document was replaced.
     pub fit_on_model: bool,
+    /// Ray-pick acceleration structures of the bodies in `model`, see `face_pick::ray_body`.
+    /// Selected body face: (body id, index into `body.faces`).
+    pub face_sel: Option<(FeatureId, u32)>,
+    /// Section plane of the 3D view.
+    pub section: SectionView,
+    pub bvhs: Vec<(std::sync::Arc<cad_document::Body>, std::sync::Arc<cad_document::Bvh>)>,
     /// Named widgets of the last complete frame.
     pub widgets: Vec<crate::widgets::WidgetHit>,
     /// Present only with --mcp.
@@ -244,6 +273,9 @@ impl CadApp {
             requested: None,
             model: None,
             fit_on_model: false,
+            bvhs: Vec::new(),
+            section: SectionView { on: false, axis: 2, offset: "0".into(), flip: false },
+            face_sel: None,
             widgets: Vec::new(),
             mcp: mcp.then(|| mcp::spawn(cc.egui_ctx.clone())),
         }
@@ -253,6 +285,7 @@ impl CadApp {
     pub fn sync_model(&mut self) {
         if let Some(m) = self.worker.poll() {
             self.model = Some(m);
+            self.face_sel = None;
             if std::mem::take(&mut self.fit_on_model) {
                 let (lo, hi) = self.scene_bounds();
                 self.cam3d.fit(lo, hi);
@@ -270,6 +303,7 @@ impl CadApp {
         self.worker.reset();
         self.requested = None;
         self.model = None;
+        self.face_sel = None;
         self.fit_on_model = true;
     }
 

@@ -50,7 +50,7 @@ impl SceneRenderer {
         });
         let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("scene_camera"),
-            contents: bytemuck::bytes_of(&[[0.0f32; 4]; 4]),
+            contents: bytemuck::bytes_of(&[[0.0f32; 4]; 5]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -122,8 +122,10 @@ impl SceneRenderer {
         self.lines = upload(lines);
     }
 
-    pub fn set_camera(&self, queue: &wgpu::Queue, view_proj: [[f32; 4]; 4]) {
+    /// `clip` is the section plane: points with `dot(clip.xyz, p) > clip.w` are dropped from clippable geometry (vertex alpha 1).
+    pub fn set_camera(&self, queue: &wgpu::Queue, view_proj: [[f32; 4]; 4], clip: [f32; 4]) {
         queue.write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&view_proj));
+        queue.write_buffer(&self.camera_buffer, 64, bytemuck::bytes_of(&clip));
     }
 
     pub fn draw(&self, pass: &mut wgpu::RenderPass<'_>) {

@@ -18,8 +18,8 @@ subsystem is first built (rule 7 of the brief).
 | Booleans | `manifold-rust` on the tessellation, face ids kept | boolmesh, csgrs, baby_shark, truck-shapeops | Passed all 11 measured cases with closed meshes; Apache-2.0; no C (`docs/BOOLEAN_EVAL.md`). boolmesh is the fallback. | Phase 3 |
 | Polygon triangulation | `earcutr` | own ear clipping | Small, pure Rust port of a well-tested algorithm. | Phase 3 |
 | Robust predicates | `robust` crate (Shewchuk port) | own implementation | Pure Rust, proven algorithm. | Phase 3 |
-| Constraint solver | Own dense Levenberg-Marquardt on nalgebra (`cad-constraints`) | ezpz (KittyCAD) | ezpz exists (MIT, crate `kcl-ezpz`, 0.2.x) but is pre-1.0 and built around the KCL data model; we need degrees-of-freedom and redundancy reports over our own shapes. Not benchmarked against ours (re-verify). Dense numeric Jacobian now; sparse analytic after a benchmark. | Phase 2 |
-| Spatial index | Linear scan; rstar (2D snap), BVH (3D pick) when needed | octree, k-d tree, grid | Measured: snap over 100 000 lines about 1 ms, pick about 11 ms (`docs/BENCHMARKS.md`). No index needed yet. | Phase 7 |
+| Constraint solver | Own Levenberg-Marquardt on faer sparse normal equations (`cad-constraints`) | ezpz (KittyCAD) | ezpz exists (MIT, crate `kcl-ezpz`, 0.2.x) but is pre-1.0 and built around the KCL data model; we need degrees-of-freedom and redundancy reports over our own shapes. Not benchmarked against ours (re-verify). Sparse numeric Jacobian, sparse Cholesky (faer); rank from dense pivoted QR. | Phase 2 |
+| Spatial index | Linear scan; rstar (2D snap) when needed; BVH over body triangles for 3D picks (Phase 3) | octree, k-d tree, grid | Measured: snap over 100 000 lines about 1 ms, pick about 11 ms (`docs/BENCHMARKS.md`). No index needed yet. | Phase 7 |
 | Parallelism | rayon | scoped threads | Added with the first measured hot loop (tessellation). | Phase 3 |
 | Collision / physics | parry, rapier | own | Pure Rust, mature. | Phase 5 |
 | Text | egui built-in now; cosmic-text for drawing text | — | Dimension text needs shaping and outlines. | Phase 2 |

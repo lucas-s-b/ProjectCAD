@@ -1,5 +1,7 @@
 use crate::residual::{Layout, constraint_residuals, rows};
 use crate::types::{Constraint, Id};
+use faer::sparse::Triplet;
+#[cfg(test)]
 use nalgebra::DMatrix;
 use std::collections::BTreeMap;
 
@@ -23,7 +25,10 @@ impl<'a> Jacobian<'a> {
         let mut first = 0;
         for (i, c) in constraints.iter().enumerate() {
             for id in c.entities() {
-                touching.entry(id).or_default().push((i, first));
+                let list = touching.entry(id).or_default();
+                if !list.contains(&(i, first)) {
+                    list.push((i, first));
+                }
             }
             first += rows(c);
         }
@@ -35,9 +40,19 @@ impl<'a> Jacobian<'a> {
         self.rows
     }
 
-    // shortcut: numeric Jacobian restricted to the equations each variable touches, dense linear solve; move to sparse factorisation when chains of several hundred constraints matter
+    // shortcut: numeric central differences; analytic derivatives would halve the residual evaluations
+    #[cfg(test)]
     pub(crate) fn at(&self, z: &[f64]) -> DMatrix<f64> {
         let mut j = DMatrix::zeros(self.rows, z.len());
+        for t in self.triplets(z) {
+            j[(t.row, t.col)] = t.val;
+        }
+        j
+    }
+
+    /// The nonzero entries of the Jacobian at `z`.
+    pub(crate) fn triplets(&self, z: &[f64]) -> Vec<Triplet<usize, usize, f64>> {
+        let mut out = Vec::new();
         let mut all = self.full.to_vec();
         for (k, &i) in self.free.iter().enumerate() {
             all[i] = z[k];
@@ -54,11 +69,11 @@ impl<'a> Jacobian<'a> {
                 minus.clear();
                 constraint_residuals(self.layout, self.modes, ci, c, &all, &mut minus);
                 for r in 0..plus.len() {
-                    j[(first + r, k)] = (plus[r] - minus[r]) / (2.0 * h);
+                    out.push(Triplet::new(first + r, k, (plus[r] - minus[r]) / (2.0 * h)));
                 }
             }
             all[i] = z[k];
         }
-        j
+        out
     }
 }

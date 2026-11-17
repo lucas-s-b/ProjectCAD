@@ -70,3 +70,21 @@ fn reset_then_request_still_answers() {
     let (_, r) = seen.last().unwrap();
     assert!((r.total_volume() - 4000.0).abs() < 1e-6 * 4000.0);
 }
+
+#[test]
+fn many_requests_end_on_the_last() {
+    let w = RebuildWorker::spawn(egui::Context::default());
+    let mut d = doc_with_extrude("1 mm");
+    w.request(d.revision(), d.clone());
+    for n in 2..=20 {
+        let mut f = d.feature(1).unwrap().clone();
+        if let FeatureKind::Extrude { distance, .. } = &mut f.kind {
+            *distance = format!("{n} mm");
+        }
+        d.apply(Command::SetFeature(f)).unwrap();
+        w.request(d.revision(), d.clone());
+    }
+    let seen = wait_for(&w, d.revision());
+    let (_, r) = seen.last().unwrap();
+    assert!((r.total_volume() - 16000.0).abs() < 1e-6 * 16000.0);
+}

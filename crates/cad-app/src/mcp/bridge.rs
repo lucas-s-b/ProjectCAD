@@ -288,6 +288,8 @@ fn summary_fields(app: &CadApp) -> serde_json::Map<String, Value> {
         "selection": app.selection.iter().collect::<Vec<_>>(),
         "captures": app.captures.iter().map(Vec::len).collect::<Vec<_>>(),
         "dirty": app.is_dirty(),
+        "section": app.section.on.then(|| app.section.clip()),
+        "face_sel": app.face_sel.map(|(b, f)| [b, u64::from(f)]),
     }) else {
         unreachable!()
     };

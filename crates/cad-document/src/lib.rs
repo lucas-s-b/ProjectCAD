@@ -36,12 +36,12 @@ mod shell_feature_tests;
 mod sweep_feature_tests;
 
 pub use cad_constraints::{Constraint, PointKind, PointRef, Solution, SolveError, Status};
-pub use cad_modeler::{Body, BodyEdge, BoolOp, Convexity, EdgeGeom, Surface};
+pub use cad_modeler::{Body, BodyEdge, Bvh, BoolOp, Convexity, EdgeGeom, Surface, ray_triangle};
 pub use cad_params::{ParamError, ParamSet, Value};
 pub use document::{Command, ConstraintId, DocError, Document, Entity, EntityId, FORMAT_VERSION, Layer, LayerId};
 pub use feature::{Axis3, BODY_TOLERANCE, BodyOp, EDGE_PICK_TOLERANCE, Feature, FeatureId, FeatureKind, MirrorSource, RevolveAxis, Target};
 pub use history::History;
 pub use linetype::LineType;
-pub use rebuild::{FeatureState, RebuildResult, Rebuilder};
+pub use rebuild::{FeatureState, RebuildResult, Rebuilder, panic_message};
 pub use sketch::{BasePlane, PlaneDef, Sketch, SketchId};
 pub use units::{Settings, Units};

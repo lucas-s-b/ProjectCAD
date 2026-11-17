@@ -27,6 +27,7 @@ pub fn init_renderer(cc: &eframe::CreationContext<'_>) {
 
 struct SceneCallback {
     view_proj: [[f32; 4]; 4],
+    clip: [f32; 4],
     geometry: Option<Arc<Geometry>>,
 }
 
@@ -43,7 +44,7 @@ impl egui_wgpu::CallbackTrait for SceneCallback {
             if let Some(g) = &self.geometry {
                 r.set_geometry(device, &g.0, &g.1);
             }
-            r.set_camera(queue, self.view_proj);
+            r.set_camera(queue, self.view_proj, self.clip);
         }
         Vec::new()
     }
@@ -83,19 +84,27 @@ fn dashed(a: DVec3, b: DVec3, phase: &mut f64) -> Vec<[DVec3; 2]> {
 
 fn build_scene(app: &CadApp) -> Geometry {
     let (mut tris, mut lines) = (Vec::new(), Vec::new());
+    {
+        // Grid and axes never take part in the section (alpha 0, see scene.wgsl).
+        let mut fixed = |a: DVec3, b: DVec3, c: [f32; 3]| {
+            for p in [a, b] {
+                lines.push(Vertex { pos: p.as_vec3().to_array(), normal: [0.0; 3], color: [c[0], c[1], c[2], 0.0] });
+            }
+        };
+        let grey = [0.3, 0.3, 0.3];
+        for i in -10..=10 {
+            let t = f64::from(i) * 10.0;
+            fixed(DVec3::new(t, -100.0, 0.0), DVec3::new(t, 100.0, 0.0), grey);
+            fixed(DVec3::new(-100.0, t, 0.0), DVec3::new(100.0, t, 0.0), grey);
+        }
+        fixed(DVec3::ZERO, DVec3::new(50.0, 0.0, 0.0), [0.9, 0.2, 0.2]);
+        fixed(DVec3::ZERO, DVec3::new(0.0, 50.0, 0.0), [0.2, 0.8, 0.2]);
+        fixed(DVec3::ZERO, DVec3::new(0.0, 0.0, 50.0), [0.3, 0.4, 1.0]);
+    }
     let mut line = |a: DVec3, b: DVec3, c: [f32; 3]| {
         lines.push(vertex(a, [0.0; 3], c));
         lines.push(vertex(b, [0.0; 3], c));
     };
-    let grey = [0.3, 0.3, 0.3];
-    for i in -10..=10 {
-        let t = f64::from(i) * 10.0;
-        line(DVec3::new(t, -100.0, 0.0), DVec3::new(t, 100.0, 0.0), grey);
-        line(DVec3::new(-100.0, t, 0.0), DVec3::new(100.0, t, 0.0), grey);
-    }
-    line(DVec3::ZERO, DVec3::new(50.0, 0.0, 0.0), [0.9, 0.2, 0.2]);
-    line(DVec3::ZERO, DVec3::new(0.0, 50.0, 0.0), [0.2, 0.8, 0.2]);
-    line(DVec3::ZERO, DVec3::new(0.0, 0.0, 50.0), [0.3, 0.4, 1.0]);
     for e in app.doc.entities().filter(|e| app.visible(e)) {
         let shape = app.display_shape(e);
         let col = (if e.construction { crate::view2d::CONSTRUCTION_RGB } else { app.color(e) }).map(|c| f32::from(c) / 255.0);
@@ -128,10 +137,11 @@ fn build_scene(app: &CadApp) -> Geometry {
             }
         }
     }
-    for (_, body) in app.model.iter().flat_map(|(_, m)| &m.bodies) {
+    for (id, body) in app.model.iter().flat_map(|(_, m)| &m.bodies) {
         let (mesh, grey) = (&body.mesh, [0.72, 0.75, 0.80]);
-        for (&i, n) in mesh.indices.iter().zip(&mesh.normals) {
-            tris.push(vertex(mesh.positions[i as usize], n.as_vec3().to_array(), grey));
+        for (corner, (&i, n)) in mesh.indices.iter().zip(&mesh.normals).enumerate() {
+            let color = if app.face_sel == Some((*id, body.tri_face[corner / 3])) { SELECTED } else { grey };
+            tris.push(vertex(mesh.positions[i as usize], n.as_vec3().to_array(), color));
         }
         for [a, b] in body.feature_edges() {
             lines.push(vertex(a, [0.0; 3], [0.12, 0.12, 0.14]));
@@ -190,7 +200,14 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
                 let pixel = 2.0 * 22.5f64.to_radians().tan() / f64::from(rect.height().max(1.0));
                 crate::edge_pick::click(app, origin, dir, pixel);
             }
-            (hit, shift) => app.click_select(hit, shift),
+            (hit, shift) => {
+                app.click_select(hit, shift);
+                if hit.is_none() && !shift {
+                    crate::face_pick::select_face(app, origin, dir);
+                } else if app.face_sel.take().is_some() {
+                    app.sel_rev += 1;
+                }
+            }
         }
     }
 
@@ -206,7 +223,7 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
         None
     };
     let view_proj = app.cam3d.view_proj(aspect).to_cols_array_2d();
-    ui.painter().add(egui_wgpu::Callback::new_paint_callback(rect, SceneCallback { view_proj, geometry }));
+    ui.painter().add(egui_wgpu::Callback::new_paint_callback(rect, SceneCallback { view_proj, clip: app.section.clip(), geometry }));
     ui.painter_at(rect).text(
         rect.left_top() + egui::vec2(8.0, 8.0),
         egui::Align2::LEFT_TOP,

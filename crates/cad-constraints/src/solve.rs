@@ -2,8 +2,10 @@ use crate::jacobian::Jacobian;
 use crate::residual::{layout, residuals, tangent_modes, write_back};
 use crate::types::{Constraint, Id, SolveError};
 use cad_geometry::Shape;
+use faer::linalg::solvers::Solve;
+use faer::sparse::{SparseColMat, Triplet};
+use faer::{Mat, Side};
 use cad_geometry::shape::norm_angle;
-use nalgebra::{DMatrix, DVector};
 use std::collections::{BTreeMap, BTreeSet};
 
 const TOL: f64 = 1e-9;
@@ -93,7 +95,8 @@ pub fn solve_pinned(shapes: &BTreeMap<Id, Shape>, constraints: &[Constraint], pi
     eval(&x, &mut f);
     let m = jacobian.rows();
     let (mut lambda, mut iterations) = (1e-3, 0);
-    let mut jac: Option<DMatrix<f64>> = None;
+    // J, Jᵀ and JᵀJ at the current point; rebuilt only after an accepted step.
+    let mut jac: Option<[SparseColMat<usize, f64>; 3]> = None;
     let mut trial = Vec::new();
     loop {
         let err = max_abs(&f);
@@ -104,18 +107,23 @@ pub fn solve_pinned(shapes: &BTreeMap<Id, Shape>, constraints: &[Constraint], pi
             return Err(SolveError::NotConverged { residual: err });
         }
         iterations += 1;
-        let j = jac.get_or_insert_with(|| jacobian.at(&x));
-        let jt = j.transpose();
-        let mut a = &jt * &*j;
-        for i in 0..n {
-            a[(i, i)] += lambda;
-        }
-        let Some(chol) = a.cholesky() else {
+        let [_, jt, jtj] = jac.get_or_insert_with(|| {
+            let j = SparseColMat::try_new_from_triplets(m, n, &jacobian.triplets(&x)).expect("triplets are inside the matrix");
+            let jt = j.transpose().to_col_major().expect("transpose fits in memory");
+            let jtj = &jt * &j;
+            [j, jt, jtj]
+        });
+        let fm = Mat::from_fn(m, 1, |i, _| f[i]);
+        let g = &*jt * &fm;
+        let mut t: Vec<Triplet<usize, usize, f64>> = jtj.triplet_iter().map(|e| Triplet::new(e.row, e.col, *e.val)).collect();
+        t.extend((0..n).map(|i| Triplet::new(i, i, lambda)));
+        let a = SparseColMat::try_new_from_triplets(n, n, &t).expect("triplets are inside the matrix");
+        let Ok(llt) = a.sp_cholesky(Side::Lower) else {
             lambda *= 10.0;
             continue;
         };
-        let delta = chol.solve(&(-(&jt * DVector::from_column_slice(&f))));
-        let x_new: Vec<f64> = x.iter().zip(delta.iter()).map(|(p, d)| p + d).collect();
+        let delta = llt.solve(&g);
+        let x_new: Vec<f64> = x.iter().enumerate().map(|(i, p)| p - delta[(i, 0)]).collect();
         eval(&x_new, &mut trial);
         if x_new.iter().all(|v| v.is_finite()) && trial.iter().all(|v| v.is_finite()) && sum_sq(&trial) < sum_sq(&f) {
             x = x_new;
@@ -129,10 +137,16 @@ pub fn solve_pinned(shapes: &BTreeMap<Id, Shape>, constraints: &[Constraint], pi
     let rank = if n == 0 {
         0
     } else {
-        let j = jac.unwrap_or_else(|| jacobian.at(&x));
-        let sv = j.svd(false, false).singular_values;
-        let limit = 1e-6 * sv.iter().fold(1.0_f64, |a, b| a.max(*b));
-        sv.iter().filter(|s| **s > limit).count()
+        let j = match jac {
+            Some([j, ..]) => j,
+            None => SparseColMat::try_new_from_triplets(m, n, &jacobian.triplets(&x)).expect("triplets are inside the matrix"),
+        };
+        // shortcut: dense pivoted QR for the rank, about 0.1 s at 1600 unknowns; needs a sparse rank-revealing factorisation beyond a few thousand
+        let qr = j.to_dense().col_piv_qr();
+        let r = qr.thin_R();
+        let diag: Vec<f64> = (0..m.min(n)).map(|i| r[(i, i)].abs()).collect();
+        let limit = 1e-6 * diag.iter().fold(1.0_f64, |a, b| a.max(*b));
+        diag.iter().filter(|d| **d > limit).count()
     };
     let changed = write_back(&lay, &expand(&x), shapes)
         .into_iter()

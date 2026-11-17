@@ -1,8 +1,9 @@
-//! Export of a document to SVG, DXF and PDF, and of solid bodies to STL and OBJ; import of DXF and SVG. Model coordinates are millimetres.
+//! Export of a document to SVG, DXF and PDF, and of solid bodies to STL, OBJ and STEP; import of DXF and SVG. Model coordinates are millimetres.
 mod dxf;
 mod dxf_in;
 mod mesh_out;
 mod pdf_out;
+mod step_out;
 mod svg;
 mod svg_curve;
 mod svg_in;
@@ -13,6 +14,7 @@ pub use dxf::to_dxf;
 pub use dxf_in::{ImportError, ImportReport, from_dxf};
 pub use mesh_out::{to_obj, to_stl};
 pub use pdf_out::to_pdf;
+pub use step_out::to_step;
 pub use svg::to_svg;
 pub use svg_in::from_svg;
 
