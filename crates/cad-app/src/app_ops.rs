@@ -1,7 +1,9 @@
 use crate::app::CadApp;
+use crate::app::Tool;
 use cad_document::{Command, Entity, EntityId, LayerId, SketchId};
 use cad_geometry::xform::rotation_about;
-use cad_geometry::{DAffine2, DVec2, DVec3, Shape, Wall};
+use cad_geometry::{DAffine2, DVec2, DVec3, GeomError, Opening, Shape, Wall, distance_2d, point_segment_distance};
+use std::collections::BTreeMap;
 
 impl CadApp {
     /// Adds a wall from `a` to `b` on the active sketch with the Wall tool settings; its height is the level height.
@@ -123,18 +125,39 @@ impl CadApp {
     }
 
     pub fn duplicate_selection(&mut self) {
-        let src: Vec<(Shape, LayerId)> =
-            self.selection.iter().filter_map(|id| self.doc.get(*id)).map(|e| (e.shape.clone(), e.layer)).collect();
-        let mut ids = Vec::new();
-        let mut cmds = Vec::new();
-        for (shape, layer) in src {
-            let id = self.doc.alloc_id();
-            ids.push(id);
-            cmds.push(Command::Add(Entity { id, name: format!("{} {}", shape.kind(), id), shape, layer, sketch: self.sketch, construction: false, group: None, meta: Default::default() }));
-        }
+        let src = self.copies();
+        let cmds = match self.copy_commands(&src, |s| Ok(s.clone())) {
+            Ok(c) => c,
+            Err(e) => {
+                self.status = e.to_string();
+                return;
+            }
+        };
+        let ids: Vec<EntityId> = cmds.iter().filter_map(|c| if let Command::Add(e) = c { Some(e.id) } else { None }).collect();
         self.exec(cmds);
         let made: Vec<EntityId> = ids.into_iter().filter(|id| self.doc.get(*id).is_some()).collect();
         self.set_selection(made);
+    }
+
+    /// Puts the active tool's door or window on the wall of the active sketch that contains `p`, centred where `p`
+    /// projects on its baseline (the wall with the nearest baseline when several contain it).
+    pub fn add_opening(&mut self, p: DVec2) {
+        let host = self
+            .doc
+            .entities_in(self.sketch)
+            .filter(|x| self.pickable(x) && distance_2d(&x.shape, p) <= 1e-9)
+            .filter_map(|x| match &x.shape {
+                Shape::Wall(w) => Some((x.id, *w)),
+                _ => None,
+            })
+            .min_by(|x, y| point_segment_distance(p, x.1.a, x.1.b).total_cmp(&point_segment_distance(p, y.1.a, y.1.b)));
+        let Some((host, wall)) = host else {
+            self.status = "Click inside a wall to place a door or window".into();
+            return;
+        };
+        let template = if self.tool == Tool::Window { self.window } else { self.door };
+        let at = (p - wall.a).dot((wall.b - wall.a).normalize());
+        self.add_shape(Shape::Opening(Opening { host, wall, at, ..template }));
     }
 }
 
@@ -178,8 +201,30 @@ fn array_polar_angles(count: u32, total_deg: f64) -> Vec<f64> {
 }
 
 impl CadApp {
-    fn copies(&self) -> Vec<(Shape, LayerId)> {
-        self.selection.iter().filter_map(|id| self.doc.get(*id)).map(|e| (e.shape.clone(), e.layer)).collect()
+    fn copies(&self) -> Vec<(EntityId, Shape, LayerId)> {
+        self.selection.iter().filter_map(|id| self.doc.get(*id)).map(|e| (e.id, e.shape.clone(), e.layer)).collect()
+    }
+
+    /// Add commands for one copy of `src`, each shape placed by `place`. A copied opening goes onto the copy of its wall;
+    /// one whose wall is not copied is left out (it would sit on the original wall, on top of the original opening).
+    fn copy_commands(
+        &mut self,
+        src: &[(EntityId, Shape, LayerId)],
+        place: impl Fn(&Shape) -> Result<Shape, GeomError>,
+    ) -> Result<Vec<Command>, GeomError> {
+        let new_ids: BTreeMap<EntityId, EntityId> = src.iter().map(|(id, ..)| (*id, self.doc.alloc_id())).collect();
+        let mut cmds = Vec::new();
+        for (old, shape, layer) in src {
+            let mut shape = place(shape)?;
+            if let Shape::Opening(o) = &mut shape {
+                let Some(host) = new_ids.get(&o.host) else { continue };
+                o.host = *host;
+            }
+            let id = new_ids[old];
+            let name = format!("{} {}", shape.kind(), id);
+            cmds.push(Command::Add(Entity { id, name, shape, layer: *layer, sketch: self.sketch, construction: false, group: None, meta: Default::default() }));
+        }
+        Ok(cmds)
     }
 
     /// Copies of the selection at (i * dx, j * dy), as one undo step. The selection stays as it is.
@@ -188,12 +233,20 @@ impl CadApp {
             self.status = "array too large".into();
             return;
         }
+        let src = self.copies();
         let mut cmds = Vec::new();
-        for (shape, layer) in self.copies() {
-            for off in array_rect_offsets(nx, ny, dx, dy) {
-                let mut copy = shape.clone();
-                copy.translate(off.extend(0.0));
-                cmds.push(Command::Add(self.new_entity(copy, layer)));
+        for off in array_rect_offsets(nx, ny, dx, dy) {
+            let placed = self.copy_commands(&src, |s| {
+                let mut c = s.clone();
+                c.translate(off.extend(0.0));
+                Ok(c)
+            });
+            match placed {
+                Ok(c) => cmds.extend(c),
+                Err(e) => {
+                    self.status = e.to_string();
+                    return;
+                }
             }
         }
         self.exec(cmds);
@@ -205,15 +258,14 @@ impl CadApp {
             self.status = "array too large".into();
             return;
         }
+        let src = self.copies();
         let mut cmds = Vec::new();
-        for (shape, layer) in self.copies() {
-            for a in array_polar_angles(count, total_deg) {
-                match shape.transformed(&rotation_about(center, a.to_radians())) {
-                    Ok(copy) => cmds.push(Command::Add(self.new_entity(copy, layer))),
-                    Err(e) => {
-                        self.status = e.to_string();
-                        return;
-                    }
+        for a in array_polar_angles(count, total_deg) {
+            match self.copy_commands(&src, |s| s.transformed(&rotation_about(center, a.to_radians()))) {
+                Ok(c) => cmds.extend(c),
+                Err(e) => {
+                    self.status = e.to_string();
+                    return;
                 }
             }
         }

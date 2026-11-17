@@ -42,7 +42,7 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     draw_reference(app, &painter, rect);
     crate::view2d_walls::draw(app, &painter, rect);
     for e in app.doc.entities_in(app.sketch).filter(|e| app.visible(e)) {
-        if matches!(e.shape, Shape::Wall(_)) && !e.construction {
+        if matches!(e.shape, Shape::Wall(_) | Shape::Opening(_)) && !e.construction {
             continue;
         }
         let [r, g, b] = if e.construction { CONSTRUCTION_RGB } else { app.color(e) };
@@ -129,10 +129,11 @@ pub fn pick(app: &CadApp, rect: egui::Rect, pos: egui::Pos2) -> Option<EntityId>
     app.doc
         .entities_in(app.sketch)
         .filter(|e| app.pickable(e))
-        .map(|e| (e.id, distance_2d(&e.shape, w) * app.cam2d.zoom))
-        .filter(|(_, d)| *d <= PICK_PIXELS)
-        .min_by(|a, b| a.1.total_cmp(&b.1))
-        .map(|(id, _)| id)
+        .map(|e| (e.id, distance_2d(&e.shape, w) * app.cam2d.zoom, matches!(e.shape, Shape::Opening(_))))
+        .filter(|(_, d, _)| *d <= PICK_PIXELS)
+        // On a tie an opening wins over the wall it sits in.
+        .min_by(|a, b| a.1.total_cmp(&b.1).then(b.2.cmp(&a.2)))
+        .map(|(id, ..)| id)
 }
 
 fn select(app: &mut CadApp, ui: &egui::Ui, resp: &egui::Response, rect: egui::Rect) {

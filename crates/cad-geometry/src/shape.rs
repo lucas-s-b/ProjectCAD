@@ -1,5 +1,6 @@
 use crate::annot::{dim_layout, fills, labels, strokes, text_box};
 use crate::tol::Tolerance;
+use crate::opening::{Opening, OpeningKind};
 use crate::wall::Wall;
 use glam::{DVec2, DVec3};
 use serde::{Deserialize, Serialize};
@@ -52,6 +53,8 @@ pub enum Shape {
     AngularDim { center: DVec2, start: f64, sweep: f64, radius: f64, text_height: f64 },
     /// A straight wall; only in level sketches (see cad-document).
     Wall(Wall),
+    /// A door or window in a wall; only in level sketches, hosted by a wall (see cad-document).
+    Opening(Opening),
 }
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
@@ -123,6 +126,16 @@ impl Shape {
                 center.is_finite() && start.is_finite() && sweep.is_finite() && radius.is_finite() && text_height.is_finite()
             }
             Shape::Wall(w) => w.a.is_finite() && w.b.is_finite() && w.thickness.is_finite() && w.height.is_finite(),
+            Shape::Opening(o) => {
+                o.at.is_finite()
+                    && o.width.is_finite()
+                    && o.height.is_finite()
+                    && o.sill.is_finite()
+                    && o.wall.a.is_finite()
+                    && o.wall.b.is_finite()
+                    && o.wall.thickness.is_finite()
+                    && o.wall.height.is_finite()
+            }
         };
         if !finite {
             return Err(GeomError::NonFinite);
@@ -228,6 +241,10 @@ impl Shape {
             Shape::Wall(w) if w.thickness <= t || w.height <= t => {
                 Err(GeomError::Degenerate("wall thickness and height must be positive"))
             }
+            Shape::Opening(o) if o.width <= t || o.height <= t || o.sill < 0.0 => {
+                Err(GeomError::Degenerate("opening width and height must be positive and its sill not negative"))
+            }
+            Shape::Opening(o) => Shape::Wall(o.wall).validate(tol),
             _ => Ok(()),
         }
     }
@@ -255,6 +272,10 @@ impl Shape {
             Shape::RadialDim { .. } => "Radial dimension",
             Shape::AngularDim { .. } => "Angular dimension",
             Shape::Wall(_) => "Wall",
+            Shape::Opening(o) => match o.kind {
+                OpeningKind::Door => "Door",
+                OpeningKind::Window => "Window",
+            },
         }
     }
 
@@ -284,6 +305,10 @@ impl Shape {
             Shape::Wall(w) => {
                 w.a += d2;
                 w.b += d2;
+            }
+            Shape::Opening(o) => {
+                o.wall.a += d2;
+                o.wall.b += d2;
             }
             Shape::Box { center, .. }
             | Shape::Cylinder { center, .. }
@@ -356,6 +381,12 @@ impl Shape {
             }
             Shape::Wall(w) => {
                 let c = w.corners();
+                let lo = c.iter().fold(DVec2::INFINITY, |m, p| m.min(*p));
+                let hi = c.iter().fold(DVec2::NEG_INFINITY, |m, p| m.max(*p));
+                (lo.extend(0.0), hi.extend(0.0))
+            }
+            Shape::Opening(o) => {
+                let c = o.corners();
                 let lo = c.iter().fold(DVec2::INFINITY, |m, p| m.min(*p));
                 let hi = c.iter().fold(DVec2::NEG_INFINITY, |m, p| m.max(*p));
                 (lo.extend(0.0), hi.extend(0.0))

@@ -235,6 +235,10 @@ pub enum DocError {
     SolidOutsideBaseSketch,
     #[error("sketch {0} is not a level")]
     NotALevel(SketchId),
+    #[error("entity {0} is not a wall on this level")]
+    NotAHost(EntityId),
+    #[error("wall {0} has doors or windows")]
+    HostInUse(EntityId),
 }
 
 impl Document {
@@ -320,6 +324,9 @@ impl Document {
                 if matches!(entity.shape, Shape::Wall(_)) && !self.is_level(entity.sketch) {
                     return Err(DocError::NotALevel(entity.sketch));
                 }
+                if let Shape::Opening(o) = &entity.shape {
+                    self.check_host(entity.sketch, o)?;
+                }
                 if entity.sketch != 0 && entity.shape.is_solid() {
                     return Err(DocError::SolidOutsideBaseSketch);
                 }
@@ -332,6 +339,9 @@ impl Document {
                 Command::Remove(id)
             }
             Command::Remove(id) => {
+                if self.openings_of(id).next().is_some() {
+                    return Err(DocError::HostInUse(id));
+                }
                 if self.constraints.values().any(|c| c.entities().contains(&id)) {
                     return Err(DocError::EntityConstrained(id));
                 }
@@ -349,6 +359,12 @@ impl Document {
                 let sketch = self.entities.get(&id).ok_or(DocError::NotFound(id))?.sketch;
                 if matches!(shape, Shape::Wall(_)) && !self.is_level(sketch) {
                     return Err(DocError::NotALevel(sketch));
+                }
+                if let Shape::Opening(o) = &shape {
+                    self.check_host(sketch, o)?;
+                }
+                if !matches!(shape, Shape::Wall(_)) && self.openings_of(id).next().is_some() {
+                    return Err(DocError::HostInUse(id));
                 }
                 let e = self.entities.get_mut(&id).ok_or(DocError::NotFound(id))?;
                 let old = std::mem::replace(&mut e.shape, shape);

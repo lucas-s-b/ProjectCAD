@@ -56,8 +56,9 @@ impl History {
                 }
             }
         }
-        // Linked dimensions follow their points, after the solve moved them.
-        let refresh = doc.dim_refresh_commands();
+        // Linked dimensions follow their points and openings their walls, after the solve moved them.
+        let mut refresh = doc.dim_refresh_commands();
+        refresh.extend(doc.opening_refresh_commands());
         match run(doc, refresh) {
             Ok(mut follow_inverses) => {
                 follow_inverses.append(&mut inverses);

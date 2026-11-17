@@ -4,7 +4,7 @@ use crate::rebuild_worker::RebuildWorker;
 use crate::{panels, view2d, view3d};
 use cad_document::{Plane3, Command, ConstraintId, Document, Entity, EntityId, History, LayerId, BodyOp, Feature, FeatureId, PointRef, RebuildResult, RevolveAxis, SketchId, BasePlane, Target};
 use cad_geometry::snap::Snap;
-use cad_geometry::{DVec2, DVec3, HatchPattern, Shape, WallAlign};
+use cad_geometry::{DVec2, DVec3, HatchPattern, Opening, OpeningKind, Shape, Wall, WallAlign};
 use std::collections::BTreeSet;
 use eframe::egui;
 use std::path::PathBuf;
@@ -52,6 +52,8 @@ pub enum Tool {
     RadiusDim,
     AngleDim,
     Wall,
+    Door,
+    Window,
     Trim,
     Extend,
     Offset,
@@ -153,6 +155,10 @@ pub struct CadApp {
     pub wall_thickness: f64,
     /// Alignment of new walls.
     pub wall_align: WallAlign,
+    /// Door tool settings (host, wall and at are filled in on placement).
+    pub door: Opening,
+    /// Window tool settings.
+    pub window: Opening,
     /// Elevation and height fields of the Levels controls.
     pub level_elevation: String,
     pub level_height: String,
@@ -265,6 +271,8 @@ impl CadApp {
             polygon_sides: 6,
             wall_thickness: 200.0,
             wall_align: WallAlign::Center,
+            door: opening_template(OpeningKind::Door, 900.0, 2100.0, 0.0),
+            window: opening_template(OpeningKind::Window, 1200.0, 1200.0, 900.0),
             level_elevation: "0".into(),
             level_height: "3000 mm".into(),
             radial_diameter: false,
@@ -418,11 +426,16 @@ impl CadApp {
     pub fn delete_selection(&mut self) {
         let constraints: BTreeSet<ConstraintId> = self.selection.iter().flat_map(|id| self.doc.constraints_of(*id)).collect();
         let links = self.selection.iter().filter(|id| self.doc.dim_link(**id).is_some()).map(|id| Command::SetDimLink { id: *id, link: None });
+        // A wall's openings go with it, and before it: the document refuses to remove a wall that still hosts one.
+        let mut doomed: BTreeSet<EntityId> = self.selection.clone();
+        doomed.extend(self.selection.iter().flat_map(|id| self.doc.openings_of(*id)));
+        let (openings, rest): (Vec<EntityId>, Vec<EntityId>) =
+            doomed.into_iter().partition(|id| matches!(self.doc.get(*id).map(|x| &x.shape), Some(Shape::Opening(_))));
         let cmds: Vec<Command> = constraints
             .into_iter()
             .map(Command::RemoveConstraint)
             .chain(links)
-            .chain(self.selection.iter().map(|id| Command::Remove(*id)))
+            .chain(openings.into_iter().chain(rest).map(Command::Remove))
             .collect();
         self.exec(cmds);
         self.set_selection([]);
@@ -535,4 +548,10 @@ impl eframe::App for CadApp {
         // Edits made during this frame go to the worker now, not a frame later.
         self.sync_model();
     }
+}
+
+/// An opening without a host, as the Door and Window tools keep their settings.
+fn opening_template(kind: OpeningKind, width: f64, height: f64, sill: f64) -> Opening {
+    let wall = Wall { a: DVec2::ZERO, b: DVec2::X, thickness: 1.0, height: 1.0, align: WallAlign::Center };
+    Opening { host: 0, wall, at: 0.0, width, height, sill, kind, hinge_b: false, swing_left: true }
 }

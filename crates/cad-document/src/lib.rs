@@ -6,6 +6,7 @@ pub mod file;
 mod group;
 pub mod history;
 pub mod linetype;
+mod openings;
 pub mod rebuild;
 mod rebuild_blend;
 mod rebuild_pattern;

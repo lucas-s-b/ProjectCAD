@@ -57,6 +57,11 @@ impl Document {
         if let Some(e) = doc.entities.values().find(|e| matches!(e.shape, Shape::Wall(_)) && !doc.is_level(e.sketch)) {
             return Err(DocError::NotALevel(e.sketch));
         }
+        for x in doc.entities.values() {
+            if let Shape::Opening(o) = &x.shape {
+                doc.check_host(x.sketch, o)?;
+            }
+        }
         if let Some(max) = doc.sketches.keys().next_back() {
             doc.next_sketch_id = doc.next_sketch_id.max(max.saturating_add(1));
         }

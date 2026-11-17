@@ -1,5 +1,5 @@
 use crate::*;
-use cad_geometry::{DVec2, DVec3, Shape, Wall, WallAlign};
+use cad_geometry::{DVec2, DVec3, Opening, OpeningKind, Shape, Wall, WallAlign};
 use cad_modeler::Plane3;
 
 fn sketch(id: SketchId, name: &str, plane: PlaneDef) -> Sketch {
@@ -274,4 +274,26 @@ fn levels_and_walls_roundtrip() {
     std::fs::remove_file(&p).unwrap();
     assert_eq!(back.sketches().cloned().collect::<Vec<_>>(), d.sketches().cloned().collect::<Vec<_>>());
     assert_eq!(back.get(1), d.get(1));
+}
+
+#[test]
+fn opening_without_its_wall_does_not_load() {
+    let text = r#"{"version":16,"name":"x","next_id":3,"entities":{"2":{"id":2,"name":"d","sketch":1,"shape":{"Opening":{"host":1,"wall":{"a":[0.0,0.0],"b":[4000.0,0.0],"thickness":200.0,"height":2500.0,"align":"Center"},"at":1000.0,"width":900.0,"height":2100.0,"sill":0.0,"kind":"Door","hinge_b":false,"swing_left":true}}}},"sketches":{"0":{"id":0,"name":"Sketch 0","plane":{"Principal":{"base":"XY","offset":"0"}}},"1":{"id":1,"name":"L1","plane":{"Principal":{"base":"XY","offset":"0"}},"level":{"height":"3000 mm"}}}}"#;
+    assert!(matches!(load_text("noh", text), Err(DocError::NotAHost(1))));
+}
+
+#[test]
+fn openings_roundtrip() {
+    let mut d = Document::new("op");
+    d.apply(Command::AddSketch(level(1, "0"))).unwrap();
+    d.apply(Command::Add(wall_in(1, 1))).unwrap();
+    let Shape::Wall(wall) = d.get(1).unwrap().shape.clone() else { panic!("not a wall") };
+    let o = Opening { host: 1, wall, at: 1000.0, width: 1200.0, height: 1200.0, sill: 900.0, kind: OpeningKind::Window, hinge_b: false, swing_left: true };
+    let e = Entity { id: 2, name: "win".into(), shape: Shape::Opening(o), layer: 0, sketch: 1, construction: false, group: None, meta: Default::default() };
+    d.apply(Command::Add(e)).unwrap();
+    let p = temp("openings");
+    d.save(&p).unwrap();
+    let back = Document::load(&p).unwrap();
+    std::fs::remove_file(&p).unwrap();
+    assert_eq!(back.get(2), d.get(2));
 }

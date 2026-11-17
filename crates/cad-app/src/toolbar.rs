@@ -28,6 +28,8 @@ pub fn toolbar(app: &mut CadApp, ui: &mut egui::Ui) {
                 (Tool::RadiusDim, "Radius dim"),
                 (Tool::AngleDim, "Angle dim"),
                 (Tool::Wall, "Wall"),
+                (Tool::Door, "Door"),
+                (Tool::Window, "Window"),
             ] {
                 w::selectable_value(ui, &mut app.tool, tool, label);
             }
@@ -76,6 +78,15 @@ pub fn toolbar(app: &mut CadApp, ui: &mut egui::Ui) {
                             w::selectable_value(ui, &mut app.wall_align, a, &format!("{a:?}"));
                         }
                     });
+                }
+                Tool::Door | Tool::Window => {
+                    let o = if app.tool == Tool::Door { &mut app.door } else { &mut app.window };
+                    ui.label("Width");
+                    w::add(ui, "Opening width", egui::DragValue::new(&mut o.width).speed(1.0).range(1.0..=f64::MAX));
+                    ui.label("Height");
+                    w::add(ui, "Opening height", egui::DragValue::new(&mut o.height).speed(1.0).range(1.0..=f64::MAX));
+                    ui.label("Sill");
+                    w::add(ui, "Opening sill", egui::DragValue::new(&mut o.sill).speed(1.0).range(0.0..=f64::MAX));
                 }
                 Tool::RadiusDim => {
                     w::checkbox(ui, &mut app.radial_diameter, "Diameter");
