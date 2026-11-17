@@ -8,7 +8,7 @@ use crate::refs::face_plane;
 use crate::sketch::{PlaneDef, Sketch, SketchPlanes};
 use cad_geometry::profile::Profile;
 use cad_geometry::{DVec2, Shape};
-use cad_modeler::{Body, BoolOp, ModelError, PathPiece, Plane3, Section, boolean, extrude, loft, revolve, sweep};
+use cad_modeler::{Body, BoolOp, ModelError, PathPiece, Plane3, Section, boolean, extrude, extrude_tapered, loft, revolve, sweep};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{BTreeMap, HashMap};
 use std::hash::{Hash, Hasher};
@@ -55,11 +55,17 @@ pub struct Rebuilder {
 
 /// Feature inputs with every expression evaluated.
 pub(crate) enum Tool {
-    Extrude { distance: f64, offset: f64, flip: bool },
+    Extrude {
+        distance: f64,
+        offset: f64,
+        flip: bool,
+        /// Draft angle in radians; 0 uses the B-Rep extrude.
+        taper: f64,
+    },
     Revolve { axis_point: DVec2, axis_dir: DVec2, angle: f64 },
     /// The inputs' profile and plane are carried along the path.
     Sweep { path: Vec<PathPiece>, closed: bool },
-    Loft { sections: Vec<(Profile, Plane3)> },
+    Loft { sections: Vec<(Profile, Plane3)>, smooth: bool },
 }
 
 /// For a loft the profile and plane are those of the first section.
@@ -130,7 +136,9 @@ pub(crate) fn resolve_solid(doc: &Document, f: &Feature, planes: &SketchPlanes) 
     let sketch = profile_ids.first().and_then(|id| doc.get(*id)).map_or(0, |e| e.sketch);
     let plane = doc.plane_in(sketch, planes)?;
     let tool = match &f.kind {
-        FeatureKind::Extrude { flip, .. } => Tool::Extrude { distance: numbers.0, offset: numbers.1, flip: *flip },
+        FeatureKind::Extrude { flip, taper, .. } => {
+            Tool::Extrude { distance: numbers.0, offset: numbers.1, flip: *flip, taper: eval(doc, taper, true)? }
+        }
         FeatureKind::Revolve { axis, .. } => {
             let (axis_point, axis_dir) = match axis {
                 RevolveAxis::X => (DVec2::ZERO, DVec2::X),
@@ -171,13 +179,15 @@ fn combine(a: &Body, b: &Body, op: BoolOp) -> Result<Option<Arc<Body>>, String> 
 impl Inputs {
     pub(crate) fn key(&self, prev: u64) -> u64 {
         let (tag, mut numbers) = match &self.tool {
-            Tool::Extrude { distance, offset, flip } => ("extrude", vec![distance.to_bits(), offset.to_bits(), u64::from(*flip)]),
+            Tool::Extrude { distance, offset, flip, taper } => {
+                ("extrude", vec![distance.to_bits(), offset.to_bits(), u64::from(*flip), taper.to_bits()])
+            }
             Tool::Revolve { axis_point, axis_dir, angle } => {
                 let bits = [axis_point.x, axis_point.y, axis_dir.x, axis_dir.y, *angle].map(f64::to_bits);
                 ("revolve", bits.to_vec())
             }
             Tool::Sweep { closed, .. } => ("sweep", vec![u64::from(*closed)]),
-            Tool::Loft { .. } => ("loft", Vec::new()),
+            Tool::Loft { smooth, .. } => ("loft", vec![u64::from(*smooth)]),
         };
         let Plane3 { origin, x, y } = self.plane;
         numbers.extend([origin, x, y].iter().flat_map(|v| v.to_array()).map(f64::to_bits));
@@ -187,15 +197,20 @@ impl Inputs {
     pub(crate) fn tool_body(&self) -> Result<Body, String> {
         let solid = |brep: Result<_, ModelError>| brep.and_then(|b| Body::from_brep(&b, BODY_TOLERANCE));
         let body = match &self.tool {
-            Tool::Extrude { distance, offset, flip } => {
+            Tool::Extrude { distance, offset, flip, taper } => {
                 let plane = Plane3 { origin: self.plane.origin + self.plane.normal() * *offset, ..self.plane };
-                solid(extrude(&self.profile, &plane, if *flip { -distance } else { *distance }))
+                let distance = if *flip { -distance } else { *distance };
+                if *taper == 0.0 {
+                    solid(extrude(&self.profile, &plane, distance))
+                } else {
+                    extrude_tapered(&self.profile, &plane, distance, *taper, BODY_TOLERANCE)
+                }
             }
             Tool::Revolve { axis_point, axis_dir, angle } => solid(revolve(&self.profile, &self.plane, *axis_point, *axis_dir, *angle)),
             Tool::Sweep { path, closed } => sweep(&self.profile, &self.plane, path, *closed, BODY_TOLERANCE),
-            Tool::Loft { sections } => {
+            Tool::Loft { sections, smooth } => {
                 let sections: Vec<Section> = sections.iter().map(|(profile, plane)| Section { profile, plane }).collect();
-                loft(&sections, BODY_TOLERANCE)
+                loft(&sections, *smooth, BODY_TOLERANCE)
             }
         };
         body.map_err(|e| e.to_string())

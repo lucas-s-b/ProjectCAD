@@ -11,6 +11,11 @@ pub const BODY_TOLERANCE: f64 = 0.02;
 /// mm: how far a stored point may be from the edge it names.
 pub const EDGE_PICK_TOLERANCE: f64 = 0.05;
 
+/// Taper of extrudes from files before version 14.
+fn zero_angle() -> String {
+    "0 deg".to_string()
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum BodyOp {
     New,
@@ -56,10 +61,13 @@ pub enum RevolveAxis {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum FeatureKind {
     /// The solid runs from the sketch plane moved by `offset` along its normal to `distance` further (against it when `flip`).
+    /// `taper` is the draft angle of the side walls about that start plane: positive narrows the solid away from it.
     Extrude {
         profile: Vec<EntityId>,
         distance: String,
         offset: String,
+        #[serde(default = "zero_angle")]
+        taper: String,
         op: BodyOp,
         #[serde(default)]
         flip: bool,
@@ -105,12 +113,15 @@ pub enum FeatureKind {
         #[serde(default)]
         target: Target,
     },
-    /// A ruled solid through the sections in order; each section is a closed profile in its own sketch.
+    /// A solid through the sections in order; each section is a closed profile in its own sketch. Ruled between
+    /// sections, or with `smooth` (three or more sections) a Catmull-Rom surface through them. `false` before version 14.
     Loft {
         sections: Vec<Vec<EntityId>>,
         op: BodyOp,
         #[serde(default)]
         target: Target,
+        #[serde(default)]
+        smooth: bool,
     },
     /// Hollows the body whose surface passes through `at` (as picked; a snapshot like the points of a fillet), leaving walls
     /// of `thickness`. With `open`, the planar face nearest to that point is removed.
@@ -153,7 +164,7 @@ impl Feature {
         match &self.kind {
             FeatureKind::Fillet { radius: size, .. } | FeatureKind::Chamfer { distance: size, .. } => vec![size.as_str()],
             FeatureKind::Shell { thickness, .. } => vec![thickness.as_str()],
-            FeatureKind::Extrude { distance, offset, .. } => vec![distance.as_str(), offset.as_str()],
+            FeatureKind::Extrude { distance, offset, taper, .. } => vec![distance.as_str(), offset.as_str(), taper.as_str()],
             FeatureKind::Revolve { angle, .. } => vec![angle.as_str()],
             FeatureKind::LinearPattern { count, dx, dy, dz, .. } => [count, dx, dy, dz].map(String::as_str).to_vec(),
             FeatureKind::CircularPattern { count, angle, cx, cy, cz, .. } => [count, angle, cx, cy, cz].map(String::as_str).to_vec(),

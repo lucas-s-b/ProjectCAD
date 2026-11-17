@@ -17,7 +17,7 @@ fn sweep(id: FeatureId, profile: Vec<EntityId>, path: Vec<EntityId>, op: BodyOp)
 }
 
 fn loft(id: FeatureId, sections: Vec<Vec<EntityId>>, op: BodyOp) -> Feature {
-    Feature { id, name: format!("loft{id}"), suppressed: false, kind: FeatureKind::Loft { sections, op, target: Target::Auto } }
+    Feature { id, name: format!("loft{id}"), suppressed: false, kind: FeatureKind::Loft { sections, op, target: Target::Auto, smooth: false } }
 }
 
 fn close(a: f64, b: f64, rel: f64) {
@@ -182,7 +182,7 @@ fn undo_redo_and_save_load() {
     let loaded = Document::load(&p).unwrap();
     std::fs::remove_file(&p).unwrap();
     assert_eq!(loaded.features(), after);
-    assert_eq!(FORMAT_VERSION, 13);
+    assert_eq!(FORMAT_VERSION, 14);
 }
 
 #[test]
@@ -197,4 +197,37 @@ fn version_8_file_loads() {
     let d = d.unwrap();
     assert_eq!(d.features().len(), 1);
     assert!(rebuilt(&d).total_volume() > 0.0);
+}
+
+#[test]
+fn smooth_loft_through_three_squares() {
+    let mut d = Document::new("smooth");
+    sketch(&mut d, 1, BasePlane::XY, "10 mm");
+    sketch(&mut d, 2, BasePlane::XY, "20 mm");
+    put(&mut d, 1, 0, rect(-5.0, -5.0, 5.0, 5.0));
+    put(&mut d, 2, 1, rect(-10.0, -10.0, 10.0, 10.0));
+    put(&mut d, 3, 2, rect(-5.0, -5.0, 5.0, 5.0));
+    let mut f = loft(1, vec![vec![1], vec![2], vec![3]], BodyOp::Add);
+    push(&mut d, f.clone());
+    close(rebuilt(&d).total_volume(), 14000.0 / 3.0, 1e-9);
+    if let FeatureKind::Loft { smooth, .. } = &mut f.kind {
+        *smooth = true;
+    }
+    d.apply(Command::SetFeature(f)).unwrap();
+    close(rebuilt(&d).total_volume(), 5207.979838053386, 1e-9);
+}
+
+#[test]
+fn version_13_file_loads_without_taper_or_smooth() {
+    let entity = r#""1":{"id":1,"name":"c","shape":{"Circle":{"center":[0.0,0.0],"radius":1.0}}}"#;
+    let extrude = r#"{"id":1,"name":"e","suppressed":false,"kind":{"Extrude":{"profile":[1],"distance":"5 mm","offset":"0","op":"Add"}}}"#;
+    let loft = r#"{"id":2,"name":"l","suppressed":false,"kind":{"Loft":{"sections":[[1],[1]],"op":"New"}}}"#;
+    let text = format!(r#"{{"version":13,"name":"x","next_id":2,"next_feature_id":3,"entities":{{{entity}}},"features":[{extrude},{loft}]}}"#);
+    let p = std::env::temp_dir().join(format!("cadtest_{}_v13.cadproj", std::process::id()));
+    std::fs::write(&p, text).unwrap();
+    let d = Document::load(&p);
+    std::fs::remove_file(&p).unwrap();
+    let d = d.unwrap();
+    assert!(matches!(&d.features()[0].kind, FeatureKind::Extrude { taper, .. } if taper == "0 deg"));
+    assert!(matches!(&d.features()[1].kind, FeatureKind::Loft { smooth: false, .. }));
 }

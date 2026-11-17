@@ -127,7 +127,7 @@ fn constraints_and_features_cannot_span_sketches() {
         id,
         name: "f".into(),
         suppressed: false,
-        kind: FeatureKind::Extrude { profile, distance: "5".into(), offset: "0".into(), op: BodyOp::Add, flip: false, target: Target::Auto },
+        kind: FeatureKind::Extrude { profile, distance: "5".into(), offset: "0".into(), taper: "0 deg".into(), op: BodyOp::Add, flip: false, target: Target::Auto },
     };
     let add = |feature| Command::AddFeature { index: 0, feature };
     assert!(matches!(d.apply(add(extrude(1, vec![1, 2]))), Err(DocError::MixedSketches)));

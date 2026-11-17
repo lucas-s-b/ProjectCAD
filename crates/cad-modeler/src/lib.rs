@@ -14,6 +14,7 @@ mod revolve;
 mod section;
 mod shell;
 mod sweep;
+mod taper;
 mod tess;
 mod trimmed;
 
@@ -31,6 +32,7 @@ pub use plane::Plane3;
 pub use revolve::revolve;
 pub use shell::shell;
 pub use sweep::{PathPiece, path_pieces, sweep};
+pub use taper::extrude_tapered;
 pub use tess::{TriMesh, tessellate, tessellate_with_faces};
 pub use trimmed::{TrimEdge, TrimFace, TrimmedBody};
 

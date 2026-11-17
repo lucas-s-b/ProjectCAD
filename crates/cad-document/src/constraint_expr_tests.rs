@@ -179,7 +179,7 @@ fn parametric_rectangle() -> (Document, History) {
     cmds.push(Command::SetConstraintExpr { id: 9, expr: Some("w".into()) });
     cmds.push(Command::SetConstraintExpr { id: 10, expr: Some("h".into()) });
     h.execute(&mut d, cmds).unwrap();
-    let kind = FeatureKind::Extrude { profile: vec![1, 2, 3, 4], distance: "5 mm".into(), offset: "0".into(), op: BodyOp::Add, flip: false, target: Target::Auto };
+    let kind = FeatureKind::Extrude { profile: vec![1, 2, 3, 4], distance: "5 mm".into(), offset: "0".into(), taper: "0 deg".into(), op: BodyOp::Add, flip: false, target: Target::Auto };
     let feature = Feature { id: 1, name: "Extrude".into(), suppressed: false, kind };
     h.execute(&mut d, vec![Command::AddFeature { index: 0, feature }]).unwrap();
     (d, h)

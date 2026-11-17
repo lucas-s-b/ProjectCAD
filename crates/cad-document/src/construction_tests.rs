@@ -10,7 +10,7 @@ fn diagonal() -> Shape {
 }
 
 fn extrude(profile: Vec<EntityId>) -> Feature {
-    let kind = FeatureKind::Extrude { profile, distance: "5 mm".into(), offset: "0".into(), op: BodyOp::Add, flip: false, target: Target::Auto };
+    let kind = FeatureKind::Extrude { profile, distance: "5 mm".into(), offset: "0".into(), taper: "0 deg".into(), op: BodyOp::Add, flip: false, target: Target::Auto };
     Feature { id: 1, name: "f".into(), suppressed: false, kind }
 }
 

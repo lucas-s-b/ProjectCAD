@@ -168,12 +168,16 @@ pub struct CadApp {
     pub param_new: (String, String),
     pub feat_distance: String,
     pub feat_angle: String,
+    /// Taper field of the Extrude controls.
+    pub feat_taper: String,
     pub feat_op: BodyOp,
     pub feat_axis: RevolveAxis,
     pub feat_flip: bool,
     pub feat_target: Target,
     /// Selections captured for a sweep (profile, path) or a loft (sections).
     pub captures: Vec<Vec<EntityId>>,
+    /// Smooth checkbox of the Loft controls.
+    pub loft_smooth: bool,
     /// The next click in the 3D view picks a planar face.
     pub pick_face: PickFace,
     /// Thickness field of the Shell controls.
@@ -265,11 +269,13 @@ impl CadApp {
             param_new: Default::default(),
             feat_distance: "10 mm".into(),
             feat_angle: "360 deg".into(),
+            feat_taper: "0 deg".into(),
             feat_op: BodyOp::Add,
             feat_axis: RevolveAxis::Y,
             feat_flip: false,
             feat_target: Target::Auto,
             captures: Vec::new(),
+            loft_smooth: false,
             pick_face: PickFace::Off,
             shell_thickness: "2 mm".into(),
             pick_edges: None,

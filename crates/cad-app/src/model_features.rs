@@ -72,12 +72,16 @@ fn new_controls(app: &mut CadApp, ui: &mut egui::Ui) {
             w::add(ui, "Distance", TextEdit::singleline(&mut app.feat_distance).desired_width(80.0));
         });
         ui.horizontal(|ui| {
+            ui.label("Taper");
+            w::add(ui, "Taper", TextEdit::singleline(&mut app.feat_taper).desired_width(80.0));
+        });
+        ui.horizontal(|ui| {
             ui.label("Operation");
             op_combo(ui, "feat_op", &mut app.feat_op);
         });
         if w::button(ui, "Extrude").clicked() {
-            let (distance, op, flip, target) = (app.feat_distance.clone(), app.feat_op, app.feat_flip, app.feat_target);
-            add_feature(app, "Extrude", FeatureKind::Extrude { profile: profile.clone(), distance, offset: "0".into(), op, flip, target });
+            let (distance, taper, op, flip, target) = (app.feat_distance.clone(), app.feat_taper.clone(), app.feat_op, app.feat_flip, app.feat_target);
+            add_feature(app, "Extrude", FeatureKind::Extrude { profile: profile.clone(), distance, offset: "0".into(), taper, op, flip, target });
         }
         ui.horizontal(|ui| {
             ui.label("Angle");
@@ -182,9 +186,10 @@ fn editor(app: &mut CadApp, ui: &mut egui::Ui) {
     };
     field(ui, "Name", &mut buffer.name);
     match &mut buffer.kind {
-        FeatureKind::Extrude { distance, offset, op, flip, target, .. } => {
+        FeatureKind::Extrude { distance, offset, taper, op, flip, target, .. } => {
             field(ui, "Distance", distance);
             field(ui, "Offset", offset);
+            field(ui, "Taper", taper);
             commit |= op_combo(ui, "edit_op", op);
             commit |= w::checkbox(ui, flip, "Flip").changed();
             commit |= target_combo(ui, "edit_target", target, &bodies);
@@ -195,7 +200,12 @@ fn editor(app: &mut CadApp, ui: &mut egui::Ui) {
             commit |= op_combo(ui, "edit_op", op);
             commit |= target_combo(ui, "edit_target", target, &bodies);
         }
-        FeatureKind::Sweep { op, target, .. } | FeatureKind::Loft { op, target, .. } => {
+        FeatureKind::Sweep { op, target, .. } => {
+            commit |= op_combo(ui, "edit_op", op);
+            commit |= target_combo(ui, "edit_target", target, &bodies);
+        }
+        FeatureKind::Loft { op, target, smooth, .. } => {
+            commit |= w::checkbox(ui, smooth, "Smooth").changed();
             commit |= op_combo(ui, "edit_op", op);
             commit |= target_combo(ui, "edit_target", target, &bodies);
         }
