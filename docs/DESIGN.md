@@ -112,7 +112,7 @@ FEA solvers; hidden-line removal. DWG has no acceptable pure-Rust path and stays
 - Units change only how lengths are displayed (dimensions, status bar). The model and the Properties fields stay in millimetres.
 - Text width is estimated (0.6 x height per character) until real text shaping is added. The 3D view shows text
   and dimensions as outlines. Export is 2D only: solids are skipped, dimensions are exploded in DXF.
-- Entities move in the 2D view or by numeric input; there is no 3D gizmo yet (Phase 3).
+- Entities move in the 2D view, by numeric input, or (solids) with the translate gizmo of the 3D view.
 
 ## 8. MCP mode (test and automation interface)
 

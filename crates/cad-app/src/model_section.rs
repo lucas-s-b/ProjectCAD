@@ -18,5 +18,5 @@ pub fn controls(app: &mut CadApp, ui: &mut egui::Ui) {
         ui.label("mm");
     });
     w::checkbox(ui, &mut app.section.flip, "Flip section");
-    ui.small("display only; picks still hit hidden parts");
+    ui.small("display only; caps on feature bodies, not on Box/Cylinder/Sphere; picks still hit hidden parts");
 }

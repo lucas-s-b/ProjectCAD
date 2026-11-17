@@ -11,6 +11,7 @@ mod loft;
 mod mass;
 mod plane;
 mod revolve;
+mod section;
 mod shell;
 mod sweep;
 mod tess;

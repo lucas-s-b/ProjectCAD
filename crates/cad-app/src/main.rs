@@ -10,6 +10,7 @@ mod constraints_panel;
 mod layers_panel;
 mod edge_pick;
 mod face_pick;
+mod gizmo;
 mod glyphs;
 mod groups;
 mod hatch_panel;

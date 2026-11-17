@@ -18,15 +18,18 @@ pub struct SectionView {
 }
 
 impl SectionView {
+    /// Axis and offset of the active plane; None when off or when the offset does not parse.
+    pub fn plane(&self) -> Option<(usize, f64)> {
+        let d = self.offset.trim().parse::<f64>().ok()?;
+        self.on.then_some((self.axis, d))
+    }
+
     /// Plane for the shader; everything is kept when off or when the offset does not parse.
     pub fn clip(&self) -> [f32; 4] {
-        let Ok(d) = self.offset.trim().parse::<f64>() else { return [0.0, 0.0, 0.0, 1.0] };
-        if !self.on {
-            return [0.0, 0.0, 0.0, 1.0];
-        }
+        let Some((axis, d)) = self.plane() else { return [0.0, 0.0, 0.0, 1.0] };
         let s = if self.flip { -1.0 } else { 1.0 };
         let mut c = [0.0f32; 4];
-        c[self.axis] = s;
+        c[axis] = s;
         c[3] = (d * f64::from(s)) as f32;
         c
     }
@@ -116,8 +119,8 @@ pub struct CadApp {
     pub status: String,
     pub cursor_world: DVec2,
     pub confirm: Option<Pending>,
-    /// (doc.revision, model revision, sel_rev) last uploaded to the GPU.
-    pub gpu_stamp: Option<(u64, u64, u64)>,
+    /// (doc.revision, model revision, sel_rev, section clip) last uploaded to the GPU.
+    pub gpu_stamp: Option<(u64, u64, u64, [f32; 4])>,
     /// Central panel rect of the last frame, used to fit the 2D camera.
     pub view_rect: egui::Rect,
     pub last_title: String,
@@ -192,6 +195,12 @@ pub struct CadApp {
     /// Ray-pick acceleration structures of the bodies in `model`, see `face_pick::ray_body`.
     /// Selected body face: (body id, index into `body.faces`).
     pub face_sel: Option<(FeatureId, u32)>,
+    /// Body edge selected in the 3D view, for its measurements.
+    pub edge_sel: Option<(FeatureId, cad_document::BodyEdge)>,
+    /// Gizmo drag in progress in the 3D view.
+    pub gizmo: Option<crate::gizmo::GizmoDrag>,
+    /// Gizmo screen points of the last frame; used for hit tests.
+    pub gizmo_screen: Option<[egui::Pos2; 4]>,
     /// Section plane of the 3D view.
     pub section: SectionView,
     pub bvhs: Vec<(std::sync::Arc<cad_document::Body>, std::sync::Arc<cad_document::Bvh>)>,
@@ -276,6 +285,9 @@ impl CadApp {
             bvhs: Vec::new(),
             section: SectionView { on: false, axis: 2, offset: "0".into(), flip: false },
             face_sel: None,
+            edge_sel: None,
+            gizmo: None,
+            gizmo_screen: None,
             widgets: Vec::new(),
             mcp: mcp.then(|| mcp::spawn(cc.egui_ctx.clone())),
         }
@@ -286,6 +298,7 @@ impl CadApp {
         if let Some(m) = self.worker.poll() {
             self.model = Some(m);
             self.face_sel = None;
+            self.edge_sel = None;
             if std::mem::take(&mut self.fit_on_model) {
                 let (lo, hi) = self.scene_bounds();
                 self.cam3d.fit(lo, hi);
@@ -304,6 +317,7 @@ impl CadApp {
         self.requested = None;
         self.model = None;
         self.face_sel = None;
+        self.edge_sel = None;
         self.fit_on_model = true;
     }
 
@@ -404,6 +418,13 @@ impl CadApp {
         {
             let mut s = e.shape.clone();
             s.translate((now - start).extend(0.0));
+            return s;
+        }
+        if let Some(g) = &self.gizmo
+            && self.selection.contains(&e.id)
+        {
+            let mut s = e.shape.clone();
+            s.translate(g.delta());
             return s;
         }
         e.shape.clone()

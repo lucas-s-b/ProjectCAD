@@ -10,6 +10,7 @@ use std::sync::Arc;
 type Geometry = (Vec<Vertex>, Vec<Vertex>);
 
 const SELECTED: [f32; 3] = [1.0, 0.63, 0.0];
+const CAP: [f32; 3] = [0.80, 0.42, 0.32];
 const CAPTURED: [f32; 3] = [0.3, 0.8, 1.0];
 /// Dash and gap of construction geometry in sketch millimetres.
 const DASH_MM: (f64, f64) = (3.0, 2.0);
@@ -147,6 +148,16 @@ fn build_scene(app: &CadApp) -> Geometry {
             lines.push(vertex(a, [0.0; 3], [0.12, 0.12, 0.14]));
             lines.push(vertex(b, [0.0; 3], [0.12, 0.12, 0.14]));
         }
+        if let Some((axis, d)) = app.section.plane() {
+            let mut n = [0.0f32; 3];
+            n[axis] = if app.section.flip { -1.0 } else { 1.0 };
+            // Caps lie on the section plane: alpha 0 keeps the shader from clipping them.
+            for t in body.section_cap(axis, d) {
+                for p in t {
+                    tris.push(Vertex { pos: p.as_vec3().to_array(), normal: n, color: [CAP[0], CAP[1], CAP[2], 0.0] });
+                }
+            }
+        }
     }
     for p in app.pick_edges.iter().flat_map(|p| &p.points) {
         for (_, body) in app.model.iter().flat_map(|(_, m)| &m.bodies) {
@@ -156,6 +167,14 @@ fn build_scene(app: &CadApp) -> Geometry {
                 for q in [e.points[i], e.points[(i + 1) % n]] {
                     lines.push(vertex(q, [0.0; 3], SELECTED));
                 }
+            }
+        }
+    }
+    if let Some((_, e)) = &app.edge_sel {
+        let n = e.points.len();
+        for i in 0..if e.closed { n } else { n - 1 } {
+            for q in [e.points[i], e.points[(i + 1) % n]] {
+                lines.push(vertex(q, [0.0; 3], SELECTED));
             }
         }
     }
@@ -170,6 +189,7 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
         app.pick_face = PickFace::Off;
         app.pick_edges = None;
+        app.gizmo = None;
     }
     if app.pick_edges.is_some() && !ui.ctx().egui_wants_keyboard_input() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
         crate::edge_pick::finish(app);
@@ -188,32 +208,38 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
             app.cam3d.zoom((-scroll * 0.002).exp());
         }
     }
+    crate::gizmo::input(app, ui, &resp, rect);
     if resp.clicked_by(PointerButton::Primary)
         && let Some(pos) = resp.interact_pointer_pos()
     {
         let (origin, dir) = ray(app, rect, pos);
         let hit = if app.pick_face != PickFace::Off || app.pick_edges.is_some() { None } else { pick(app, origin, dir) };
         let shift = ui.input(|i| i.modifiers.shift);
+        let pixel = 2.0 * 22.5f64.to_radians().tan() / f64::from(rect.height().max(1.0));
         match (hit, shift) {
             _ if app.pick_face != PickFace::Off => crate::face_pick::click(app, origin, dir),
-            _ if app.pick_edges.is_some() => {
-                let pixel = 2.0 * 22.5f64.to_radians().tan() / f64::from(rect.height().max(1.0));
-                crate::edge_pick::click(app, origin, dir, pixel);
-            }
+            _ if app.pick_edges.is_some() => crate::edge_pick::click(app, origin, dir, pixel),
             (hit, shift) => {
                 app.click_select(hit, shift);
-                if hit.is_none() && !shift {
+                let had_edge = app.edge_sel.take().is_some();
+                if hit.is_none() && !shift && crate::edge_pick::select_edge(app, origin, dir, pixel) {
+                    app.face_sel = None;
+                    app.sel_rev += 1;
+                } else if hit.is_none() && !shift {
                     crate::face_pick::select_face(app, origin, dir);
-                } else if app.face_sel.take().is_some() {
+                    if had_edge {
+                        app.sel_rev += 1;
+                    }
+                } else if app.face_sel.take().is_some() || had_edge {
                     app.sel_rev += 1;
                 }
             }
         }
     }
 
-    let stamp = (app.doc.revision(), app.model.as_ref().map_or(u64::MAX, |(r, _)| *r), app.sel_rev);
+    let stamp = (app.doc.revision(), app.model.as_ref().map_or(u64::MAX, |(r, _)| *r), app.sel_rev, app.section.clip());
     // The inspector buffer exists whenever one entity is selected; it only previews once it differs.
-    let preview = app.drag.is_some() || app.pick_edges.is_some()
+    let preview = app.drag.is_some() || app.pick_edges.is_some() || app.gizmo.is_some()
         || app.inspector.as_ref().is_some_and(|(id, s)| app.doc.get(*id).is_none_or(|e| e.shape != *s));
     let geometry = if preview || app.gpu_stamp != Some(stamp) {
         // While previewing the stamp stays unset, so the final state is uploaded afterwards.
@@ -224,6 +250,10 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     };
     let view_proj = app.cam3d.view_proj(aspect).to_cols_array_2d();
     ui.painter().add(egui_wgpu::Callback::new_paint_callback(rect, SceneCallback { view_proj, clip: app.section.clip(), geometry }));
+    app.gizmo_screen = crate::gizmo::screen(app, rect);
+    if let Some(p) = app.gizmo_screen {
+        crate::gizmo::paint(&ui.painter_at(rect), p, app.gizmo.as_ref().map(|g| g.axis));
+    }
     ui.painter_at(rect).text(
         rect.left_top() + egui::vec2(8.0, 8.0),
         egui::Align2::LEFT_TOP,
@@ -242,7 +272,7 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     }
 }
 
-fn ray(app: &CadApp, rect: egui::Rect, pos: egui::Pos2) -> (DVec3, DVec3) {
+pub(crate) fn ray(app: &CadApp, rect: egui::Rect, pos: egui::Pos2) -> (DVec3, DVec3) {
     let (w, h) = (rect.width(), rect.height().max(1.0));
     let ndc = Vec2::new(2.0 * (pos.x - rect.left()) / w - 1.0, 1.0 - 2.0 * (pos.y - rect.top()) / h);
     app.cam3d.ray(w / h, ndc)

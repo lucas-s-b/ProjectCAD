@@ -109,6 +109,9 @@ Done (unit-tested; the plate-with-hole flow checked in the running app through M
 - [x] BVH over body triangles for 3D ray picks (cached per body)
 - [x] Face selection in the 3D view: click a body face to highlight it and show its surface kind and area
 - [x] Section plane in the 3D view (axis, offset, flip); display only, picks still hit hidden parts
+- [x] Section caps: cut faces of feature bodies filled in the section view (not on Box/Cylinder/Sphere primitives)
+- [x] Edge selection in the 3D view: click an edge to see its kind, length or radius and convexity; hidden edges are not picked (blend picking too)
+- [x] Translate gizmo in the 3D view for selected Box, Cylinder and Sphere entities (drag an axis arrow); no grid snap
 - [ ] Built, not exercised in the app: Circular pattern and Mirror feature buttons, Revolve button, Intersect, Target other than Auto, reorder and delete buttons, feature editor fields other than distance, parameter and sketch delete, non-planar face pick, Re-pick edges, the highlight of picked edges
 
 Limits of this slice (state them wherever results are shown):
@@ -128,7 +131,7 @@ Remaining:
 3. Smooth loft through three or more sections, loft sections with holes, self-intersection checks, draft; corner blending where filleted edges meet; fillets on other edge types
 4. NURBS curves and surfaces
 5. (done) Constraint values from parameter expressions; solver Jacobian restricted per variable. Sparse normal equations (faer); a 400-line chain now takes 178 ms
-6. 3D gizmo, edge selection outside blend picking, section caps
+6. (done) 3D gizmo, edge selection, section caps
 7. STEP export with analytic faces (faceted export done)
 8. (done) Handle a rebuild worker panic; cancel a running rebuild when a newer request arrives
 
