@@ -20,8 +20,13 @@ impl GizmoDrag {
     }
 }
 
-/// Centre of the bounding box of the selection when it is non-empty and holds only solids (stored shapes, not the drag preview).
+/// Centre of the bounding box of the selection when it is non-empty and holds only solids (stored shapes, not the drag preview);
+/// with no entity selected, the centre of the selected component's solid.
 pub fn center(app: &CadApp) -> Option<DVec3> {
+    if app.selection.is_empty() {
+        let (lo, hi) = app.model_result().and_then(|r| r.component(app.component_sel?))?.bbox();
+        return Some((lo + hi) / 2.0);
+    }
     let mut bounds: Option<(DVec3, DVec3)> = None;
     for e in app.selection.iter().filter_map(|id| app.doc.get(*id)) {
         if !e.shape.is_solid() {
@@ -104,6 +109,19 @@ pub fn input(app: &mut CadApp, ui: &egui::Ui, resp: &egui::Response, rect: egui:
         && g.delta().length() > 1e-9
     {
         let delta = g.delta();
+        if app.selection.is_empty() {
+            // The gizmo of the selected component (see `center`).
+            let moved = app.component_sel.and_then(|id| app.doc.component(id)).map(|c| app.doc.component_moved(c, delta));
+            match moved {
+                Some(Ok(c)) => {
+                    app.component_edit = None;
+                    app.exec(vec![Command::SetComponent(c)]);
+                }
+                Some(Err(e)) => app.status = e,
+                None => {}
+            }
+            return;
+        }
         let cmds: Vec<Command> = app
             .selection
             .iter()

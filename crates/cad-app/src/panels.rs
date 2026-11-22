@@ -129,6 +129,9 @@ pub fn menu_bar(app: &mut CadApp, ui: &mut egui::Ui) {
                 if menu_item(ui, true, "Export STEP...", "") {
                     app.export_dialog("step");
                 }
+                if menu_item(ui, true, "Export BOM CSV...", "") {
+                    app.export_dialog("csv");
+                }
             });
             w::menu_button(ui, "Edit", |ui| {
                 if menu_item(ui, app.history.can_undo(), "Undo", "Ctrl+Z") {
@@ -154,6 +157,7 @@ pub fn menu_bar(app: &mut CadApp, ui: &mut egui::Ui) {
                 w::checkbox(ui, &mut app.show_glyphs, "Constraint glyphs");
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                w::selectable_value(ui, &mut app.side_tab, SideTab::Assembly, "Assembly");
                 w::selectable_value(ui, &mut app.side_tab, SideTab::Model, "Model");
                 w::selectable_value(ui, &mut app.side_tab, SideTab::Sketch, "Sketch");
             });
@@ -168,6 +172,10 @@ pub fn right_panel(app: &mut CadApp, ui: &mut egui::Ui) {
         ui.separator();
         if app.side_tab == SideTab::Model {
             egui::ScrollArea::vertical().id_salt("model_side").show(ui, |ui| model_panel::show(app, ui));
+            return;
+        }
+        if app.side_tab == SideTab::Assembly {
+            egui::ScrollArea::vertical().id_salt("assembly_side").show(ui, |ui| crate::assembly_panel::show(app, ui));
             return;
         }
         ui.heading("Objects");

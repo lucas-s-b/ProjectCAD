@@ -138,15 +138,22 @@ fn build_scene(app: &CadApp) -> Geometry {
             }
         }
     }
-    for (id, body) in app.model.iter().flat_map(|(_, m)| &m.bodies) {
+    // The selected component follows a gizmo drag in progress (the gizmo moves it when no entity is selected).
+    let moving = app.gizmo.as_ref().filter(|_| app.selection.is_empty()).map_or(DVec3::ZERO, crate::gizmo::GizmoDrag::delta);
+    let shown = app.shown_bodies().map(|(id, b)| (Some(*id), None, b));
+    let placed = app.placed_components().map(|(c, b)| (None, Some(c), b));
+    for (id, comp, body) in shown.chain(placed) {
+        let selected = comp.is_some() && comp == app.component_sel;
+        let shift = if selected { moving } else { DVec3::ZERO };
         let (mesh, grey) = (&body.mesh, [0.72, 0.75, 0.80]);
         for (corner, (&i, n)) in mesh.indices.iter().zip(&mesh.normals).enumerate() {
-            let color = if app.face_sel == Some((*id, body.tri_face[corner / 3])) { SELECTED } else { grey };
-            tris.push(vertex(mesh.positions[i as usize], n.as_vec3().to_array(), color));
+            let face = id.is_some_and(|id| app.face_sel == Some((id, body.tri_face[corner / 3])));
+            let color = if selected || face { SELECTED } else { grey };
+            tris.push(vertex(mesh.positions[i as usize] + shift, n.as_vec3().to_array(), color));
         }
         for [a, b] in body.feature_edges() {
-            lines.push(vertex(a, [0.0; 3], [0.12, 0.12, 0.14]));
-            lines.push(vertex(b, [0.0; 3], [0.12, 0.12, 0.14]));
+            lines.push(vertex(a + shift, [0.0; 3], [0.12, 0.12, 0.14]));
+            lines.push(vertex(b + shift, [0.0; 3], [0.12, 0.12, 0.14]));
         }
         if let Some((axis, d)) = app.section.plane() {
             let mut n = [0.0f32; 3];
@@ -233,8 +240,12 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
             _ if app.pick_edges.is_some() => crate::edge_pick::click(app, origin, dir, pixel),
             (hit, shift) => {
                 app.click_select(hit, shift);
+                let comp = if hit.is_none() && !shift { crate::assembly_panel::pick(app, origin, dir) } else { None };
+                crate::assembly_panel::select(app, comp);
                 let had_edge = app.edge_sel.take().is_some();
-                if hit.is_none() && !shift && crate::edge_pick::select_edge(app, origin, dir, pixel) {
+                if comp.is_some() {
+                    app.face_sel = None;
+                } else if hit.is_none() && !shift && crate::edge_pick::select_edge(app, origin, dir, pixel) {
                     app.face_sel = None;
                     app.sel_rev += 1;
                 } else if hit.is_none() && !shift {

@@ -3,12 +3,17 @@ use cad_document::{Body, Bvh, Command, FeatureId, FeatureKind, PlaneDef, Sketch,
 use cad_geometry::DVec3;
 use std::sync::Arc;
 
-/// Nearest body triangle under the ray: (body id, triangle index, distance). BVHs are cached per body and dropped with it.
-pub fn ray_body(app: &mut CadApp, origin: DVec3, dir: DVec3) -> Option<(FeatureId, usize, f64)> {
-    let bodies: Vec<(FeatureId, Arc<Body>)> = app.model.iter().flat_map(|(_, m)| &m.bodies).cloned().collect();
-    app.bvhs.retain(|(b, _)| bodies.iter().any(|(_, cur)| Arc::ptr_eq(b, cur)));
-    let mut best: Option<(FeatureId, usize, f64)> = None;
-    for (id, body) in &bodies {
+/// Nearest triangle of `bodies` under the ray: (id, triangle index, distance). BVHs are cached per body and dropped
+/// once no body or component solid of the model holds it.
+pub fn nearest(app: &mut CadApp, bodies: &[(u64, Arc<Body>)], origin: DVec3, dir: DVec3) -> Option<(u64, usize, f64)> {
+    let live: Vec<Arc<Body>> = app
+        .model
+        .iter()
+        .flat_map(|(_, m)| m.bodies.iter().map(|(_, b)| b.clone()).chain(m.components.iter().filter_map(|(_, r)| r.as_ref().ok().cloned())))
+        .collect();
+    app.bvhs.retain(|(b, _)| live.iter().any(|l| Arc::ptr_eq(b, l)));
+    let mut best: Option<(u64, usize, f64)> = None;
+    for (id, body) in bodies {
         let bvh = match app.bvhs.iter().find(|(b, _)| Arc::ptr_eq(b, body)) {
             Some((_, bvh)) => bvh.clone(),
             None => {
@@ -24,6 +29,12 @@ pub fn ray_body(app: &mut CadApp, origin: DVec3, dir: DVec3) -> Option<(FeatureI
         }
     }
     best
+}
+
+/// Nearest shown body triangle under the ray: (body id, triangle index, distance).
+pub fn ray_body(app: &mut CadApp, origin: DVec3, dir: DVec3) -> Option<(FeatureId, usize, f64)> {
+    let bodies: Vec<(FeatureId, Arc<Body>)> = app.shown_bodies().cloned().collect();
+    nearest(app, &bodies, origin, dir)
 }
 
 /// Normal of a planar surface; None for any other surface.

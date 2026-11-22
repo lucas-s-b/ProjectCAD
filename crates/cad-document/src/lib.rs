@@ -1,3 +1,5 @@
+pub mod bom;
+pub mod component;
 pub mod constraints;
 mod dimlink;
 pub mod document;
@@ -49,6 +51,8 @@ pub use feature::{Axis3, BODY_TOLERANCE, BodyOp, EDGE_PICK_TOLERANCE, Feature, F
 pub use history::History;
 pub use linetype::LineType;
 pub use cad_mech::Part;
+pub use bom::{BomRow, bom_csv};
+pub use component::{Component, ComponentId, mm};
 pub use part::PartDef;
 pub use refs::{FaceKey, edge_keys};
 pub use rebuild::{FeatureState, RebuildResult, Rebuilder, panic_message};

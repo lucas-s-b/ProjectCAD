@@ -181,21 +181,23 @@ Deferred to later phases:
 Parametric generators (gears, shafts, bearings, springs, fasteners, threads), assemblies, joints,
 collision and interference checks (parry), exploded views, bill of materials.
 
-Done (unit-tested; part generators and their parameters checked in the running app through MCP):
+Done (unit-tested; part generators, components and the bill of materials checked in the running app through MCP):
 - [x] Part features: gear, shaft, spring, bolt and nut generators in the feature history ("Add part" in the Model tab), placed on a sketch plane at an (x, y) point with the axis along the plane normal; every parameter is an expression; a part makes a new body by default and can add, cut or intersect; patterns and mirrors copy parts; file format version 19
 - [x] Involute spur gear: module, teeth, pressure angle, face width, bore; no profile shift or backlash, addendum 1 m, dedendum 1.25 m; flanks in 10 lines, tip and root as arcs
 - [x] Stepped shaft: diameter and length per step, 45 degree chamfer at both ends (`cad_modeler::lathe`, a turned mesh with exact plane, cylinder and cone faces)
 - [x] Helical compression spring: wire and mean diameter, pitch, turns; plain ends
 - [x] ISO 4017 hex head screw and ISO 4032 hex nut, M3 to M24 coarse; cosmetic thread (nominal diameter, thread named only)
 - [x] Bill-of-materials data per part: designation ("ISO 4017 M8x30", "Spur gear m2 z20 b10") and thread derived from the parameters, shown in the feature editor
+- [x] Components (assemblies inside one document): placed instances of bodies, one body any number of times; translation and turns about X, Y and Z as expressions; a body with components is drawn only through them; Assembly tab (add from a body, list, select in the list or in 3D, name, position, rotation, material, part number, delete); the translate gizmo moves the selected component; a placed body cannot be removed; file format version 20
+- [x] Bill of materials: rows grouped by designation (by body when there is none), material and part number; item, part name, designation, quantity, mass from a density table; shown in the Assembly tab, exported as CSV (File > Export BOM CSV..., `export_project` with `.csv`), in the MCP `state` (`bom`)
 
 Limits:
 - Gears: no undercut or trochoid root fillet (below the base circle the flank runs radially), no helical, internal or bevel gears, no profile shift or backlash.
 - Springs: 24-sided wire and 48 segments per turn whatever the tolerance; no closed or ground ends.
 - Fasteners: no head chamfer or washer face; threads are cosmetic, so a bolt and its nut touch without overlap.
+- Components: STL/OBJ/STEP export still writes the bodies of the feature history, not the placed components (C); the gizmo only translates and writes plain millimetres over position expressions; no rotate gizmo; material and part number are set per component.
 
 Remaining:
-- B: components (instances of bodies with rigid placements, grounded), Assembly tab, bill of materials table with CSV export, component metadata (material, part number)
 - C: joints (fixed, revolute, slider) placed by tree propagation, joint values as expressions, exploded views
 - D: interference (manifold intersection volume) and clearance (parry3d-f64) checks
 - E: bearing generator, modelled helical threads, draft of existing faces, corner blending

@@ -2,10 +2,11 @@ use crate::camera::{Camera2D, OrbitCamera};
 use crate::mcp::{self, bridge::Bridge};
 use crate::rebuild_worker::RebuildWorker;
 use crate::{panels, view2d, view3d};
-use cad_document::{Plane3, Command, ConstraintId, Document, Entity, EntityId, History, LayerId, BodyOp, Feature, FeatureId, PointRef, RebuildResult, RevolveAxis, SketchId, BasePlane, Target};
+use cad_document::{Component, ComponentId, Plane3, Command, ConstraintId, Document, Entity, EntityId, History, LayerId, BodyOp, Feature, FeatureId, PointRef, RebuildResult, RevolveAxis, SketchId, BasePlane, Target};
 use cad_geometry::snap::Snap;
 use cad_geometry::{DVec2, DVec3, HatchPattern, Opening, OpeningKind, Roof, RoofKind, Shape, Wall, WallAlign};
 use std::collections::BTreeSet;
+use std::sync::Arc;
 use eframe::egui;
 use std::path::PathBuf;
 
@@ -83,6 +84,7 @@ impl Tool {
 pub enum SideTab {
     Sketch,
     Model,
+    Assembly,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -225,6 +227,12 @@ pub struct CadApp {
     pub feature_sel: Option<FeatureId>,
     /// Uncommitted edit of the selected feature.
     pub feature_edit: Option<(FeatureId, Feature)>,
+    /// Selected component (Assembly tab or a click in 3D); the gizmo moves it while no entity is selected.
+    pub component_sel: Option<ComponentId>,
+    /// Uncommitted edit of the selected component.
+    pub component_edit: Option<Component>,
+    /// Body that "Add component" places (0: none chosen yet).
+    pub component_body: u64,
     pub worker: RebuildWorker,
     /// Document revision last sent to the worker.
     pub requested: Option<u64>,
@@ -333,6 +341,9 @@ impl CadApp {
             new_sketch_offset: "0".into(),
             feature_sel: None,
             feature_edit: None,
+            component_sel: None,
+            component_edit: None,
+            component_body: 0,
             worker: RebuildWorker::spawn(cc.egui_ctx.clone()),
             requested: None,
             model: None,
@@ -396,6 +407,17 @@ impl CadApp {
     /// Ids of the bodies of the latest rebuild.
     pub fn body_ids(&self) -> Vec<u64> {
         self.model_result().into_iter().flat_map(|r| &r.bodies).map(|(id, _)| *id).collect()
+    }
+
+    /// Bodies of the latest rebuild that are drawn and picked: a body placed by a component is shown only through its components.
+    pub fn shown_bodies(&self) -> impl Iterator<Item = &(FeatureId, Arc<cad_document::Body>)> + '_ {
+        let placed: BTreeSet<FeatureId> = self.doc.components().map(|c| c.body).collect();
+        self.model.iter().flat_map(|(_, m)| &m.bodies).filter(move |(id, _)| !placed.contains(id))
+    }
+
+    /// Solids of the components in the latest rebuild; components whose placement failed are left out.
+    pub fn placed_components(&self) -> impl Iterator<Item = (ComponentId, &Arc<cad_document::Body>)> + '_ {
+        self.model.iter().flat_map(|(_, m)| &m.components).filter_map(|(id, r)| r.as_ref().ok().map(|b| (*id, b)))
     }
 
     pub fn is_dirty(&self) -> bool {
@@ -517,12 +539,13 @@ impl CadApp {
         self.inspector = None;
         self.param_edit = None;
         self.feature_edit = None;
+        self.component_edit = None;
         self.constraint_edit = None;
     }
 
     /// Union of all entity bboxes; a default box for an empty document.
     pub fn scene_bounds(&self) -> (DVec3, DVec3) {
-        let bodies = self.model.iter().flat_map(|(_, m)| &m.bodies).map(|(_, b)| b.bbox());
+        let bodies = self.shown_bodies().map(|(_, b)| b.bbox()).chain(self.placed_components().map(|(_, b)| b.bbox()));
         let walls = self.model.iter().flat_map(|(_, m)| &m.walls).map(|(_, b)| b.bbox());
         self.doc
             .entities()

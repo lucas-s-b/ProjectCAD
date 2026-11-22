@@ -15,7 +15,7 @@ pub fn definitions() -> Value {
     let (shift, ctrl) = (json!({"type": "boolean", "default": false}), json!({"type": "boolean", "default": false}));
     json!([
         tool("screenshot", "PNG of the application window. Pixel coordinates of this image are the coordinates used by click, drag and scroll.", json!({}), &[]),
-        tool("state", "JSON: active tool, view, status text, dirty flag, selection, current layer, 2D camera and viewport rectangle (pixels), window size, and the whole document (entities, layers).", json!({}), &[]),
+        tool("state", "JSON: active tool, view, status text, dirty flag, selection, current layer, 2D camera and viewport rectangle (pixels), window size, and the whole document (entities, layers), components and the bill of materials.", json!({}), &[]),
         tool("click", "Click. With world=true, x and y are millimetres in the 2D view instead of pixels.",
             json!({"x": num, "y": num, "button": button, "world": world, "shift": shift, "ctrl": ctrl}), &["x", "y"]),
         tool("drag", "Press at the first point, move, release at the second.",
@@ -30,7 +30,7 @@ pub fn definitions() -> Value {
         tool("open_project", "Load a .cadproj file. Unsaved changes are discarded.", json!({"path": {"type": "string"}}), &["path"]),
         tool("import_project", "Replace the document with the contents of a .dxf or .svg file (chosen by the extension). Unsaved changes are discarded.", json!({"path": {"type": "string"}}), &["path"]),
         tool("save_project", "Save to the path, or to the current file when omitted.", json!({"path": {"type": "string"}}), &[]),
-        tool("export_project", "Export to .svg, .dxf or .pdf (visible 2D entities) or to .stl, .obj or .step (solid bodies), chosen by the file extension.", json!({"path": {"type": "string"}}), &["path"]),
+        tool("export_project", "Export to .svg, .dxf or .pdf (visible 2D entities) or to .stl, .obj or .step (solid bodies), or .csv (bill of materials), chosen by the file extension.", json!({"path": {"type": "string"}}), &["path"]),
         tool("widgets", "JSON array of the named widgets of the last frame: name, index (occurrence among equal names, draw order), x and y (centre) and w and h in screenshot pixels, visible.", json!({}), &[]),
         tool("click_widget", "Click the centre of the widget with this name and occurrence index (default 0). Scrolls it into view when needed.",
             json!({"name": {"type": "string"}, "index": {"type": "integer", "minimum": 0, "default": 0}, "shift": shift, "ctrl": ctrl}), &["name"]),

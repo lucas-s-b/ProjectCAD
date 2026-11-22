@@ -2,12 +2,14 @@
 //! knows no document.
 mod fastener;
 mod gear;
+mod material;
 mod part;
 mod shaft;
 mod spring;
 
 pub use fastener::{Bolt, METRIC, Metric, Nut, metric};
 pub use gear::{FLANK_SEGMENTS, Gear};
+pub use material::{MATERIALS, density};
 pub use part::Part;
 pub use shaft::Shaft;
 pub use spring::{SEGMENTS_PER_TURN, Spring, WIRE_SIDES};
