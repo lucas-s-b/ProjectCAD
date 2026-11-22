@@ -104,6 +104,12 @@ pub fn tool_point(app: &mut CadApp, p: DVec2) {
         app.add_opening(p);
         return;
     }
+    if app.tool == Tool::Room {
+        // One click per room; the tool stays active.
+        app.points.clear();
+        app.add_room(p);
+        return;
+    }
     let needed = match app.tool {
         Tool::Line | Tool::Circle | Tool::Rect | Tool::Polygon => 2,
         Tool::Arc | Tool::Dimension | Tool::Ellipse | Tool::RadiusDim | Tool::AngleDim => 3,

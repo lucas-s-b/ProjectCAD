@@ -1,6 +1,7 @@
 use crate::annot::{dim_layout, fills, labels, strokes, text_box};
 use crate::tol::Tolerance;
 use crate::opening::{Opening, OpeningKind};
+use crate::room::{Room, Slab};
 use crate::wall::Wall;
 use glam::{DVec2, DVec3};
 use serde::{Deserialize, Serialize};
@@ -55,6 +56,10 @@ pub enum Shape {
     Wall(Wall),
     /// A door or window in a wall; only in level sketches, hosted by a wall (see cad-document).
     Opening(Opening),
+    /// A room: seed point, name and number; only in level sketches. Its area comes from the walls (see cad-arch).
+    Room(Room),
+    /// A floor slab below its level; only in level sketches.
+    Slab(Slab),
 }
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
@@ -136,6 +141,8 @@ impl Shape {
                     && o.wall.thickness.is_finite()
                     && o.wall.height.is_finite()
             }
+            Shape::Room(r) => r.seed.is_finite(),
+            Shape::Slab(s) => s.thickness.is_finite() && s.outline.iter().all(|p| p.is_finite()),
         };
         if !finite {
             return Err(GeomError::NonFinite);
@@ -245,8 +252,17 @@ impl Shape {
                 Err(GeomError::Degenerate("opening width and height must be positive and its sill not negative"))
             }
             Shape::Opening(o) => Shape::Wall(o.wall).validate(tol),
+            Shape::Slab(s) if s.thickness <= t => Err(GeomError::Degenerate("slab thickness must be positive")),
+            Shape::Slab(s) if s.outline.len() < 3 || s.area().abs() <= t * t => {
+                Err(GeomError::Degenerate("slab outline needs three points and an area"))
+            }
             _ => Ok(()),
         }
+    }
+
+    /// Shapes that live only in level sketches (an opening is held there by its host wall instead).
+    pub fn needs_level(&self) -> bool {
+        matches!(self, Shape::Wall(_) | Shape::Room(_) | Shape::Slab(_))
     }
 
     pub fn is_solid(&self) -> bool {
@@ -276,6 +292,8 @@ impl Shape {
                 OpeningKind::Door => "Door",
                 OpeningKind::Window => "Window",
             },
+            Shape::Room(_) => "Room",
+            Shape::Slab(_) => "Floor",
         }
     }
 
@@ -310,6 +328,8 @@ impl Shape {
                 o.wall.a += d2;
                 o.wall.b += d2;
             }
+            Shape::Room(r) => r.seed += d2,
+            Shape::Slab(s) => s.outline.iter_mut().for_each(|p| *p += d2),
             Shape::Box { center, .. }
             | Shape::Cylinder { center, .. }
             | Shape::Sphere { center, .. } => *center += d,
@@ -389,6 +409,12 @@ impl Shape {
                 let c = o.corners();
                 let lo = c.iter().fold(DVec2::INFINITY, |m, p| m.min(*p));
                 let hi = c.iter().fold(DVec2::NEG_INFINITY, |m, p| m.max(*p));
+                (lo.extend(0.0), hi.extend(0.0))
+            }
+            Shape::Room(r) => (r.seed.extend(0.0), r.seed.extend(0.0)),
+            Shape::Slab(s) => {
+                let lo = s.outline.iter().fold(DVec2::INFINITY, |m, p| m.min(*p));
+                let hi = s.outline.iter().fold(DVec2::NEG_INFINITY, |m, p| m.max(*p));
                 (lo.extend(0.0), hi.extend(0.0))
             }
             Shape::Spline { points, closed } => {

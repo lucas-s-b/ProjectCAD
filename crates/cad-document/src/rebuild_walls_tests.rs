@@ -1,5 +1,5 @@
 use crate::*;
-use cad_geometry::{DVec2, Opening, OpeningKind, Shape, Wall, WallAlign};
+use cad_geometry::{DVec2, Opening, OpeningKind, Room, Shape, Slab, Wall, WallAlign};
 
 fn close(a: f64, b: f64) {
     assert!((a - b).abs() <= 1e-9 * b.abs().max(1.0), "{a} vs {b}");
@@ -81,4 +81,48 @@ fn doors_and_windows_cut_their_walls() {
     d.apply(Command::SetConstruction { id: 4, on: true }).unwrap();
     let r = Rebuilder::default().rebuild(&d);
     close6(r.walls[0].1.volume(), 2.0e9);
+}
+
+fn in_level(id: EntityId, shape: Shape) -> Entity {
+    Entity { id, name: format!("x{id}"), shape, layer: 0, sketch: 1, construction: false, group: None, meta: Default::default() }
+}
+
+fn wall_shape(a: (f64, f64), b: (f64, f64)) -> Shape {
+    Shape::Wall(Wall { a: DVec2::new(a.0, a.1), b: DVec2::new(b.0, b.1), thickness: 200.0, height: 2500.0, align: WallAlign::Center })
+}
+
+fn room_shape(x: f64, y: f64) -> Shape {
+    Shape::Room(Room { seed: DVec2::new(x, y), name: "R".into(), number: "1".into() })
+}
+
+#[test]
+fn rooms_and_floors_on_rebuild() {
+    let mut d = house();
+    d.apply(Command::Add(in_level(4, wall_shape((4000.0, 3000.0), (0.0, 3000.0))))).unwrap();
+    d.apply(Command::Add(in_level(5, wall_shape((0.0, 3000.0), (0.0, 0.0))))).unwrap();
+    d.apply(Command::Add(opening(6, 3, 1500.0, (900.0, 2100.0, 0.0), OpeningKind::Door))).unwrap();
+    for (id, x, y) in [(7, 1000.0, 1500.0), (8, 3000.0, 1500.0), (9, 9000.0, 9000.0)] {
+        d.apply(Command::Add(in_level(id, room_shape(x, y)))).unwrap();
+    }
+    let outline = vec![DVec2::ZERO, DVec2::new(0.0, 3000.0), DVec2::new(4000.0, 3000.0), DVec2::new(4000.0, 0.0)];
+    d.apply(Command::Add(in_level(10, Shape::Slab(Slab { outline, thickness: 200.0 })))).unwrap();
+    let r = Rebuilder::default().rebuild(&d);
+    assert_eq!(r.rooms.iter().map(|(id, _)| *id).collect::<Vec<_>>(), [7, 8]);
+    for (_, g) in &r.rooms {
+        close(g.area, 5040000.0);
+        close(g.perimeter, 9200.0);
+    }
+    assert_eq!(r.walls.iter().map(|(id, _)| *id).collect::<Vec<_>>(), [1, 2, 3, 4, 5, 10]);
+    let slab = &r.walls[5].1;
+    close6(slab.volume(), 2.4e9);
+    let (lo, hi) = slab.bbox();
+    close(lo.z, 2800.0);
+    close(hi.z, 3000.0);
+    d.apply(Command::SetConstruction { id: 3, on: true }).unwrap();
+    let r = Rebuilder::default().rebuild(&d);
+    assert_eq!(r.rooms.len(), 2);
+    for (_, g) in &r.rooms {
+        close(g.area, 10640000.0);
+        close(g.perimeter, 13200.0);
+    }
 }

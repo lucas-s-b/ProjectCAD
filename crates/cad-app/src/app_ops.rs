@@ -2,7 +2,7 @@ use crate::app::CadApp;
 use crate::app::Tool;
 use cad_document::{Command, Entity, EntityId, LayerId, SketchId};
 use cad_geometry::xform::rotation_about;
-use cad_geometry::{DAffine2, DVec2, DVec3, GeomError, Opening, Shape, Wall, distance_2d, point_segment_distance};
+use cad_geometry::{DAffine2, DVec2, DVec3, GeomError, Opening, Room, Shape, Wall, distance_2d, point_segment_distance};
 use std::collections::BTreeMap;
 
 impl CadApp {
@@ -158,6 +158,38 @@ impl CadApp {
         let template = if self.tool == Tool::Window { self.window } else { self.door };
         let at = (p - wall.a).dot((wall.b - wall.a).normalize());
         self.add_shape(Shape::Opening(Opening { host, wall, at, ..template }));
+    }
+}
+
+impl CadApp {
+    /// Puts a room at `p` when the walls of the active level enclose it, named "Room" and numbered one past the level's
+    /// rooms (the user renames it).
+    pub fn add_room(&mut self, p: DVec2) {
+        let walls: Vec<Wall> = self
+            .doc
+            .entities_in(self.sketch)
+            .filter(|x| !x.construction)
+            .filter_map(|x| match &x.shape {
+                Shape::Wall(w) => Some(*w),
+                _ => None,
+            })
+            .collect();
+        if cad_arch::regions(&walls, &[p])[0].is_none() {
+            self.status = "Click inside an area enclosed by walls".into();
+            return;
+        }
+        // Highest numeric room number + 1, so numbers do not repeat after a deletion.
+        let n = self
+            .doc
+            .entities_in(self.sketch)
+            .filter_map(|x| match &x.shape {
+                Shape::Room(r) => r.number.parse::<u32>().ok(),
+                _ => None,
+            })
+            .max()
+            .unwrap_or(0)
+            + 1;
+        self.add_shape(Shape::Room(Room { seed: p, name: "Room".into(), number: n.to_string() }));
     }
 }
 

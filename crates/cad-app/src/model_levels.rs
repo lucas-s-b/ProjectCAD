@@ -1,7 +1,8 @@
 //! Levels: the list, Add level, and the elevation and height of the active level.
 use crate::app::CadApp;
 use crate::widgets as w;
-use cad_document::{BasePlane, Command, Level, PlaneDef, Sketch, SketchId};
+use cad_document::{BasePlane, Command, EntityId, Level, PlaneDef, Sketch, SketchId};
+use cad_geometry::{Room, Shape};
 use eframe::egui::{self, TextEdit};
 
 pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
@@ -49,4 +50,37 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
             app.exec(vec![Command::SetSketch(Sketch { plane, level, ..s })]);
         }
     });
+    rooms(app, ui);
+}
+
+/// The rooms of the active level: number and name edited in place (one undo step per field while typing), net area
+/// from the last rebuild.
+fn rooms(app: &mut CadApp, ui: &mut egui::Ui) {
+    let rows: Vec<(EntityId, Room)> = app
+        .doc
+        .entities_in(app.sketch)
+        .filter_map(|x| match &x.shape {
+            Shape::Room(r) => Some((x.id, r.clone())),
+            _ => None,
+        })
+        .collect();
+    if rows.is_empty() {
+        return;
+    }
+    ui.separator();
+    ui.heading("Rooms");
+    for (id, room) in rows {
+        let area = app.model.as_ref().and_then(|(_, m)| m.rooms.iter().find(|g| g.0 == id)).map(|g| g.1.area);
+        ui.horizontal(|ui| {
+            let mut number = room.number.clone();
+            if w::add(ui, "Room number", TextEdit::singleline(&mut number).desired_width(40.0)).changed() {
+                app.exec_merged(vec![Command::SetShape { id, shape: Shape::Room(Room { number, ..room.clone() }) }], (id << 8) | 16);
+            }
+            let mut name = room.name.clone();
+            if w::add(ui, "Room name", TextEdit::singleline(&mut name).desired_width(100.0)).changed() {
+                app.exec_merged(vec![Command::SetShape { id, shape: Shape::Room(Room { name, ..room.clone() }) }], (id << 8) | 17);
+            }
+            ui.small(area.map_or("not enclosed".to_string(), |a| app.doc.settings().format_area(a)));
+        });
+    }
 }

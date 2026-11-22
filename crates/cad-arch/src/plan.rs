@@ -3,7 +3,7 @@ use crate::join::footprints;
 use cad_geometry::{DVec2, Wall, point_segment_distance};
 
 /// How far (mm) a point may be from an outline and still count as on it.
-const ON: f64 = 1e-6;
+pub(crate) const ON: f64 = 1e-6;
 
 /// What the 2D view draws for the walls of a level; every item carries the index of its wall in the input.
 #[derive(Debug, Clone, PartialEq)]
@@ -106,7 +106,7 @@ fn clip(poly: &[DVec2], side: impl Fn(DVec2) -> f64) -> Vec<DVec2> {
 }
 
 /// Signed area, positive counter-clockwise.
-fn shoelace(p: &[DVec2]) -> f64 {
+pub(crate) fn shoelace(p: &[DVec2]) -> f64 {
     (0..p.len()).map(|k| p[k].perp_dot(p[(k + 1) % p.len()])).sum::<f64>() / 2.0
 }
 
@@ -133,7 +133,7 @@ fn cuts(a: DVec2, b: DVec2, g: &[DVec2]) -> Vec<f64> {
 }
 
 /// `p` is inside the closed polygon `g` (even-odd rule) or within `ON` of its boundary.
-fn covers(g: &[DVec2], p: DVec2) -> bool {
+pub(crate) fn covers(g: &[DVec2], p: DVec2) -> bool {
     let mut odd = false;
     for k in 0..g.len() {
         let (a, b) = (g[k], g[(k + 1) % g.len()]);

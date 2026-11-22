@@ -14,6 +14,9 @@ pub fn point_segment_distance(p: DVec2, a: DVec2, b: DVec2) -> f64 {
 }
 
 pub fn distance_2d(shape: &Shape, p: DVec2) -> f64 {
+    if let Shape::Room(r) = shape {
+        return p.distance(r.seed);
+    }
     if let Shape::Hatch { boundary, .. } = shape
         && inside_polygon(boundary, p)
     {

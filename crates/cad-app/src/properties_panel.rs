@@ -21,6 +21,7 @@ pub fn properties(app: &mut CadApp, ui: &mut egui::Ui, ctx: &egui::Context) {
     crate::dim_link::show(app, ui);
     crate::groups::metadata(app, ui);
     crate::hatch_panel::hatch_group(app, ui);
+    crate::floor_panel::floor_group(app, ui);
 }
 
 /// A mixed selection shows unchecked; a click sets every selected entity.
@@ -289,6 +290,15 @@ fn edit_shape(ui: &mut egui::Ui, shape: &mut Shape) {
                 w::checkbox(ui, &mut o.hinge_b, "hinge at b");
                 w::checkbox(ui, &mut o.swing_left, "swings left");
             }
+        }
+        Shape::Room(r) => {
+            vec2(ui, "seed", &mut r.seed);
+            w::add(ui, "name", egui::TextEdit::singleline(&mut r.name));
+            w::add(ui, "number", egui::TextEdit::singleline(&mut r.number));
+        }
+        Shape::Slab(s) => {
+            ui.label(format!("{} outline points", s.outline.len()));
+            num(ui, "thickness", &mut s.thickness);
         }
     }
 }

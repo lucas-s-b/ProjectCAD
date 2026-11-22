@@ -321,7 +321,7 @@ impl Document {
                 if !self.sketches.contains_key(&entity.sketch) {
                     return Err(DocError::SketchNotFound(entity.sketch));
                 }
-                if matches!(entity.shape, Shape::Wall(_)) && !self.is_level(entity.sketch) {
+                if entity.shape.needs_level() && !self.is_level(entity.sketch) {
                     return Err(DocError::NotALevel(entity.sketch));
                 }
                 if let Shape::Opening(o) = &entity.shape {
@@ -357,7 +357,7 @@ impl Document {
             Command::SetShape { id, shape } => {
                 shape.validate(&tol)?;
                 let sketch = self.entities.get(&id).ok_or(DocError::NotFound(id))?.sketch;
-                if matches!(shape, Shape::Wall(_)) && !self.is_level(sketch) {
+                if shape.needs_level() && !self.is_level(sketch) {
                     return Err(DocError::NotALevel(sketch));
                 }
                 if let Shape::Opening(o) = &shape {

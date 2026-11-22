@@ -126,6 +126,9 @@ fn shape(w: &mut W, s: &Shape, layer: &str, doc: &Document) {
         Shape::Wall(wall) => w.polyline(layer, &wall.corners(), true),
         // shortcut: openings are not exported; draw gaps and symbols when DXF plans are needed
         Shape::Opening(_) => {}
+        Shape::Slab(s) => w.polyline(layer, &s.outline, true),
+        // shortcut: room tags are not exported; write TEXT when DXF plans need them
+        Shape::Room(_) => {}
         // shortcut: R12 has no ELLIPSE or SPLINE entity, curves are exported as a flattened POLYLINE, upgrade with a newer DXF version
         Shape::Ellipse { .. } => w.polyline(layer, &flattened(s, true), true),
         Shape::Spline { closed, .. } => w.polyline(layer, &flattened(s, *closed), *closed),

@@ -1,5 +1,5 @@
 use crate::*;
-use cad_geometry::{DVec2, DVec3, Opening, OpeningKind, Shape, Wall, WallAlign};
+use cad_geometry::{DVec2, DVec3, Opening, OpeningKind, Room, Shape, Slab, Wall, WallAlign};
 use cad_modeler::Plane3;
 
 fn sketch(id: SketchId, name: &str, plane: PlaneDef) -> Sketch {
@@ -252,6 +252,43 @@ fn walls_only_on_levels() {
     assert!(matches!(d.apply(Command::SetSketch(Sketch { level: None, ..level(2, "0") })), Err(DocError::NotALevel(2))));
     let xz = Sketch { plane: principal(BasePlane::XZ, "0"), ..level(3, "0") };
     assert!(matches!(d.apply(Command::AddSketch(xz)), Err(DocError::BadPlane)));
+}
+
+#[test]
+fn rooms_and_floors_only_on_levels() {
+    let room_in = |sketch| Entity {
+        id: 1,
+        name: "r".into(),
+        shape: Shape::Room(Room { seed: DVec2::new(1000.0, 1000.0), name: "Hall".into(), number: "1".into() }),
+        layer: 0,
+        sketch,
+        construction: false,
+        group: None,
+        meta: Default::default(),
+    };
+    let slab_in = |sketch| Entity {
+        id: 2,
+        name: "s".into(),
+        shape: Shape::Slab(Slab { outline: vec![DVec2::ZERO, DVec2::new(4000.0, 0.0), DVec2::new(4000.0, 3000.0)], thickness: 200.0 }),
+        layer: 0,
+        sketch,
+        construction: false,
+        group: None,
+        meta: Default::default(),
+    };
+    let mut d = doc_with_sketch_1();
+    assert!(matches!(d.apply(Command::Add(room_in(1))), Err(DocError::NotALevel(1))));
+    assert!(matches!(d.apply(Command::Add(slab_in(1))), Err(DocError::NotALevel(1))));
+    d.apply(Command::AddSketch(level(2, "0"))).unwrap();
+    d.apply(Command::Add(room_in(2))).unwrap();
+    d.apply(Command::Add(slab_in(2))).unwrap();
+    assert!(matches!(d.apply(Command::SetSketch(Sketch { level: None, ..level(2, "0") })), Err(DocError::NotALevel(2))));
+    let p = temp("rooms");
+    d.save(&p).unwrap();
+    let back = Document::load(&p).unwrap();
+    std::fs::remove_file(&p).unwrap();
+    assert_eq!(back.get(1), d.get(1));
+    assert_eq!(back.get(2), d.get(2));
 }
 
 #[test]

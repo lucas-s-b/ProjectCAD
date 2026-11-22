@@ -30,6 +30,7 @@ pub fn toolbar(app: &mut CadApp, ui: &mut egui::Ui) {
                 (Tool::Wall, "Wall"),
                 (Tool::Door, "Door"),
                 (Tool::Window, "Window"),
+                (Tool::Room, "Room"),
             ] {
                 w::selectable_value(ui, &mut app.tool, tool, label);
             }

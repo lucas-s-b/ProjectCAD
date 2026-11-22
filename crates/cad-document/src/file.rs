@@ -54,7 +54,7 @@ impl Document {
         if let Some(e) = doc.entities.values().find(|e| !doc.sketches.contains_key(&e.sketch)) {
             return Err(DocError::SketchNotFound(e.sketch));
         }
-        if let Some(e) = doc.entities.values().find(|e| matches!(e.shape, Shape::Wall(_)) && !doc.is_level(e.sketch)) {
+        if let Some(e) = doc.entities.values().find(|e| e.shape.needs_level() && !doc.is_level(e.sketch)) {
             return Err(DocError::NotALevel(e.sketch));
         }
         for x in doc.entities.values() {

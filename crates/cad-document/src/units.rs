@@ -54,6 +54,12 @@ impl Settings {
         format!("{:.*}", self.precision as usize, mm / self.units.mm_per_unit())
     }
 
+    /// `mm2` (square millimetres) in the display unit squared, with `precision` decimals and the unit suffix.
+    pub fn format_area(&self, mm2: f64) -> String {
+        let k = self.units.mm_per_unit();
+        format!("{:.*} {}\u{b2}", self.precision as usize, mm2 / (k * k), self.units.suffix())
+    }
+
     /// Display text of an annotation label.
     pub fn label_text(&self, t: &LabelText) -> String {
         match t {
@@ -75,6 +81,8 @@ mod tests {
         assert_eq!(Settings { units: Units::Inch, precision: 3 }.format_length(25.4), "1.000");
         assert_eq!(Settings { units: Units::Millimeter, precision: 0 }.format_length(25.4), "25");
         assert_eq!(Settings::default().format_length(100.0), "100.00");
+        assert_eq!(Settings::default().format_area(2400.0), "2400.00 mm\u{b2}");
+        assert_eq!(Settings { units: Units::Meter, precision: 2 }.format_area(12.5e6), "12.50 m\u{b2}");
     }
 }
 
