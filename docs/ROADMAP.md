@@ -143,7 +143,7 @@ Deferred to later phases:
 Walls with automatic joins, doors, windows, floors, roofs, stairs, room detection and areas,
 multi-floor projects, BIM metadata designed for later IFC export.
 
-Done (unit-tested; levels, walls, joins, doors, windows and their edits checked in the running app through MCP):
+Done (unit-tested; levels, walls, joins, doors, windows, rooms, floors and their edits checked in the running app through MCP):
 - [x] Levels: a sketch on XY with a storey height; its offset expression is the elevation; several levels make a multi-floor project; file format version 15 (older files load without levels)
 - [x] Straight walls (baseline, thickness, height, centre/left/right alignment) drawn with the Wall tool on a level, edited in Properties, moved, copied and mirrored like other entities
 - [x] Automatic joins (`cad-arch`): L mitres, T ends stop at the through wall's face, X crossings, three or more walls at a point share the hub
@@ -151,6 +151,8 @@ Done (unit-tested; levels, walls, joins, doors, windows and their edits checked 
 - [x] Doors and windows: one click inside a wall with the Door or Window tool; width, height, sill, position along the wall, hinge side and swing side in Properties; file format version 16
 - [x] Openings are hosted by their wall (entity id + distance along the baseline): they follow it when it moves, is edited or mirrored, slide back inside when it is shortened, are copied with it, and are deleted with it
 - [x] Each opening cuts a box from its wall solid (manifold boolean) and a gap from the plan; doors show a leaf and swing arc, windows the face and glass lines; IFC classes IfcDoor/IfcWindow from the kind
+- [x] Rooms: one click inside an area enclosed by walls with the Room tool; the area is found from the cleaned wall outline on every rebuild (doors do not break it, free-standing walls are subtracted), so names stay when walls move; net area and perimeter; tag in the plan; Rooms list with name and number edited in place; IfcSpace
+- [x] Floors (slabs): "Make floor" in Properties from a room's area or a drawn closed outline (the outline becomes the floor), with a thickness; a solid below the level in 3D; IfcSlab; file format version 17
 
 Limits of this slice:
 - Wall height is copied from the level when the wall is drawn; it does not follow later level edits, and no wall attaches to the level above.
@@ -159,12 +161,14 @@ Limits of this slice:
 - The plan shows the whole wall outline; there is no cut height yet.
 - Openings cannot be dragged along their wall (edit "at"), have no placement preview, no 3D leaf, frame or glass, and are not exported to DXF/SVG.
 - An opening is a straight box through its wall; across a join or in a construction wall it is not cut or drawn.
+- A floor made from a room is a copy of its outline: it does not follow later wall edits. Slab outline points are not editable one by one.
+- Room tags are drawn at a fixed screen size, show areas in the display unit squared, and are not exported to DXF/SVG; a room's new number is the highest numeric room number on the level plus one.
 
 Remaining:
-1. Rooms: detection from the wall outlines, names, areas (IfcSpace)
-2. Floors (slabs) and roofs
-3. Stairs
-4. IFC export: storeys, walls, openings, spaces, property sets from entity metadata
+1. Roofs
+2. Stairs
+3. Multi-floor views: levels above and below, visibility
+4. IFC export: storeys, walls, openings, spaces, slabs, property sets from entity metadata
 
 ## Phase 5: Mechanical CAD
 Parametric generators (gears, shafts, bearings, springs, fasteners, threads), assemblies, joints,

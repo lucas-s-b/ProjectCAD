@@ -13,6 +13,7 @@ mod face_pick;
 mod gizmo;
 mod glyphs;
 mod groups;
+mod floor_panel;
 mod hatch_panel;
 mod mcp;
 mod model_levels;

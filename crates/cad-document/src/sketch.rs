@@ -1,13 +1,13 @@
 use crate::document::{Command, DocError, Document, Entity};
 use crate::feature::FeatureId;
-use cad_geometry::{DVec3, Shape};
+use cad_geometry::DVec3;
 use cad_modeler::Plane3;
 use cad_params::parse;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 pub type SketchId = u32;
-pub const FORMAT_VERSION: u32 = 16;
+pub const FORMAT_VERSION: u32 = 17;
 
 /// Axes (x, y, normal): XY = (X, Y, +Z); XZ = (X, Z, -Y); YZ = (Y, Z, +X).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -184,7 +184,7 @@ impl Document {
                     return Err(DocError::SketchNotFound(s.id));
                 }
                 check_sketch(&s)?;
-                if s.level.is_none() && self.entities_in(s.id).any(|e| matches!(e.shape, Shape::Wall(_))) {
+                if s.level.is_none() && self.entities_in(s.id).any(|e| e.shape.needs_level()) {
                     return Err(DocError::NotALevel(s.id));
                 }
                 let old = self.sketches.insert(s.id, s).expect("checked above");

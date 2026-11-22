@@ -54,6 +54,7 @@ pub enum Tool {
     Wall,
     Door,
     Window,
+    Room,
     Trim,
     Extend,
     Offset,
@@ -159,6 +160,8 @@ pub struct CadApp {
     pub door: Opening,
     /// Window tool settings.
     pub window: Opening,
+    /// Thickness of floors made with "Make floor".
+    pub floor_thickness: f64,
     /// Elevation and height fields of the Levels controls.
     pub level_elevation: String,
     pub level_height: String,
@@ -273,6 +276,7 @@ impl CadApp {
             wall_align: WallAlign::Center,
             door: opening_template(OpeningKind::Door, 900.0, 2100.0, 0.0),
             window: opening_template(OpeningKind::Window, 1200.0, 1200.0, 900.0),
+            floor_thickness: 200.0,
             level_elevation: "0".into(),
             level_height: "3000 mm".into(),
             radial_diameter: false,

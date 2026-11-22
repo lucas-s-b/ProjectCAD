@@ -1,6 +1,10 @@
 use super::*;
 use crate::fixtures::v;
-use cad_geometry::DVec3;
+use cad_geometry::{DVec3, Slab};
+
+fn close6(a: f64, b: f64) {
+    assert!((a - b).abs() <= 1e-6 * b.abs().max(1.0), "{a} vs {b}");
+}
 
 fn close(a: f64, b: f64) {
     assert!((a - b).abs() <= 1e-9 * b.abs().max(1.0), "{a} vs {b}");
@@ -29,4 +33,18 @@ fn hub_outline_makes_a_solid() {
 fn degenerate_outline_is_refused() {
     let r = wall_body(&[v(0.0, 0.0), v(1.0, 0.0), v(2.0, 0.0)], &Plane3::XY, 1000.0, 0.02);
     assert!(matches!(r, Err(ModelError::Invalid("wall outline is degenerate"))));
+}
+
+#[test]
+fn slab_hangs_below_its_plane() {
+    let mut slab = Slab { outline: vec![v(0.0, 0.0), v(0.0, 1000.0), v(1000.0, 1000.0), v(1000.0, 0.0)], thickness: 200.0 };
+    let plane = Plane3 { origin: DVec3::new(0.0, 0.0, 3000.0), ..Plane3::XY };
+    let b = slab_body(&slab, &plane, 0.02).unwrap();
+    assert!(b.mesh.is_closed());
+    close6(b.volume(), 2.0e8);
+    let (lo, hi) = b.bbox();
+    close(lo.z, 2800.0);
+    close(hi.z, 3000.0);
+    slab.outline.reverse();
+    close6(slab_body(&slab, &plane, 0.02).unwrap().volume(), 2.0e8);
 }

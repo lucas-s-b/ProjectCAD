@@ -315,6 +315,9 @@ fn insert_model(app: &CadApp, m: &mut serde_json::Map<String, Value>) {
         json!({ "id": id, "volume": b.volume(), "zmax": hi.z, "zmin": lo.z })
     }).collect();
     m.insert("walls".into(), json!(walls));
+    let rooms: Vec<Value> =
+        model.into_iter().flat_map(|r| &r.rooms).map(|(id, g)| json!({ "id": id, "area": g.area, "perimeter": g.perimeter })).collect();
+    m.insert("rooms".into(), json!(rooms));
     let states: serde_json::Map<String, Value> = model.into_iter().flat_map(|r| &r.states).map(|(id, s)| {
         let text = match s {
             FeatureState::Ok => "Ok".to_string(),

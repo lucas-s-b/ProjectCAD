@@ -1,5 +1,6 @@
 use crate::shape::{GeomError, Shape};
 use crate::opening::Opening;
+use crate::room::{Room, Slab};
 use crate::wall::{Wall, WallAlign};
 use glam::{DAffine2, DMat2, DVec2};
 
@@ -108,6 +109,11 @@ impl Shape {
             // hinge stays on the jamb toward the same wall end.
             Shape::Opening(o) => {
                 Shape::Opening(Opening { wall: wall_transformed(&o.wall, m, mirrored), swing_left: o.swing_left != mirrored, ..*o })
+            }
+            Shape::Room(r) => Shape::Room(Room { seed: m.transform_point2(r.seed), ..r.clone() }),
+            // Thickness is kept under scaling, like wall thickness; a mirror reverses the outline, which the slab solid accepts.
+            Shape::Slab(s) => {
+                Shape::Slab(Slab { outline: s.outline.iter().map(|p| m.transform_point2(*p)).collect(), thickness: s.thickness })
             }
             Shape::Box { .. } | Shape::Cylinder { .. } | Shape::Sphere { .. } => {
                 return Err(GeomError::Unsupported("2D transform of a solid"));

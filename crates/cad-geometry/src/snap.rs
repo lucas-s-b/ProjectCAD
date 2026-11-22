@@ -1,3 +1,4 @@
+use crate::room::Slab;
 use crate::shape::Shape;
 use glam::DVec2;
 use std::f64::consts::{FRAC_PI_2, TAU};
@@ -68,8 +69,8 @@ pub fn snap_points(shape: &Shape) -> Vec<Snap> {
         }
         Shape::Spline { points, .. } => out.extend(points.iter().map(|p| s(*p, SnapKind::Endpoint))),
         Shape::Text { pos, .. } => out.push(s(*pos, SnapKind::Endpoint)),
-        Shape::Dimension { .. } | Shape::Opening(_) => {}
-        Shape::Hatch { boundary: points, .. } | Shape::Leader { points, .. } => {
+        Shape::Dimension { .. } | Shape::Opening(_) | Shape::Room(_) => {}
+        Shape::Hatch { boundary: points, .. } | Shape::Leader { points, .. } | Shape::Slab(Slab { outline: points, .. }) => {
             out.extend(points.iter().map(|p| s(*p, SnapKind::Endpoint)));
         }
         Shape::RadialDim { center, .. } | Shape::AngularDim { center, .. } => out.push(s(*center, SnapKind::Center)),
@@ -115,7 +116,9 @@ fn prims(shape: &Shape) -> Vec<Prim> {
         | Shape::Leader { .. }
         | Shape::RadialDim { .. }
         | Shape::AngularDim { .. }
-        | Shape::Opening(_) => Vec::new(),
+        | Shape::Opening(_)
+        | Shape::Room(_)
+        | Shape::Slab(_) => Vec::new(),
     }
 }
 

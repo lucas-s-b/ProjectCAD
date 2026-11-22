@@ -41,6 +41,7 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     draw_grid(app, &painter, rect);
     draw_reference(app, &painter, rect);
     crate::view2d_walls::draw(app, &painter, rect);
+    crate::view2d_walls::draw_rooms(app, &painter, rect);
     for e in app.doc.entities_in(app.sketch).filter(|e| app.visible(e)) {
         if matches!(e.shape, Shape::Wall(_) | Shape::Opening(_)) && !e.construction {
             continue;

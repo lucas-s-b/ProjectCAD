@@ -6,7 +6,7 @@ use cad_geometry::{DVec2, HatchPattern, Shape, outline_paths};
 use eframe::egui;
 
 /// Boundary of a closed curve as its flattened path without the repeated last point.
-fn hatch_boundary(shape: &Shape) -> Option<Vec<DVec2>> {
+pub(crate) fn hatch_boundary(shape: &Shape) -> Option<Vec<DVec2>> {
     let closed = match shape {
         Shape::Rect { .. } | Shape::Circle { .. } | Shape::Ellipse { .. } => true,
         Shape::Polyline { closed, .. } | Shape::Spline { closed, .. } => *closed,

@@ -78,6 +78,8 @@ pub fn ifc_class(shape: &Shape) -> Option<&'static str> {
             OpeningKind::Door => "IfcDoor",
             OpeningKind::Window => "IfcWindow",
         }),
+        Shape::Room(_) => Some("IfcSpace"),
+        Shape::Slab(_) => Some("IfcSlab"),
         _ => None,
     }
 }
