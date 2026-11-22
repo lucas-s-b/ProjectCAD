@@ -13,7 +13,7 @@ fn filled(p: &Plan) -> f64 {
 
 #[test]
 fn single_wall_outline_is_its_rectangle() {
-    let p = plan(&[wall((0.0, 0.0), (4000.0, 0.0), 200.0)]);
+    let p = plan(&[wall((0.0, 0.0), (4000.0, 0.0), 200.0)], &[]);
     assert_eq!(p.edges.len(), 4);
     close(length(&p), 8400.0);
     assert_eq!(p.fill.len(), 2);
@@ -22,7 +22,7 @@ fn single_wall_outline_is_its_rectangle() {
 
 #[test]
 fn l_outline_has_no_mitre_line() {
-    let p = plan(&[wall((0.0, 0.0), (4000.0, 0.0), 200.0), wall((4000.0, 0.0), (4000.0, 3000.0), 200.0)]);
+    let p = plan(&[wall((0.0, 0.0), (4000.0, 0.0), 200.0), wall((4000.0, 0.0), (4000.0, 3000.0), 200.0)], &[]);
     assert_eq!(p.edges.len(), 6);
     close(length(&p), 14400.0);
     close(filled(&p), 1400000.0);
@@ -33,7 +33,7 @@ fn l_outline_has_no_mitre_line() {
 
 #[test]
 fn t_outline_opens_the_through_wall() {
-    let p = plan(&[wall((0.0, 0.0), (4000.0, 0.0), 200.0), wall((2000.0, 0.0), (2000.0, 3000.0), 100.0)]);
+    let p = plan(&[wall((0.0, 0.0), (4000.0, 0.0), 200.0), wall((2000.0, 0.0), (2000.0, 3000.0), 100.0)], &[]);
     assert_eq!(p.edges.len(), 8);
     close(length(&p), 14200.0);
     close(p.edges.iter().filter(|(i, _)| *i == 0).map(|(_, [a, b])| a.distance(*b)).sum::<f64>(), 8300.0);
@@ -41,7 +41,7 @@ fn t_outline_opens_the_through_wall() {
 
 #[test]
 fn x_outline_is_a_cross() {
-    let p = plan(&[wall((0.0, 0.0), (4000.0, 0.0), 200.0), wall((2000.0, -2000.0), (2000.0, 2000.0), 200.0)]);
+    let p = plan(&[wall((0.0, 0.0), (4000.0, 0.0), 200.0), wall((2000.0, -2000.0), (2000.0, 2000.0), 200.0)], &[]);
     assert_eq!(p.edges.len(), 12);
     close(length(&p), 16000.0);
     close(filled(&p), 1600000.0);
@@ -53,8 +53,34 @@ fn three_way_outline() {
         wall((0.0, 0.0), (2000.0, 0.0), 200.0),
         wall((0.0, 0.0), (0.0, 2000.0), 200.0),
         wall((0.0, 0.0), (-2000.0, 0.0), 200.0),
-    ]);
+    ], &[]);
     assert_eq!(p.edges.len(), 9);
     close(length(&p), 12200.0);
     close(filled(&p), 1180000.0);
+}
+
+#[test]
+fn gap_splits_the_outline() {
+    let p = plan(&[wall((0.0, 0.0), (4000.0, 0.0), 200.0)], &[(0, (1550.0, 2450.0))]);
+    assert_eq!(p.edges.len(), 8);
+    close(length(&p), 7000.0);
+    assert_eq!(p.fill.len(), 4);
+    close(filled(&p), 620000.0);
+}
+
+#[test]
+fn gap_at_the_end_leaves_one_piece() {
+    let p = plan(&[wall((0.0, 0.0), (4000.0, 0.0), 200.0)], &[(0, (3100.0, 4200.0))]);
+    assert_eq!(p.edges.len(), 4);
+    close(length(&p), 6600.0);
+    assert_eq!(p.fill.len(), 2);
+    close(filled(&p), 620000.0);
+}
+
+#[test]
+fn overlapping_gaps_merge() {
+    let p = plan(&[wall((0.0, 0.0), (4000.0, 0.0), 200.0)], &[(0, (1000.0, 2000.0)), (0, (1500.0, 2500.0))]);
+    assert_eq!(p.edges.len(), 8);
+    close(length(&p), 5800.0);
+    close(filled(&p), 500000.0);
 }

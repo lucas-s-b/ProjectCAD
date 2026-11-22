@@ -117,6 +117,7 @@ pub fn outline_paths(shape: &Shape) -> Vec<Vec<DVec3>> {
     match shape {
         Shape::Line { a, b } => out.push(vec![a.extend(0.0), b.extend(0.0)]),
         Shape::Wall(w) => out.push(ring(&w.corners().map(|p| p.extend(0.0)))),
+        Shape::Opening(o) => out.push(ring(&o.corners().map(|p| p.extend(0.0)))),
         Shape::Rect { min, max } => {
             let c = [*min, DVec2::new(max.x, min.y), *max, DVec2::new(min.x, max.y)];
             out.push(ring(&c.map(|p| p.extend(0.0))));

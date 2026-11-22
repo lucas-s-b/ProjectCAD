@@ -26,11 +26,15 @@ pub fn distance_2d(shape: &Shape, p: DVec2) -> f64 {
             return 0.0;
         }
     }
-    if let Shape::Wall(w) = shape {
-        let c = w.corners();
-        if (0..4).all(|i| (c[(i + 1) % 4] - c[i]).perp_dot(p - c[i]) >= 0.0) {
-            return 0.0;
-        }
+    let corners = match shape {
+        Shape::Wall(w) => Some(w.corners()),
+        Shape::Opening(o) => Some(o.corners()),
+        _ => None,
+    };
+    if let Some(c) = corners
+        && (0..4).all(|i| (c[(i + 1) % 4] - c[i]).perp_dot(p - c[i]) >= 0.0)
+    {
+        return 0.0;
     }
     outline(shape)
         .iter()

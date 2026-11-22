@@ -64,6 +64,8 @@ fn shape(out: &mut String, s: &Shape, col: &str, doc: &Document) {
         Shape::Wall(wall) => {
             let _ = writeln!(out, "<polygon points=\"{}\"/>", points(&wall.corners()));
         }
+        // shortcut: openings are not exported; draw gaps and symbols when DXF plans are needed
+        Shape::Opening(_) => {}
         Shape::Arc { center, radius, .. } if shape_is_full(s) => circle(out, *center, *radius),
         Shape::Arc { center, radius, start, sweep } => {
             let at = |a: f64| *center + DVec2::from_angle(a) * *radius;

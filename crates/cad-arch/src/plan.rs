@@ -10,28 +10,37 @@ const ON: f64 = 1e-6;
 pub struct Plan {
     /// One counter-clockwise outline per wall, as `footprints` gives them.
     pub footprints: Vec<Vec<DVec2>>,
-    /// Triangles filling the outlines.
+    /// Triangles filling the outlines, opening gaps left out.
     pub fill: Vec<(usize, [DVec2; 3])>,
-    /// Pieces of outline edges that lie on or in no other outline: the joins show no lines.
+    /// Pieces of outline and gap edges that lie on or in no other piece: the joins show no lines, the gaps show their jambs.
     pub edges: Vec<(usize, [DVec2; 2])>,
 }
 
-/// The plan of `walls`. Edge pieces are not merged across walls or across cut points.
-// shortcut: O(edges x walls) per call; add a grid index when a level has thousands of walls
-pub fn plan(walls: &[Wall]) -> Plan {
+/// The plan of `walls` with the gaps of their openings: `gaps` holds (wall index, (start, end) along that wall's
+/// baseline from `a`), as `gap` gives them. Edge pieces are not merged across walls or across cut points.
+// shortcut: O(edges x pieces) per call; add a grid index when a level has thousands of walls
+pub fn plan(walls: &[Wall], gaps: &[(usize, (f64, f64))]) -> Plan {
     let footprints = footprints(walls);
+    let pieces: Vec<(usize, Vec<DVec2>)> = footprints
+        .iter()
+        .enumerate()
+        .flat_map(|(i, f)| {
+            let mine: Vec<(f64, f64)> = gaps.iter().filter(|g| g.0 == i).map(|g| g.1).collect();
+            split(f, &walls[i], &mine).into_iter().map(move |p| (i, p))
+        })
+        .collect();
     let mut fill = Vec::new();
-    for (i, f) in footprints.iter().enumerate() {
+    for (i, f) in &pieces {
         let flat: Vec<f64> = f.iter().flat_map(|p| [p.x, p.y]).collect();
         // earcut fails only on non-finite input, which `Shape::validate` rules out
         let idx = earcutr::earcut(&flat, &[], 2).unwrap_or_default();
-        fill.extend(idx.chunks(3).map(|t| (i, [f[t[0]], f[t[1]], f[t[2]]])));
+        fill.extend(idx.chunks(3).map(|t| (*i, [f[t[0]], f[t[1]], f[t[2]]])));
     }
     let mut edges = Vec::new();
-    for (i, f) in footprints.iter().enumerate() {
+    for (pi, (i, f)) in pieces.iter().enumerate() {
         for k in 0..f.len() {
             let (a, b) = (f[k], f[(k + 1) % f.len()]);
-            let others = || footprints.iter().enumerate().filter(move |(j, _)| *j != i).map(|(_, g)| g);
+            let others = || pieces.iter().enumerate().filter(move |(j, _)| *j != pi).map(|(_, (_, g))| g);
             let mut ts = vec![0.0, 1.0];
             for g in others() {
                 ts.extend(cuts(a, b, g));
@@ -39,12 +48,66 @@ pub fn plan(walls: &[Wall]) -> Plan {
             ts.sort_by(f64::total_cmp);
             for w in ts.windows(2) {
                 if w[1] - w[0] > 1e-9 && !others().any(|g| covers(g, a.lerp(b, (w[0] + w[1]) / 2.0))) {
-                    edges.push((i, [a.lerp(b, w[0]), a.lerp(b, w[1])]));
+                    edges.push((*i, [a.lerp(b, w[0]), a.lerp(b, w[1])]));
                 }
             }
         }
     }
     Plan { footprints, fill, edges }
+}
+
+/// `footprint` minus the slabs `gaps` across its wall (start and end along the baseline from `a`): the pieces beside
+/// and between them, counter-clockwise. Wall outlines are convex, so each piece is one clip on each side.
+fn split(footprint: &[DVec2], w: &Wall, gaps: &[(f64, f64)]) -> Vec<Vec<DVec2>> {
+    let d = (w.b - w.a).normalize();
+    let along = |p: DVec2| (p - w.a).dot(d);
+    let mut gaps = gaps.to_vec();
+    gaps.sort_by(|x, y| x.0.total_cmp(&y.0));
+    let mut out = Vec::new();
+    let mut lo = f64::NEG_INFINITY;
+    for (g0, g1) in gaps.into_iter().chain([(f64::INFINITY, f64::INFINITY)]) {
+        if g0 > lo {
+            let mut piece = footprint.to_vec();
+            // infinite bounds clip nothing (and inf - inf would be NaN)
+            if lo.is_finite() {
+                piece = clip(&piece, |p| along(p) - lo);
+            }
+            if g0.is_finite() {
+                piece = clip(&piece, |p| g0 - along(p));
+            }
+            if piece.len() >= 3 && shoelace(&piece) > 1e-9 {
+                out.push(piece);
+            }
+        }
+        lo = lo.max(g1);
+    }
+    out
+}
+
+/// Sutherland-Hodgman: the part of `poly` where the linear function `side` is not negative; consecutive points
+/// closer than 1e-9 merged.
+fn clip(poly: &[DVec2], side: impl Fn(DVec2) -> f64) -> Vec<DVec2> {
+    let mut out: Vec<DVec2> = Vec::new();
+    for k in 0..poly.len() {
+        let (p, q) = (poly[k], poly[(k + 1) % poly.len()]);
+        let (sp, sq) = (side(p), side(q));
+        if sp >= 0.0 {
+            out.push(p);
+        }
+        if (sp >= 0.0) != (sq >= 0.0) {
+            out.push(p + (q - p) * (sp / (sp - sq)));
+        }
+    }
+    out.dedup_by(|q, p| q.distance(*p) <= 1e-9);
+    if out.len() > 1 && out[0].distance(out[out.len() - 1]) <= 1e-9 {
+        out.pop();
+    }
+    out
+}
+
+/// Signed area, positive counter-clockwise.
+fn shoelace(p: &[DVec2]) -> f64 {
+    (0..p.len()).map(|k| p[k].perp_dot(p[(k + 1) % p.len()])).sum::<f64>() / 2.0
 }
 
 /// Parameters in [0, 1] along a -> b where the outline `g` meets it: its vertices on the segment and the crossings of its edges.

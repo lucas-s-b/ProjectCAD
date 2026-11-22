@@ -40,7 +40,7 @@ cad-app ──► cad-document ──► cad-constraints ──► cad-geometry 
 
 - `cad-geometry`: shapes, tolerance, validation, tessellation, picking math. No UI, no GPU.
 - `cad-document`: entities, commands, undo/redo history, native file format.
-- `cad-arch` (Phase 4): wall joins, plan outlines and wall solids on a level. Works on shapes, not on the document; `cad-document` (rebuild) and `cad-app` (plan drawing) depend on it.
+- `cad-arch` (Phase 4): wall joins, plan outlines with opening gaps, wall solids with opening cuts, door and window symbols, IFC classes on a level. Works on shapes, not on the document; `cad-document` (rebuild) and `cad-app` (plan drawing) depend on it.
 - `cad-renderer`: wgpu pipelines and WGSL. Knows only vertices and matrices; it does not depend on the kernel.
 - `cad-app`: egui UI, cameras, tools, viewports.
 - `cad-import-export` (added in Phase 2): `to_svg` and `to_dxf`. Depends on `cad-document` and `cad-geometry`;
@@ -165,9 +165,11 @@ all UI clicks, so adding rows does not break them. Picks inside the 3D viewport 
 
 ## 10. Architecture (Phase 4)
 
-- Architectural elements are entities with their own `Shape` variant (`Wall` now), so selection, transforms, undo, layers, snapping and the file format come from the entity code.
+- Architectural elements are entities with their own `Shape` variant (`Wall`, `Opening` for doors and windows), so selection, transforms, undo, layers, snapping and the file format come from the entity code.
 - A level is a sketch on XY with `level: Some(Level { height })`: name = storey name, offset expression = elevation, height = floor-to-floor height. Walls live only on levels (`NotALevel`).
 - Joins (`cad_arch::footprints`): ends within 0.001 mm meet; around the meeting point the ends are sorted by angle and each pair of neighbours meets where their facing faces cross. Three or more ends add the meeting point to each outline, so the hub is covered once. An end on another wall's baseline meets that wall's faces (T); crossing walls stay whole (X). Corners farther than 5 x the two thicknesses fall back to square ends.
 - Plan (`cad_arch::plan`): every outline is filled; an outline edge is drawn only where no other outline covers it, which cleans L, T and X joins without a polygon boolean.
 - Solids: the rebuild extrudes each outline from the level plane by the wall height into `RebuildResult::walls`. Walls are not features and are recomputed on every rebuild.
-- BIM: the entity `meta` map is the property bag (`Pset_X.Prop` keys become IFC property sets). IFC class from the shape kind, storey from the level, quantities computed from the solids and GlobalIds derived at export.
+- Openings: `Shape::Opening` stores its host wall's entity id, the distance `at` along the baseline to its centre, width, height, sill, kind (Door/Window) and the door's hinge and swing sides, plus a copy of the host wall that `History::execute` refreshes after every edit (like linked dimensions), so bounds and picking need no lookup. The document refuses hosts that are not walls on the same level (`NotAHost`) and removing a wall that hosts openings (`HostInUse`); the app deletes them with it. A shortened wall slides its openings back inside without changing `at`.
+- Cuts: the rebuild subtracts one box per opening from its wall solid (manifold difference), one thickness past each face, and past the floor, the top or a wall end the opening reaches, so no faces are coplanar. The plan clips each footprint into pieces beside the gaps before filling and edge cleaning.
+- BIM: the entity `meta` map is the property bag (`Pset_X.Prop` keys become IFC property sets). IFC class from the shape kind, storey from the level, quantities computed from the solids and GlobalIds derived at export. Doors and windows export as IfcDoor/IfcWindow (`cad_arch::ifc_class`) with an IfcOpeningElement that voids the host wall.

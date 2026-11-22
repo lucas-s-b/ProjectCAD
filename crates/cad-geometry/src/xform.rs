@@ -1,4 +1,5 @@
 use crate::shape::{GeomError, Shape};
+use crate::opening::Opening;
 use crate::wall::{Wall, WallAlign};
 use glam::{DAffine2, DMat2, DVec2};
 
@@ -102,21 +103,28 @@ impl Shape {
                     text_height: text_height * s,
                 }
             }
-            Shape::Wall(w) => {
-                // Thickness and height are kept under scaling. A mirror turns the baseline around, so the wall would
-                // land on the other side unless the side swaps too.
-                let align = match w.align {
-                    WallAlign::Left if mirrored => WallAlign::Right,
-                    WallAlign::Right if mirrored => WallAlign::Left,
-                    a => a,
-                };
-                Shape::Wall(Wall { a: m.transform_point2(w.a), b: m.transform_point2(w.b), align, ..*w })
+            Shape::Wall(w) => Shape::Wall(wall_transformed(w, m, mirrored)),
+            // The wall copy moves like the host (the document resets it afterwards); a mirror flips the swing side, the
+            // hinge stays on the jamb toward the same wall end.
+            Shape::Opening(o) => {
+                Shape::Opening(Opening { wall: wall_transformed(&o.wall, m, mirrored), swing_left: o.swing_left != mirrored, ..*o })
             }
             Shape::Box { .. } | Shape::Cylinder { .. } | Shape::Sphere { .. } => {
                 return Err(GeomError::Unsupported("2D transform of a solid"));
             }
         })
     }
+}
+
+/// A wall under `m`. Thickness and height are kept under scaling. A mirror turns the baseline around, so the wall
+/// would land on the other side unless the side swaps too.
+fn wall_transformed(w: &Wall, m: &DAffine2, mirrored: bool) -> Wall {
+    let align = match w.align {
+        WallAlign::Left if mirrored => WallAlign::Right,
+        WallAlign::Right if mirrored => WallAlign::Left,
+        a => a,
+    };
+    Wall { a: m.transform_point2(w.a), b: m.transform_point2(w.b), align, ..*w }
 }
 
 #[cfg(test)]

@@ -1,7 +1,7 @@
 use crate::app::CadApp;
 use cad_document::{Command, LayerId};
 use cad_geometry::xform::{mirror_across, rotation_about, scale_about};
-use cad_geometry::{DVec2, DVec3, Shape, WallAlign};
+use cad_geometry::{DVec2, DVec3, OpeningKind, Shape, WallAlign};
 use crate::widgets as w;
 use eframe::egui;
 use std::collections::BTreeSet;
@@ -175,6 +175,9 @@ fn vec3(ui: &mut egui::Ui, label: &str, v: &mut DVec3) {
 }
 
 fn edit_shape(ui: &mut egui::Ui, shape: &mut Shape) {
+    if let Some(class) = cad_arch::ifc_class(shape) {
+        ui.label(format!("IFC class: {class}"));
+    }
     match shape {
         Shape::Line { a, b } => {
             vec2(ui, "a", a);
@@ -269,6 +272,23 @@ fn edit_shape(ui: &mut egui::Ui, shape: &mut Shape) {
                     w::selectable_value(ui, &mut wall.align, a, &format!("{a:?}"));
                 }
             });
+        }
+        Shape::Opening(o) => {
+            ui.label(format!("in wall {}", o.host));
+            num(ui, "at", &mut o.at);
+            num(ui, "width", &mut o.width);
+            num(ui, "height", &mut o.height);
+            num(ui, "sill", &mut o.sill);
+            let kind = o.kind;
+            w::combo(ui, "kind", egui::ComboBox::from_id_salt("opening_kind_inspector").selected_text(format!("{kind:?}")), |ui| {
+                for k in [OpeningKind::Door, OpeningKind::Window] {
+                    w::selectable_value(ui, &mut o.kind, k, &format!("{k:?}"));
+                }
+            });
+            if o.kind == OpeningKind::Door {
+                w::checkbox(ui, &mut o.hinge_b, "hinge at b");
+                w::checkbox(ui, &mut o.swing_left, "swings left");
+            }
         }
     }
 }

@@ -68,7 +68,7 @@ pub fn snap_points(shape: &Shape) -> Vec<Snap> {
         }
         Shape::Spline { points, .. } => out.extend(points.iter().map(|p| s(*p, SnapKind::Endpoint))),
         Shape::Text { pos, .. } => out.push(s(*pos, SnapKind::Endpoint)),
-        Shape::Dimension { .. } => {}
+        Shape::Dimension { .. } | Shape::Opening(_) => {}
         Shape::Hatch { boundary: points, .. } | Shape::Leader { points, .. } => {
             out.extend(points.iter().map(|p| s(*p, SnapKind::Endpoint)));
         }
@@ -114,7 +114,8 @@ fn prims(shape: &Shape) -> Vec<Prim> {
         | Shape::Hatch { .. }
         | Shape::Leader { .. }
         | Shape::RadialDim { .. }
-        | Shape::AngularDim { .. } => Vec::new(),
+        | Shape::AngularDim { .. }
+        | Shape::Opening(_) => Vec::new(),
     }
 }
 

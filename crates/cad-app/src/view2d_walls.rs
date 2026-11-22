@@ -2,11 +2,11 @@
 use crate::app::CadApp;
 use crate::view2d::SELECTED;
 use cad_document::EntityId;
-use cad_geometry::{DVec2, Shape, Wall};
+use cad_geometry::{DVec2, Opening, Shape, Wall};
 use eframe::egui::{self, Color32, Stroke};
 
-/// Draws the visible, non-construction walls of `app.sketch` in their layer colour; selected walls get their outline
-/// in the selection colour. Uses `display_shape`, so drags and inspector edits preview.
+/// Draws the visible, non-construction walls of `app.sketch` in their layer colour; selected walls and openings get
+/// their outline in the selection colour; openings are gaps with their symbol. Uses `display_shape`, so drags and inspector edits preview.
 // shortcut: the plan is recomputed every frame; cache it per document revision when levels get large
 pub fn draw(app: &CadApp, painter: &egui::Painter, rect: egui::Rect) {
     let walls: Vec<(EntityId, [u8; 3], Wall)> = app
@@ -21,7 +21,21 @@ pub fn draw(app: &CadApp, painter: &egui::Painter, rect: egui::Rect) {
     if walls.is_empty() {
         return;
     }
-    let plan = cad_arch::plan(&walls.iter().map(|w| w.2).collect::<Vec<_>>());
+    // Openings on drawn walls, placed on the wall as displayed, so they follow it while it is dragged or edited.
+    let openings: Vec<(EntityId, usize, [u8; 3], Opening)> = app
+        .doc
+        .entities_in(app.sketch)
+        .filter(|x| app.visible(x) && !x.construction)
+        .filter_map(|x| match app.display_shape(x) {
+            Shape::Opening(o) => {
+                let i = walls.iter().position(|w| w.0 == o.host)?;
+                Some((x.id, i, app.color(x), Opening { wall: walls[i].2, ..o }))
+            }
+            _ => None,
+        })
+        .collect();
+    let gaps: Vec<(usize, (f64, f64))> = openings.iter().map(|(_, i, _, o)| (*i, cad_arch::gap(o))).collect();
+    let plan = cad_arch::plan(&walls.iter().map(|w| w.2).collect::<Vec<_>>(), &gaps);
     let to_screen = |p: DVec2| app.cam2d.world_to_screen(rect, p);
     let mut mesh = egui::Mesh::default();
     for (i, tri) in &plan.fill {
@@ -40,6 +54,17 @@ pub fn draw(app: &CadApp, painter: &egui::Painter, rect: egui::Rect) {
     for ((id, _, _), f) in walls.iter().zip(&plan.footprints) {
         if app.selection.contains(id) && f.len() > 1 {
             let pts: Vec<egui::Pos2> = f.iter().chain(f.first()).map(|p| to_screen(*p)).collect();
+            painter.add(egui::Shape::line(pts, Stroke::new(2.0, SELECTED)));
+        }
+    }
+    for (id, _, [r, g, b], o) in &openings {
+        let color = if app.selection.contains(id) { SELECTED } else { Color32::from_rgb(*r, *g, *b) };
+        for [p, q] in cad_arch::opening_symbol(o) {
+            painter.line_segment([to_screen(p), to_screen(q)], Stroke::new(1.0, color));
+        }
+        if app.selection.contains(id) {
+            let c = o.corners();
+            let pts: Vec<egui::Pos2> = c.iter().chain(c.first()).map(|p| to_screen(*p)).collect();
             painter.add(egui::Shape::line(pts, Stroke::new(2.0, SELECTED)));
         }
     }
