@@ -320,6 +320,9 @@ impl Document {
                 if self.features.iter().any(|f| f.source() == Some(id)) {
                     return Err(DocError::FeatureInUse(id));
                 }
+                if self.components.values().any(|c| c.body == id) {
+                    return Err(DocError::BodyInUse(id));
+                }
                 Ok(Command::AddFeature { index, feature: self.features.remove(index) })
             }
             Command::SetFeature(feature) => {

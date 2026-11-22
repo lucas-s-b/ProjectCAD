@@ -77,6 +77,16 @@ impl Document {
         if let Some(missing) = doc.features.iter().filter_map(|f| f.source()).find(|s| doc.feature(*s).is_none()) {
             return Err(DocError::FeatureNotFound(missing));
         }
+        if let Some((key, _)) = doc.components.iter().find(|(key, c)| **key != c.id) {
+            return Err(DocError::ComponentExists(*key));
+        }
+        if let Some(c) = doc.components.values().find(|c| doc.feature(c.body).is_none()) {
+            return Err(DocError::FeatureNotFound(c.body));
+        }
+        if let Some(max) = doc.components.keys().next_back() {
+            doc.next_component_id = doc.next_component_id.max(max.saturating_add(1));
+        }
+        doc.next_component_id = doc.next_component_id.max(1);
         for (dim, (p, q)) in &doc.dim_links {
             if let Some(missing) = [dim, &p.entity, &q.entity].into_iter().find(|e| !doc.entities.contains_key(e)) {
                 return Err(DocError::NotFound(*missing));

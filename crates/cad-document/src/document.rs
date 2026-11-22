@@ -1,3 +1,4 @@
+use crate::component::{Component, ComponentId};
 use crate::linetype::LineType;
 use crate::feature::{Feature, FeatureId};
 use crate::sketch::{Sketch, SketchId, default_sketches, first_sketch_id};
@@ -68,6 +69,10 @@ fn first_feature_id() -> FeatureId {
     1
 }
 
+fn first_component_id() -> ComponentId {
+    1
+}
+
 fn first_group_id() -> u32 {
     1
 }
@@ -126,6 +131,10 @@ pub struct Document {
     /// Linear dimension entity -> the two points it measures; the dimension follows them.
     #[serde(default)]
     pub(crate) dim_links: BTreeMap<EntityId, (PointRef, PointRef)>,
+    #[serde(default)]
+    pub(crate) components: BTreeMap<ComponentId, Component>,
+    #[serde(default = "first_component_id")]
+    pub(crate) next_component_id: ComponentId,
     #[serde(skip)]
     pub(crate) revision: u64,
 }
@@ -167,6 +176,10 @@ pub enum Command {
     SetMeta { id: EntityId, key: String, value: Option<String> },
     /// `None` removes the link. The entity must be a linear dimension.
     SetDimLink { id: EntityId, link: Option<(PointRef, PointRef)> },
+    AddComponent(Component),
+    RemoveComponent(ComponentId),
+    /// Replaces the component with the same id.
+    SetComponent(Component),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -239,6 +252,14 @@ pub enum DocError {
     NotAHost(EntityId),
     #[error("wall {0} has doors or windows")]
     HostInUse(EntityId),
+    #[error("component {0} not found")]
+    ComponentNotFound(ComponentId),
+    #[error("component {0} already exists")]
+    ComponentExists(ComponentId),
+    #[error("invalid component: {0}")]
+    BadComponent(&'static str),
+    #[error("body {0} is placed by a component")]
+    BodyInUse(FeatureId),
 }
 
 impl Document {
@@ -261,6 +282,8 @@ impl Document {
             next_sketch_id: first_sketch_id(),
             next_group_id: first_group_id(),
             dim_links: BTreeMap::new(),
+            components: BTreeMap::new(),
+            next_component_id: first_component_id(),
             revision: 0,
         }
     }
@@ -437,6 +460,7 @@ impl Document {
             Command::AddSketch(_) | Command::RemoveSketch(_) | Command::SetSketch(_) => self.apply_sketch(cmd)?,
             Command::SetGroup { .. } | Command::RestoreGroups(_) | Command::SetMeta { .. } => self.apply_group(cmd)?,
             Command::SetDimLink { .. } => self.apply_dim_link(cmd)?,
+            Command::AddComponent(_) | Command::RemoveComponent(_) | Command::SetComponent(_) => self.apply_component(cmd)?,
         };
         self.revision += 1;
         Ok(inverse)

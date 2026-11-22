@@ -152,7 +152,7 @@ impl CadApp {
         self.save_to(p)
     }
 
-    /// Writes SVG, DXF or PDF (visible 2D entities) or STL, OBJ or STEP (solid bodies), chosen by the file extension.
+    /// Writes SVG, DXF or PDF (visible 2D entities) or STL, OBJ or STEP (solid bodies) or CSV (bill of materials), chosen by the file extension.
     pub fn export_path(&mut self, p: PathBuf) -> Result<(), String> {
         let ext = p.extension().map(|e| e.to_string_lossy().to_lowercase());
         let bytes = match ext.as_deref() {
@@ -165,7 +165,17 @@ impl CadApp {
                 }
                 self.mesh_bytes(mesh)?
             }
-            _ => return Err("unknown export format; use .svg, .dxf, .pdf, .stl, .obj or .step".into()),
+            Some("csv") => {
+                if !self.model_current() {
+                    return Err("the model is still rebuilding; try again in a moment".into());
+                }
+                let rows = self.model_result().map(|r| self.doc.bom(r)).unwrap_or_default();
+                if rows.is_empty() {
+                    return Err("no components for a bill of materials".into());
+                }
+                cad_document::bom_csv(&rows).into_bytes()
+            }
+            _ => return Err("unknown export format; use .svg, .dxf, .pdf, .stl, .obj, .step or .csv".into()),
         };
         // Write beside the target, then rename, like the project save.
         let mut tmp = p.clone().into_os_string();

@@ -40,6 +40,11 @@ impl CadApp {
         if self.doc.sketch(self.sketch).is_none() {
             self.set_sketch(0);
         }
+        if self.component_sel.is_some_and(|id| self.doc.component(id).is_none()) {
+            self.component_sel = None;
+            self.component_edit = None;
+            self.sel_rev += 1;
+        }
     }
 
     /// Makes `id` the active sketch and fits the 2D camera to its entities.

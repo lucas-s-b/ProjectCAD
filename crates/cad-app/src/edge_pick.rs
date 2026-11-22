@@ -1,6 +1,7 @@
 use crate::app::{CadApp, PickFace, ViewMode};
-use cad_document::{BodyEdge, Command, Convexity, EdgeGeom, FaceKey, Feature, FeatureId, FeatureKind, edge_keys};
+use cad_document::{Body, BodyEdge, Command, Convexity, EdgeGeom, FaceKey, Feature, FeatureId, FeatureKind, edge_keys};
 use cad_geometry::DVec3;
+use std::sync::Arc;
 
 pub struct EdgePick {
     pub chamfer: bool,
@@ -34,7 +35,8 @@ fn ray_segment(o: DVec3, d: DVec3, a: DVec3, b: DVec3) -> (f64, f64) {
 fn nearest_edge(app: &mut CadApp, origin: DVec3, dir: DVec3, pixel: f64) -> Option<(FeatureId, BodyEdge, f64)> {
     let face_t = crate::face_pick::ray_body(app, origin, dir).map(|(.., t)| t);
     let mut best: Option<(FeatureId, BodyEdge, f64)> = None;
-    for (id, body) in app.model.iter().flat_map(|(_, m)| &m.bodies) {
+    let bodies: Vec<(FeatureId, Arc<Body>)> = app.shown_bodies().cloned().collect();
+    for (id, body) in &bodies {
         for edge in body.edges() {
             let n = edge.points.len();
             for i in 0..if edge.closed { n } else { n - 1 } {

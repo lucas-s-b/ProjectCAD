@@ -291,6 +291,7 @@ fn summary_fields(app: &CadApp) -> serde_json::Map<String, Value> {
         "section": app.section.on.then(|| app.section.clip()),
         "face_sel": app.face_sel.map(|(b, f)| [b, u64::from(f)]),
         "edge_sel": app.edge_sel.as_ref().map(|(b, _)| b),
+        "component_sel": app.component_sel,
     }) else {
         unreachable!()
     };
@@ -315,6 +316,22 @@ fn insert_model(app: &CadApp, m: &mut serde_json::Map<String, Value>) {
         json!({ "id": id, "volume": b.volume(), "zmax": hi.z, "zmin": lo.z })
     }).collect();
     m.insert("walls".into(), json!(walls));
+    let components: Vec<Value> = model.into_iter().flat_map(|r| &r.components).map(|(id, placed)| {
+        let c = app.doc.component(*id);
+        let (min, max, volume, error) = match placed {
+            Ok(b) => {
+                let (lo, hi) = b.bbox();
+                (Some([lo.x, lo.y, lo.z]), Some([hi.x, hi.y, hi.z]), Some(b.volume()), None)
+            }
+            Err(e) => (None, None, None, Some(e.clone())),
+        };
+        json!({ "id": id, "body": c.map(|c| c.body), "name": c.map(|c| c.name.clone()), "min": min, "max": max, "volume": volume, "error": error })
+    }).collect();
+    m.insert("components".into(), json!(components));
+    let bom: Vec<Value> = model.map(|r| app.doc.bom(r)).unwrap_or_default().into_iter().map(|r| {
+        json!({ "item": r.item, "name": r.name, "designation": r.designation, "material": r.material, "part_number": r.part_number, "quantity": r.quantity, "mass": r.mass })
+    }).collect();
+    m.insert("bom".into(), json!(bom));
     let rooms: Vec<Value> =
         model.into_iter().flat_map(|r| &r.rooms).map(|(id, g)| json!({ "id": id, "area": g.area, "perimeter": g.perimeter })).collect();
     m.insert("rooms".into(), json!(rooms));

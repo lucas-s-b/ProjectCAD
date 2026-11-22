@@ -1,3 +1,4 @@
+use crate::component::ComponentId;
 use crate::document::{Document, EntityId};
 use crate::feature::{BODY_TOLERANCE, BodyOp, Feature, FeatureId, FeatureKind, RevolveAxis, Target};
 use crate::rebuild_blend::Blend;
@@ -36,11 +37,18 @@ pub struct RebuildResult {
     pub walls: Vec<(EntityId, Arc<Body>)>,
     /// The enclosed area of each room whose seed lies in one, by room entity id (`rebuild_walls`).
     pub rooms: Vec<(EntityId, cad_arch::Region)>,
+    /// The solid of every component in id order, or why it could not be placed (`Document::place_component`).
+    pub components: Vec<(ComponentId, Result<Arc<Body>, String>)>,
 }
 
 impl RebuildResult {
     pub fn total_volume(&self) -> f64 {
         self.bodies.iter().map(|(_, b)| b.volume()).sum()
+    }
+
+    /// The placed solid of component `id`; None when the component is missing or failed.
+    pub fn component(&self, id: ComponentId) -> Option<&Arc<Body>> {
+        self.components.iter().find(|(i, _)| *i == id).and_then(|(_, r)| r.as_ref().ok())
     }
 
     pub fn body(&self, id: FeatureId) -> Option<&Arc<Body>> {
@@ -374,7 +382,9 @@ impl Rebuilder {
         self.cache.retain(|id, _| doc.feature(*id).is_some());
         let walls = crate::rebuild_walls::wall_bodies(doc);
         let rooms = crate::rebuild_walls::room_regions(doc);
-        Some(RebuildResult { bodies, states, recomputed, planes, walls, rooms })
+        // Not cached: a placement is a mesh copy, and features stay cached.
+        let components = doc.components().map(|c| (c.id, doc.place_component(c, &bodies))).collect();
+        Some(RebuildResult { bodies, states, recomputed, planes, walls, rooms, components })
     }
 }
 
