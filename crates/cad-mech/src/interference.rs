@@ -3,7 +3,7 @@
 use cad_geometry::DVec3;
 use cad_modeler::{Body, BoolOp, ModelError, boolean};
 use parry3d_f64::math::{Isometry, Point};
-use parry3d_f64::query::{ClosestPoints, closest_points};
+use parry3d_f64::query::{contact, distance};
 use parry3d_f64::shape::TriMesh;
 
 /// Common volumes up to this (mm³) count as contact.
@@ -67,6 +67,11 @@ pub fn overlap(a: &Body, b: &Body, thickness: f64) -> Result<Option<Overlap>, Mo
     if !near(a.bbox(), b.bbox(), CONTACT_GAP) {
         return Ok(None);
     }
+    meet(a, b, thickness, clearance(a, b, CONTACT_GAP).is_some())
+}
+
+/// `overlap` once the boxes are near; `touching` says whether the surfaces are within `CONTACT_GAP`.
+fn meet(a: &Body, b: &Body, thickness: f64, touching: bool) -> Result<Option<Overlap>, ModelError> {
     if let Some(region) = common(a, b)? {
         let volume = region.volume();
         if volume > CONTACT_VOLUME && 2.0 * volume / region.area() > thickness {
@@ -74,7 +79,7 @@ pub fn overlap(a: &Body, b: &Body, thickness: f64) -> Result<Option<Overlap>, Mo
         }
         return Ok(Some(Overlap::Contact));
     }
-    Ok(clearance(a, b, CONTACT_GAP).map(|_| Overlap::Contact))
+    Ok(touching.then_some(Overlap::Contact))
 }
 
 /// The triangles of `b` as a parry mesh; None for an empty mesh.
@@ -84,29 +89,43 @@ fn trimesh(b: &Body) -> Option<TriMesh> {
     TriMesh::new(points, tris).ok()
 }
 
-/// Distance and closest points of the surfaces of `a` and `b` when at most `limit` apart (parry), else None. Only
-/// surfaces count: a solid wholly inside another is reported by `overlap`, not here.
-// shortcut: both meshes are converted on every call; cache them per component if a check over many components gets slow
-pub fn clearance(a: &Body, b: &Body, limit: f64) -> Option<Clearance> {
-    let (ma, mb) = (trimesh(a)?, trimesh(b)?);
+/// Distance and closest points of two parry meshes when at most `limit` apart, else None.
+fn mesh_clearance(ma: &TriMesh, mb: &TriMesh, limit: f64) -> Option<Clearance> {
     let at = Isometry::identity();
     let v = |p: Point<f64>| DVec3::new(p.x, p.y, p.z);
-    // parry 0.19 panics ("composite shape must not be empty") when no triangle pair lies within the margin, so the
-    // margin is huge and the limit is applied here.
-    match closest_points(&at, &ma, &at, &mb, 1e12).ok()? {
-        ClosestPoints::Intersecting => Some(Clearance { distance: 0.0, points: None }),
-        ClosestPoints::WithinMargin(p, q) => {
-            let distance = v(p).distance(v(q));
-            (distance <= limit).then_some(Clearance { distance, points: Some((v(p), v(q))) })
-        }
-        ClosestPoints::Disjoint => None,
+    // Best-first distance first: cheap, and it bounds the closest-point search below.
+    let d = distance(&at, ma, &at, mb).ok()?;
+    if d > limit {
+        return None;
     }
+    if d <= 0.0 {
+        return Some(Clearance { distance: 0.0, points: None });
+    }
+    // Closest points from `contact`, not `closest_points`: parry 0.19's mesh-mesh `closest_points` panics ("composite
+    // shape must not be empty") when a visited triangle has nothing within the margin. A prediction just above the
+    // known distance keeps the search to the triangles near the closest pair.
+    match contact(&at, ma, &at, mb, d * (1.0 + 1e-6) + 1e-9).ok().flatten() {
+        Some(c) => Some(Clearance { distance: c.dist.max(0.0), points: Some((v(c.point1), v(c.point2))) }),
+        None => Some(Clearance { distance: d, points: None }),
+    }
+}
+
+/// Distance and closest points of the surfaces of `a` and `b` when at most `limit` apart (parry), else None. Only
+/// surfaces count: a solid wholly inside another is reported by `overlap`, not here.
+pub fn clearance(a: &Body, b: &Body, limit: f64) -> Option<Clearance> {
+    mesh_clearance(&trimesh(a)?, &trimesh(b)?, limit)
+}
+
+/// Box `inner` lies inside box `outer`.
+fn inside((ilo, ihi): (DVec3, DVec3), (olo, ohi): (DVec3, DVec3)) -> bool {
+    (0..3).all(|k| olo[k] <= ilo[k] && ihi[k] <= ohi[k])
 }
 
 /// Every pair of `solids` (id, solid) whose boxes are within `limit`: overlapping or touching pairs (`overlap` with
 /// `thickness`) go to `meetings`, the others whose surfaces are at most `limit` apart to `clearances`.
 pub fn check(solids: &[(u64, &Body)], thickness: f64, limit: f64) -> Check {
     let boxes: Vec<(DVec3, DVec3)> = solids.iter().map(|(_, b)| b.bbox()).collect();
+    let meshes: Vec<Option<TriMesh>> = solids.iter().map(|(_, b)| trimesh(b)).collect();
     let mut out = Check::default();
     for i in 0..solids.len() {
         for j in i + 1..solids.len() {
@@ -114,10 +133,21 @@ pub fn check(solids: &[(u64, &Body)], thickness: f64, limit: f64) -> Check {
             if !near(boxes[i], boxes[j], limit.max(CONTACT_GAP)) {
                 continue;
             }
-            match overlap(a, b, thickness) {
+            let c = match (&meshes[i], &meshes[j]) {
+                (Some(x), Some(y)) => mesh_clearance(x, y, limit.max(CONTACT_GAP)),
+                _ => None,
+            };
+            let touching = c.is_some_and(|c| c.distance <= CONTACT_GAP);
+            let within = c.filter(|c| c.distance <= limit).map(|c| (ia, ib, c));
+            // Surfaces apart and neither box inside the other: no common volume, so the boolean is skipped.
+            if !touching && !inside(boxes[i], boxes[j]) && !inside(boxes[j], boxes[i]) {
+                out.clearances.extend(within);
+                continue;
+            }
+            match meet(a, b, thickness, touching) {
                 Ok(Some(o)) => out.meetings.push(Meeting { a: ia, b: ib, kind: Ok(o) }),
                 Err(e) => out.meetings.push(Meeting { a: ia, b: ib, kind: Err(e.to_string()) }),
-                Ok(None) => out.clearances.extend(clearance(a, b, limit).map(|c| (ia, ib, c))),
+                Ok(None) => out.clearances.extend(within),
             }
         }
     }

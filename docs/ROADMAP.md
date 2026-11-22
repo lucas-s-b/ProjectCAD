@@ -133,7 +133,7 @@ Limits of this slice (state them wherever results are shown):
 
 Deferred to later phases:
 - Dependency graph between sketches, features and bodies instead of the linear history; references for shell faces and for faces that tilt: Phase 5 (assemblies and part generators need stable references)
-- Draft of existing faces about a neutral plane (any body, not only at extrude time); corner blending where filleted edges meet; fillets on other edge types: Phase 5 (moulded and machined parts)
+- Draft of existing faces about a neutral plane (any body, not only at extrude time): Phase 5 batch F (the faces must be named by stable face references); corner blending where filleted edges meet, fillets on other edge types: Phase 7 (vertex blends need free-form surfaces)
 - Loft sections with holes; self-intersection checks for sweep and loft: Phase 7
 - Trimmed faces and analytic curves beyond plane and cylinder (cones, spheres, tori, cylinder-cylinder); booleans on exact geometry instead of the mesh: Phase 7
 - NURBS curves and surfaces: Phase 7
@@ -181,7 +181,7 @@ Deferred to later phases:
 Parametric generators (gears, shafts, bearings, springs, fasteners, threads), assemblies, joints,
 collision and interference checks (parry), exploded views, bill of materials.
 
-Done (unit-tested; part generators, components, the bill of materials, joints, exploded views and the interference check checked in the running app through MCP):
+Done (unit-tested; part generators, components, the bill of materials, joints, exploded views, the interference check, bearings and modelled threads checked in the running app through MCP):
 - [x] Part features: gear, shaft, spring, bolt and nut generators in the feature history ("Add part" in the Model tab), placed on a sketch plane at an (x, y) point with the axis along the plane normal; every parameter is an expression; a part makes a new body by default and can add, cut or intersect; patterns and mirrors copy parts; file format version 19
 - [x] Involute spur gear: module, teeth, pressure angle, face width, bore; no profile shift or backlash, addendum 1 m, dedendum 1.25 m; flanks in 10 lines, tip and root as arcs
 - [x] Stepped shaft: diameter and length per step, 45 degree chamfer at both ends (`cad_modeler::lathe`, a turned mesh with exact plane, cylinder and cone faces)
@@ -194,19 +194,21 @@ Done (unit-tested; part generators, components, the bill of materials, joints, e
 - [x] Grounded components (never a joint child; the gizmo does not move them)
 - [x] Exploded views: steps that move one component along a direction by a distance, run one after another; on/off toggle, explode slider and factor, trail lines; display only (BOM, state placements and export stay assembled)
 - [x] STL/OBJ/STEP export writes the shown bodies and the placed components (joints applied), each solid named (`Body_<id>` or the component name)
-- [x] Interference and clearance check between placed components, on demand ("Check" in the Assembly tab): pairs whose bounding boxes are near are intersected with the manifold boolean (exact common volume, the common solid drawn red with its components as edges); touching faces and slivers thinner than 0.04 mm count as contact, so a bolt in its nut (cosmetic thread) is contact; minimum distance up to a clearance limit with `parry3d-f64`, the closest points drawn as a line; results in the MCP `state` (`check`), dropped by any edit
+- [x] Interference and clearance check between placed components, on demand ("Check" in the Assembly tab): pairs whose bounding boxes are near are measured with `parry3d-f64` first and only pairs whose surfaces touch or whose boxes nest are intersected with the manifold boolean (exact common volume, the common solid drawn red with its components as edges); touching faces and slivers thinner than 0.04 mm count as contact, so a bolt in its nut (cosmetic thread) is contact; minimum distance up to a clearance limit with `parry3d-f64`, the closest points drawn as a line; results in the MCP `state` (`check`), dropped by any edit
+- [x] Deep groove ball bearings (ISO 15, 6000 to 6010 and 6200 to 6210) as a part generator: inner and outer ring with ball grooves and a full set of balls, internal geometry derived from bore, outside diameter and width (ball diameter 0.3 (D - d), groove radius 0.52 of the ball); designation "Ball bearing 6204 20x47x14"; file format version 22
+- [x] Modelled ISO metric threads as an option on bolts and nuts ("Modelled thread"): ISO 68-1 basic profile on a helical lattice mesh (`cad_modeler::screw`, 48 facets per turn, profile corners exact), bolt thread 0.04 mm under the basic profile, nut thread on it; a nut fits when it sits a whole number of pitches from the bolt's bearing face (or is turned to match), otherwise the interference check shows the flank overlap; cosmetic threads stay the default
 
 Limits:
 - Gears: no undercut or trochoid root fillet (below the base circle the flank runs radially), no helical, internal or bevel gears, no profile shift or backlash.
 - Springs: 24-sided wire and 48 segments per turn whatever the tolerance; no closed or ground ends.
-- Fasteners: no head chamfer or washer face; threads are cosmetic, so a bolt and its nut touch without overlap.
+- Fasteners: no head chamfer or washer face; modelled threads have no run-out or end chamfer, are right hand coarse only, shade soft at the crests and make about 120 000 triangles for an M8x30 bolt; a nut finds no thread phase by itself (place it a whole number of pitches from the bearing face or turn it).
+- Bearings: derived internal geometry (not a catalogue ball set), no cage, seals or ring chamfers; deep groove ball bearings of series 60 and 62 only.
 - Components: the gizmo only translates and writes plain millimetres over position expressions; no rotate gizmo; material and part number are set per component.
 - Joints: tree only (closed loops such as four-bar linkages need the solver, Phase 6); no joint limits; frames picked from faces are stored as numbers and do not follow later edits of the part; no dragging of joints with the mouse.
 - Interference: on demand only, not while a joint is driven or a component dragged; common solids thinner than 0.04 mm (twice the facet tolerance) count as contact; booleans and distances run on the tessellation, so curved faces are measured as facets; only components are checked, not shown bodies; clearance is listed for all pairs up to a limit (no pick of two components).
 
 Remaining:
-- E: bearing generator, modelled helical threads, draft of existing faces, corner blending
-- F: dependency graph between sketches, features and bodies; stable face references
+- F: dependency graph between sketches, features and bodies; stable face references; draft of existing faces about a neutral plane
 
 ## Phase 6: Advanced engineering
 Mass properties, kinematics, static structural analysis, FEA infrastructure. Every result is labelled

@@ -43,7 +43,7 @@ fn mates() {
 
 #[test]
 fn nut_face_frames() {
-    let b = Nut { size: metric("M8").unwrap() }.body(&Plane3::XY, 0.001).unwrap();
+    let b = Nut { size: metric("M8").unwrap(), modelled: false }.body(&Plane3::XY, 0.001).unwrap();
     assert!((0..b.faces.len()).all(|i| face_frame(&b, i).is_some()));
     assert!(face_frame(&b, b.faces.len()).is_none());
     let find = |axis: DVec3| (0..b.faces.len()).filter_map(|i| face_frame(&b, i)).find(|(_, a)| a.distance(axis) <= 1e-9).unwrap().0;

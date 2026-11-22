@@ -1,5 +1,5 @@
 use crate::app::CadApp;
-use cad_document::{BodyOp, Command, Feature, FeatureKind, FeatureState, RevolveAxis, Target};
+use cad_document::{BodyOp, Command, Feature, FeatureKind, FeatureState, PartDef, RevolveAxis, Target};
 use crate::widgets as w;
 use eframe::egui::{self, Color32, RichText, TextEdit};
 
@@ -198,7 +198,8 @@ fn editor(app: &mut CadApp, ui: &mut egui::Ui) {
             // Tagged so MCP clients can read it from `widgets`.
             w::tag(ui, &text, r);
             if let Some(t) = p.thread() {
-                ui.label(format!("Thread {t} (cosmetic)"));
+                let modelled = matches!(&buffer.kind, FeatureKind::Part { def: PartDef::Bolt { modelled: true, .. } | PartDef::Nut { modelled: true, .. }, .. });
+                ui.label(format!("Thread {t} ({})", if modelled { "modelled" } else { "cosmetic" }));
             }
         }
         Some(Err(e)) => {
