@@ -3,6 +3,7 @@ use crate::{Bolt, Nut, metric, polygon};
 use cad_geometry::profile::Profile;
 use cad_geometry::{DAffine3, DVec2};
 use cad_modeler::{Plane3, extrude};
+use std::f64::consts::PI;
 
 const THICK: f64 = 0.04;
 
@@ -49,7 +50,7 @@ fn touching_and_thin_overlaps_are_contact() {
 }
 
 fn nut() -> Body {
-    Nut { size: metric("M8").unwrap() }.body(&Plane3::XY, 0.02).unwrap()
+    Nut { size: metric("M8").unwrap(), modelled: false }.body(&Plane3::XY, 0.02).unwrap()
 }
 
 #[test]
@@ -69,10 +70,10 @@ fn bolt_in_nut_is_contact() {
         let m = DAffine3::from_translation(DVec3::new(0.0, 0.0, -10.0)) * DAffine3::from_rotation_z(turn_deg.to_radians());
         nut.transformed(&m).unwrap()
     };
-    let bolt = Bolt { size: metric("M8").unwrap(), length: 30.0 }.body(&Plane3::XY, 0.02).unwrap();
+    let bolt = Bolt { size: metric("M8").unwrap(), length: 30.0, modelled: false }.body(&Plane3::XY, 0.02).unwrap();
     assert!(matches!(overlap(&bolt, &nut_at(0.0), THICK), Ok(Some(Overlap::Contact))));
     assert!(matches!(overlap(&bolt, &nut_at(7.0), THICK), Ok(Some(Overlap::Contact))));
-    let big = Bolt { size: metric("M10").unwrap(), length: 30.0 }.body(&Plane3::XY, 0.02).unwrap();
+    let big = Bolt { size: metric("M10").unwrap(), length: 30.0, modelled: false }.body(&Plane3::XY, 0.02).unwrap();
     let v = volume(overlap(&big, &nut_at(0.0), THICK));
     assert!(within(v, 192.27, 3.0), "{v}");
 }
@@ -111,4 +112,20 @@ fn check_sorts_pairs() {
     assert_eq!(pairs, [(1, 7), (2, 7)]);
     assert!(c.clearances.iter().all(|(_, _, k)| within(k.distance, 3.0, 1e-6)));
     assert!(check(&solids, THICK, 2.0).clearances.is_empty());
+}
+
+#[test]
+fn modelled_threads_fit_at_whole_pitches() {
+    let bolt = Bolt { size: metric("M8").unwrap(), length: 30.0, modelled: true }.body(&Plane3::XY, 0.02).unwrap();
+    let nut = Nut { size: metric("M8").unwrap(), modelled: true }.body(&Plane3::XY, 0.02).unwrap();
+    let at = |z: f64, turn: f64| nut.transformed(&(DAffine3::from_translation(DVec3::new(0.0, 0.0, z)) * DAffine3::from_rotation_z(turn))).unwrap();
+    let n = at(-10.0, 0.0);
+    assert!(matches!(overlap(&bolt, &n, THICK), Ok(None)));
+    let d = clearance(&bolt, &n, 1.0).unwrap().distance;
+    assert!((0.0185..=0.0205).contains(&d), "{d}");
+    let n = at(-10.625, 0.0);
+    let v = volume(overlap(&bolt, &n, THICK));
+    assert!((25.0..=40.0).contains(&v), "{v}");
+    let n = at(-10.625, PI);
+    assert!(matches!(overlap(&bolt, &n, THICK), Ok(None)));
 }

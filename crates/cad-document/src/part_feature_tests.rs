@@ -21,7 +21,7 @@ fn gear(teeth: &str) -> PartDef {
 }
 
 fn bolt(size: &str, length: &str) -> PartDef {
-    PartDef::Bolt { size: size.into(), length: length.into() }
+    PartDef::Bolt { size: size.into(), length: length.into(), modelled: false }
 }
 
 fn rebuilt(d: &Document) -> RebuildResult {
@@ -98,7 +98,7 @@ fn patterns_copy_parts() {
     assert_eq!(r.states[&2], FeatureState::Ok);
     assert_eq!(r.bodies.len(), 2);
     let at = Plane3 { origin: DVec3::new(30.0, 0.0, 0.0), ..Plane3::XY };
-    let one = cad_mech::Part::Bolt(Bolt { size: metric("M8").unwrap(), length: 30.0 }).body(&at, BODY_TOLERANCE).unwrap().volume();
+    let one = cad_mech::Part::Bolt(Bolt { size: metric("M8").unwrap(), length: 30.0, modelled: false }).body(&at, BODY_TOLERANCE).unwrap().volume();
     close(r.total_volume(), 4.0 * one, 1e-6);
 }
 
@@ -107,7 +107,7 @@ fn part_checks() {
     let mut d = Document::new("g");
     let plane = PlaneDef::Principal { base: BasePlane::XY, offset: "0".into() };
     d.apply(Command::AddSketch(Sketch { id: 1, name: "s".into(), plane, level: None })).unwrap();
-    let nut = || PartDef::Nut { size: "M8".into() };
+    let nut = || PartDef::Nut { size: "M8".into(), modelled: false };
     push(&mut d, part(1, nut(), 1, "0"));
     assert!(matches!(d.apply(Command::RemoveSketch(1)), Err(DocError::SketchInUse(1))));
     assert!(matches!(add(&mut d, part(2, nut(), 9, "0")), Err(DocError::SketchNotFound(9))));
@@ -133,12 +133,12 @@ fn invalid_parts_report_why() {
 fn every_default_part_builds_and_saves() {
     let mut d = Document::new("g");
     let defaults = PartDef::defaults();
-    assert_eq!(defaults.iter().map(PartDef::label).collect::<Vec<_>>(), ["Gear", "Shaft", "Spring", "Bolt", "Nut"]);
+    assert_eq!(defaults.iter().map(PartDef::label).collect::<Vec<_>>(), ["Gear", "Shaft", "Spring", "Bolt", "Nut", "Bearing"]);
     for (i, def) in defaults.into_iter().enumerate() {
         push(&mut d, part(i as u64 + 1, def, 0, &format!("{} mm", 100 * i)));
     }
     let r = rebuilt(&d);
-    assert_eq!(r.bodies.len(), 5);
+    assert_eq!(r.bodies.len(), 6);
     assert!(r.states.values().all(|s| *s == FeatureState::Ok), "{:?}", r.states);
     let v: Vec<f64> = r.bodies.iter().map(|(_, b)| b.volume()).collect();
     close(v[0], 11755.14129241726, 1e-3);
@@ -146,10 +146,35 @@ fn every_default_part_builds_and_saves() {
     close(v[2], 1173.7381100536138, 1e-6);
     close(v[3], 2283.6634278928223, 1e-2);
     close(v[4], 653.4311133185073, 1e-2);
+    close(v[5], 13146.684979704914, 1e-2);
     let p = std::env::temp_dir().join(format!("cadtest_{}_parts.cadproj", std::process::id()));
     d.save(&p).unwrap();
     let loaded = Document::load(&p).unwrap();
     std::fs::remove_file(&p).ok();
     assert_eq!(loaded.features(), d.features());
-    assert_eq!(FORMAT_VERSION, 21);
+    assert_eq!(FORMAT_VERSION, 22);
+}
+
+#[test]
+fn modelled_threads_and_bearings() {
+    let mut d = Document::new("g");
+    push(&mut d, part(1, PartDef::Bolt { size: "M8".into(), length: "30 mm".into(), modelled: true }, 0, "0"));
+    push(&mut d, part(2, PartDef::Nut { size: "M8".into(), modelled: true }, 0, "100 mm"));
+    push(&mut d, part(3, PartDef::Bearing { size: "6204".into() }, 0, "200 mm"));
+    let r = rebuilt(&d);
+    assert!(r.states.values().all(|s| *s == FeatureState::Ok), "{:?}", r.states);
+    let v: Vec<f64> = r.bodies.iter().map(|(_, b)| b.volume()).collect();
+    close(v[0], 1985.8667876362092, 1e-9);
+    close(v[1], 714.7977356403367, 1e-5);
+    close(v[2], 13146.684979704914, 1e-2);
+    assert_eq!(d.part(&PartDef::Bearing { size: "6204".into() }).unwrap().designation(), "Ball bearing 6204 20x47x14");
+    assert!(matches!(add(&mut d, part(4, PartDef::Bearing { size: "6299".into() }, 0, "0")), Err(DocError::BadFeature("unknown bearing size"))));
+}
+
+#[test]
+fn old_bolts_load_cosmetic() {
+    let bolt: PartDef = serde_json::from_str(r#"{"Bolt":{"size":"M8","length":"30 mm"}}"#).unwrap();
+    assert_eq!(bolt, PartDef::Bolt { size: "M8".into(), length: "30 mm".into(), modelled: false });
+    let nut: PartDef = serde_json::from_str(r#"{"Nut":{"size":"M8"}}"#).unwrap();
+    assert_eq!(nut, PartDef::Nut { size: "M8".into(), modelled: false });
 }

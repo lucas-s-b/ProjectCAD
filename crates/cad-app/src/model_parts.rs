@@ -25,8 +25,8 @@ pub fn controls(app: &mut CadApp, ui: &mut egui::Ui) {
     }
 }
 
-/// The parameter fields of a part (text fields commit through `field`); true when "Add step" or "Remove step" changed
-/// a shaft.
+/// The parameter fields of a part (text fields commit through `field`); true when "Add step", "Remove step" or
+/// "Modelled thread" changed the part.
 pub fn fields(ui: &mut egui::Ui, def: &mut PartDef, field: &mut dyn FnMut(&mut egui::Ui, &str, &mut String)) -> bool {
     match def {
         PartDef::Gear { module, teeth, pressure, width, bore } => {
@@ -61,13 +61,17 @@ pub fn fields(ui: &mut egui::Ui, def: &mut PartDef, field: &mut dyn FnMut(&mut e
                 .for_each(|(l, t)| field(ui, l, t));
             false
         }
-        PartDef::Bolt { size, length } => {
+        PartDef::Bolt { size, length, modelled } => {
             field(ui, "Thread size", size);
             field(ui, "Bolt length", length);
-            false
+            w::checkbox(ui, modelled, "Modelled thread").changed()
         }
-        PartDef::Nut { size } => {
+        PartDef::Nut { size, modelled } => {
             field(ui, "Thread size", size);
+            w::checkbox(ui, modelled, "Modelled thread").changed()
+        }
+        PartDef::Bearing { size } => {
+            field(ui, "Bearing size", size);
             false
         }
     }

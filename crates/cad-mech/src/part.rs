@@ -1,5 +1,5 @@
 //! Every generated part behind one type, for the document's part features.
-use crate::{Bolt, Gear, Nut, Shaft, Spring};
+use crate::{Bearing, Bolt, Gear, Nut, Shaft, Spring};
 use cad_modeler::{Body, ModelError, Plane3};
 
 /// A generated part with its parameters evaluated.
@@ -10,6 +10,7 @@ pub enum Part {
     Spring(Spring),
     Bolt(Bolt),
     Nut(Nut),
+    Bearing(Bearing),
 }
 
 impl Part {
@@ -22,6 +23,7 @@ impl Part {
             Part::Spring(s) => s.body(plane, tol),
             Part::Bolt(b) => b.body(plane, tol),
             Part::Nut(n) => n.body(plane, tol),
+            Part::Bearing(b) => b.body(plane, tol),
         }
     }
 
@@ -33,6 +35,7 @@ impl Part {
             Part::Spring(s) => s.designation(),
             Part::Bolt(b) => b.designation(),
             Part::Nut(n) => n.designation(),
+            Part::Bearing(b) => b.designation(),
         }
     }
 
