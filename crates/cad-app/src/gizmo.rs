@@ -21,10 +21,15 @@ impl GizmoDrag {
 }
 
 /// Centre of the bounding box of the selection when it is non-empty and holds only solids (stored shapes, not the drag preview);
-/// with no entity selected, the centre of the selected component's solid.
+/// with no entity selected, the centre of the selected component's solid; none for a grounded or jointed component or while the exploded view is shown.
 pub fn center(app: &CadApp) -> Option<DVec3> {
     if app.selection.is_empty() {
-        let (lo, hi) = app.model_result().and_then(|r| r.component(app.component_sel?))?.bbox();
+        let id = app.component_sel?;
+        let free = app.explode_factor() == 0.0 && app.doc.component(id).is_some_and(|c| !c.grounded) && app.doc.parent_joint(id).is_none();
+        if !free {
+            return None;
+        }
+        let (lo, hi) = app.model_result().and_then(|r| r.component(id))?.bbox();
         return Some((lo + hi) / 2.0);
     }
     let mut bounds: Option<(DVec3, DVec3)> = None;

@@ -2,7 +2,7 @@ use crate::camera::{Camera2D, OrbitCamera};
 use crate::mcp::{self, bridge::Bridge};
 use crate::rebuild_worker::RebuildWorker;
 use crate::{panels, view2d, view3d};
-use cad_document::{Component, ComponentId, Plane3, Command, ConstraintId, Document, Entity, EntityId, History, LayerId, BodyOp, Feature, FeatureId, PointRef, RebuildResult, RevolveAxis, SketchId, BasePlane, Target};
+use cad_document::{ExplodeStep, Joint, JointId, Component, ComponentId, Plane3, Command, ConstraintId, Document, Entity, EntityId, History, LayerId, BodyOp, Feature, FeatureId, PointRef, RebuildResult, RevolveAxis, SketchId, BasePlane, Target};
 use cad_geometry::snap::Snap;
 use cad_geometry::{DVec2, DVec3, HatchPattern, Opening, OpeningKind, Roof, RoofKind, Shape, Wall, WallAlign};
 use std::collections::BTreeSet;
@@ -233,6 +233,19 @@ pub struct CadApp {
     pub component_edit: Option<Component>,
     /// Body that "Add component" places (0: none chosen yet).
     pub component_body: u64,
+    /// Face of a component last clicked in 3D (component, face index of its body); "frame from face" reads it.
+    pub component_face: Option<(ComponentId, u32)>,
+    /// Parent that "Add joint" uses (0: none chosen yet).
+    pub joint_parent: ComponentId,
+    /// Selected joint in the Assembly tab and its uncommitted edit.
+    pub joint_sel: Option<JointId>,
+    pub joint_edit: Option<Joint>,
+    /// Exploded view: shown when on, at `explode` (0 assembled .. 1 fully exploded), with trail lines when asked.
+    pub explode_on: bool,
+    pub explode: f64,
+    pub explode_trails: bool,
+    /// Uncommitted edit of the explode steps.
+    pub explode_edit: Option<Vec<ExplodeStep>>,
     pub worker: RebuildWorker,
     /// Document revision last sent to the worker.
     pub requested: Option<u64>,
@@ -344,6 +357,14 @@ impl CadApp {
             component_sel: None,
             component_edit: None,
             component_body: 0,
+            component_face: None,
+            joint_parent: 0,
+            joint_sel: None,
+            joint_edit: None,
+            explode_on: false,
+            explode: 1.0,
+            explode_trails: false,
+            explode_edit: None,
             worker: RebuildWorker::spawn(cc.egui_ctx.clone()),
             requested: None,
             model: None,
@@ -413,6 +434,11 @@ impl CadApp {
     pub fn shown_bodies(&self) -> impl Iterator<Item = &(FeatureId, Arc<cad_document::Body>)> + '_ {
         let placed: BTreeSet<FeatureId> = self.doc.components().map(|c| c.body).collect();
         self.model.iter().flat_map(|(_, m)| &m.bodies).filter(move |(id, _)| !placed.contains(id))
+    }
+
+    /// The explode factor in effect: 0 while the exploded view is off.
+    pub fn explode_factor(&self) -> f64 {
+        if self.explode_on { self.explode } else { 0.0 }
     }
 
     /// Solids of the components in the latest rebuild; components whose placement failed are left out.
@@ -540,6 +566,8 @@ impl CadApp {
         self.param_edit = None;
         self.feature_edit = None;
         self.component_edit = None;
+        self.joint_edit = None;
+        self.explode_edit = None;
         self.constraint_edit = None;
     }
 

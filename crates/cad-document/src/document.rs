@@ -1,4 +1,5 @@
 use crate::component::{Component, ComponentId};
+use crate::joint::{ExplodeStep, Joint, JointId};
 use crate::linetype::LineType;
 use crate::feature::{Feature, FeatureId};
 use crate::sketch::{Sketch, SketchId, default_sketches, first_sketch_id};
@@ -73,6 +74,10 @@ fn first_component_id() -> ComponentId {
     1
 }
 
+fn first_joint_id() -> JointId {
+    1
+}
+
 fn first_group_id() -> u32 {
     1
 }
@@ -135,6 +140,12 @@ pub struct Document {
     pub(crate) components: BTreeMap<ComponentId, Component>,
     #[serde(default = "first_component_id")]
     pub(crate) next_component_id: ComponentId,
+    #[serde(default)]
+    pub(crate) joints: BTreeMap<JointId, Joint>,
+    #[serde(default = "first_joint_id")]
+    pub(crate) next_joint_id: JointId,
+    #[serde(default)]
+    pub(crate) explode: Vec<ExplodeStep>,
     #[serde(skip)]
     pub(crate) revision: u64,
 }
@@ -180,6 +191,12 @@ pub enum Command {
     RemoveComponent(ComponentId),
     /// Replaces the component with the same id.
     SetComponent(Component),
+    AddJoint(Joint),
+    RemoveJoint(JointId),
+    /// Replaces the joint with the same id.
+    SetJoint(Joint),
+    /// Replaces the whole list of exploded-view steps.
+    SetExplode(Vec<ExplodeStep>),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -260,6 +277,16 @@ pub enum DocError {
     BadComponent(&'static str),
     #[error("body {0} is placed by a component")]
     BodyInUse(FeatureId),
+    #[error("joint {0} not found")]
+    JointNotFound(JointId),
+    #[error("joint {0} already exists")]
+    JointExists(JointId),
+    #[error("invalid joint: {0}")]
+    BadJoint(&'static str),
+    #[error("joint would give component {0} a second parent or close a loop")]
+    JointLoop(ComponentId),
+    #[error("component {0} is used by a joint")]
+    ComponentInUse(ComponentId),
 }
 
 impl Document {
@@ -284,6 +311,9 @@ impl Document {
             dim_links: BTreeMap::new(),
             components: BTreeMap::new(),
             next_component_id: first_component_id(),
+            joints: BTreeMap::new(),
+            next_joint_id: first_joint_id(),
+            explode: Vec::new(),
             revision: 0,
         }
     }
@@ -461,6 +491,7 @@ impl Document {
             Command::SetGroup { .. } | Command::RestoreGroups(_) | Command::SetMeta { .. } => self.apply_group(cmd)?,
             Command::SetDimLink { .. } => self.apply_dim_link(cmd)?,
             Command::AddComponent(_) | Command::RemoveComponent(_) | Command::SetComponent(_) => self.apply_component(cmd)?,
+            Command::AddJoint(_) | Command::RemoveJoint(_) | Command::SetJoint(_) | Command::SetExplode(_) => self.apply_joint(cmd)?,
         };
         self.revision += 1;
         Ok(inverse)

@@ -55,7 +55,7 @@ fn coords(text: &str) -> DVec3 {
 #[test]
 fn step_is_well_formed() {
     let (a, b) = (cuboid(), cylinder());
-    let step = to_step(&[(1, &a), (2, &b)], "demo");
+    let step = to_step(&[("Body_1", &a), ("Body_2", &b)], "demo");
     assert!(step.starts_with("ISO-10303-21;"));
     assert!(step.ends_with("END-ISO-10303-21;\n"));
     let ents = entities(&step);
@@ -69,7 +69,7 @@ fn step_is_well_formed() {
 #[test]
 fn step_faces_match_triangles_and_volume() {
     let (a, b) = (faceted(&cuboid()), faceted(&cylinder()));
-    let step = to_step(&[(1, &a), (2, &b)], "demo");
+    let step = to_step(&[("Body_1", &a), ("Body_2", &b)], "demo");
     let triangles = [&a, &b]
         .iter()
         .flat_map(|b| b.mesh.indices.as_chunks::<3>().0.iter().map(|t| t.map(|i| b.mesh.positions[i as usize])))
@@ -91,7 +91,7 @@ fn step_faces_match_triangles_and_volume() {
 
 #[test]
 fn step_quotes_name() {
-    assert!(to_step(&[(1, &cuboid())], "it's").contains("PRODUCT('it''s'"));
+    assert!(to_step(&[("Body_1", &cuboid())], "it's").contains("PRODUCT('it''s'"));
 }
 
 #[test]
@@ -117,7 +117,7 @@ fn all_refs_defined(step: &str) {
 
 #[test]
 fn plate_exports_analytic_faces() {
-    let step = to_step(&[(1, &plate())], "p");
+    let step = to_step(&[("Body_1", &plate())], "p");
     let want = [
         ("ADVANCED_FACE", 7),
         ("PLANE", 6),
@@ -143,7 +143,7 @@ fn plate_exports_analytic_faces() {
 
 #[test]
 fn oriented_edges_use_each_edge_once_each_way() {
-    let ents = entities(&to_step(&[(1, &plate())], "p"));
+    let ents = entities(&to_step(&[("Body_1", &plate())], "p"));
     let mut uses: HashMap<usize, (u32, u32)> = HashMap::new();
     for text in ents.values().filter(|t| t.starts_with("ORIENTED_EDGE(")) {
         let u = uses.entry(*refs_in(text).last().unwrap()).or_default();
@@ -155,7 +155,7 @@ fn oriented_edges_use_each_edge_once_each_way() {
 
 #[test]
 fn circle_vertices_lie_on_their_circles() {
-    let ents = entities(&to_step(&[(1, &plate())], "p"));
+    let ents = entities(&to_step(&[("Body_1", &plate())], "p"));
     let mut circles = 0;
     for text in ents.values().filter(|t| t.starts_with("EDGE_CURVE(")) {
         let [v0, v1, curve] = refs_in(text)[..] else { panic!("an edge has two vertices and a curve") };
@@ -179,10 +179,15 @@ fn circle_vertices_lie_on_their_circles() {
 
 #[test]
 fn mixed_bodies_link_both_representations() {
-    let step = to_step(&[(1, &plate()), (2, &faceted(&cuboid()))], "m");
+    let step = to_step(&[("Body_1", &plate()), ("Body_2", &faceted(&cuboid()))], "m");
     assert_eq!(count(&step, "SHAPE_REPRESENTATION"), 1);
     assert_eq!(count(&step, "ADVANCED_BREP_SHAPE_REPRESENTATION"), 1);
     assert_eq!(count(&step, "FACETED_BREP_SHAPE_REPRESENTATION"), 1);
     assert_eq!(count(&step, "SHAPE_REPRESENTATION_RELATIONSHIP"), 2);
     all_refs_defined(&step);
+}
+
+#[test]
+fn step_solids_use_the_given_names() {
+    assert!(to_step(&[("it's", &cuboid())], "p").contains("('it''s',"));
 }

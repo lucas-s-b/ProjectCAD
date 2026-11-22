@@ -292,6 +292,7 @@ fn summary_fields(app: &CadApp) -> serde_json::Map<String, Value> {
         "face_sel": app.face_sel.map(|(b, f)| [b, u64::from(f)]),
         "edge_sel": app.edge_sel.as_ref().map(|(b, _)| b),
         "component_sel": app.component_sel,
+        "component_face": app.component_face.map(|(c, f)| [c, u64::from(f)]),
     }) else {
         unreachable!()
     };
@@ -332,6 +333,16 @@ fn insert_model(app: &CadApp, m: &mut serde_json::Map<String, Value>) {
         json!({ "item": r.item, "name": r.name, "designation": r.designation, "material": r.material, "part_number": r.part_number, "quantity": r.quantity, "mass": r.mass })
     }).collect();
     m.insert("bom".into(), json!(bom));
+    let joints: Vec<Value> = app.doc.joints().map(|j| {
+        let error = model.and_then(|r| r.components.iter().find(|(i, _)| *i == j.child)).and_then(|(_, r)| r.as_ref().err().cloned());
+        json!({ "id": j.id, "kind": format!("{:?}", j.kind), "parent": j.parent, "child": j.child, "value": j.value, "error": error })
+    }).collect();
+    m.insert("joints".into(), json!(joints));
+    m.insert("grounded".into(), json!(app.doc.components().filter(|c| c.grounded).map(|c| c.id).collect::<Vec<_>>()));
+    let factor = app.explode_factor();
+    let offsets: serde_json::Map<String, Value> =
+        app.doc.explode_offsets(factor).into_iter().map(|(id, v)| (id.to_string(), json!([v.x, v.y, v.z]))).collect();
+    m.insert("explode".into(), json!({ "factor": factor, "offsets": offsets }));
     let rooms: Vec<Value> =
         model.into_iter().flat_map(|r| &r.rooms).map(|(id, g)| json!({ "id": id, "area": g.area, "perimeter": g.perimeter })).collect();
     m.insert("rooms".into(), json!(rooms));

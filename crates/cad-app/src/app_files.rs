@@ -13,6 +13,10 @@ impl CadApp {
         self.set_selection([]);
         self.inspector = None;
         self.constraint_edit = None;
+        self.component_face = None;
+        self.joint_sel = None;
+        self.joint_edit = None;
+        self.explode_edit = None;
         self.reset_model();
         self.constraint_cache = None;
         self.drag = None;
@@ -152,7 +156,7 @@ impl CadApp {
         self.save_to(p)
     }
 
-    /// Writes SVG, DXF or PDF (visible 2D entities) or STL, OBJ or STEP (solid bodies) or CSV (bill of materials), chosen by the file extension.
+    /// Writes SVG, DXF or PDF (visible 2D entities) or STL, OBJ or STEP (shown bodies and placed components) or CSV (bill of materials), chosen by the file extension.
     pub fn export_path(&mut self, p: PathBuf) -> Result<(), String> {
         let ext = p.extension().map(|e| e.to_string_lossy().to_lowercase());
         let bytes = match ext.as_deref() {
@@ -190,9 +194,12 @@ impl CadApp {
         Ok(())
     }
 
-    /// STL, OBJ or STEP (by extension) of the bodies of the current rebuild.
+    /// STL, OBJ or STEP (by extension) of the shown bodies and the placed components of the current rebuild (joints
+    /// applied, no explode); solids are named `Body_<id>` or by the component name.
     fn mesh_bytes(&self, ext: &str) -> Result<Vec<u8>, String> {
-        let bodies: Vec<(u64, &cad_document::Body)> = self.model.iter().flat_map(|(_, m)| &m.bodies).map(|(id, b)| (*id, &**b)).collect();
+        let mut named: Vec<(String, &cad_document::Body)> = self.shown_bodies().map(|(id, b)| (format!("Body_{id}"), &**b)).collect();
+        named.extend(self.placed_components().map(|(id, b)| (self.doc.component(id).map_or_else(|| format!("Component_{id}"), |c| c.name.clone()), &**b)));
+        let bodies: Vec<(&str, &cad_document::Body)> = named.iter().map(|(n, b)| (n.as_str(), *b)).collect();
         if bodies.is_empty() {
             return Err("no solid body to export".into());
         }

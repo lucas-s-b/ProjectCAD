@@ -93,7 +93,7 @@ fn parse_obj(text: &str) -> (Vec<DVec3>, Vec<[usize; 3]>, usize) {
 #[test]
 fn obj_counts_indices_and_volume() {
     let b = cylinder();
-    let text = to_obj(&[(7, &b)]);
+    let text = to_obj(&[("Body_7", &b)]);
     assert!(text.starts_with("# ProjectCAD OBJ, units mm\no Body_7\n"));
     let (v, f, o) = parse_obj(&text);
     assert_eq!((v.len(), f.len(), o), (b.mesh.positions.len(), b.mesh.triangle_count(), 1));
@@ -105,7 +105,7 @@ fn obj_counts_indices_and_volume() {
 #[test]
 fn obj_indices_are_global_across_bodies() {
     let (a, b) = (cuboid(), cylinder());
-    let (v, f, o) = parse_obj(&to_obj(&[(1, &a), (2, &b)]));
+    let (v, f, o) = parse_obj(&to_obj(&[("Body_1", &a), ("Body_2", &b)]));
     assert_eq!(o, 2);
     let (na, nb) = (a.mesh.positions.len(), b.mesh.positions.len());
     assert_eq!((v.len(), f.len()), (na + nb, a.mesh.triangle_count() + b.mesh.triangle_count()));
@@ -117,4 +117,9 @@ fn obj_indices_are_global_across_bodies() {
 #[test]
 fn obj_without_bodies_is_only_the_comment() {
     assert_eq!(to_obj(&[]), "# ProjectCAD OBJ, units mm\n");
+}
+
+#[test]
+fn obj_groups_use_the_given_names() {
+    assert!(to_obj(&[("Gear 1 #2", &cuboid())]).contains("\no Gear 1 #2\n"));
 }

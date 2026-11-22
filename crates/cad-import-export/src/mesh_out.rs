@@ -31,13 +31,13 @@ pub fn to_stl(bodies: &[&Body]) -> Vec<u8> {
     out
 }
 
-/// OBJ text with one `o Body_<id>` group per body; face indices are 1-based and global.
-pub fn to_obj(bodies: &[(u64, &Body)]) -> String {
+/// OBJ text with one `o <name>` group per body; face indices are 1-based and global.
+pub fn to_obj(bodies: &[(&str, &Body)]) -> String {
     let mut out = String::from("# ProjectCAD OBJ, units mm\n");
     let mut base = 1;
-    for (id, body) in bodies {
+    for (name, body) in bodies {
         let m = &body.mesh;
-        let _ = writeln!(out, "o Body_{id}");
+        let _ = writeln!(out, "o {name}");
         for p in &m.positions {
             let _ = writeln!(out, "v {} {} {}", p.x, p.y, p.z);
         }

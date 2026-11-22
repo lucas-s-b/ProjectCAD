@@ -16,7 +16,7 @@ fn comp(id: ComponentId, body: FeatureId, material: &str, part_number: &str) -> 
             meta.insert(k.to_string(), v.to_string());
         }
     }
-    Component { id, name: format!("c{id}"), body, at: ["0".into(), "0".into(), "0".into()], angles: ["0".into(), "0".into(), "0".into()], meta }
+    Component { id, name: format!("c{id}"), body, at: ["0".into(), "0".into(), "0".into()], angles: ["0".into(), "0".into(), "0".into()], meta, grounded: false }
 }
 /// Volume of the default shaft at BODY_TOLERANCE (50 facets), exact for the turned mesh.
 const SHAFT: f64 = 19372.340134589296;

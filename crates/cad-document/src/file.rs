@@ -87,6 +87,16 @@ impl Document {
             doc.next_component_id = doc.next_component_id.max(max.saturating_add(1));
         }
         doc.next_component_id = doc.next_component_id.max(1);
+        if let Some((key, _)) = doc.joints.iter().find(|(key, j)| **key != j.id) {
+            return Err(DocError::JointExists(*key));
+        }
+        for j in doc.joints.values() {
+            doc.check_joint(j)?;
+        }
+        if let Some(max) = doc.joints.keys().next_back() {
+            doc.next_joint_id = doc.next_joint_id.max(max.saturating_add(1));
+        }
+        doc.next_joint_id = doc.next_joint_id.max(1);
         for (dim, (p, q)) in &doc.dim_links {
             if let Some(missing) = [dim, &p.entity, &q.entity].into_iter().find(|e| !doc.entities.contains_key(e)) {
                 return Err(DocError::NotFound(*missing));
