@@ -218,6 +218,8 @@ pub struct CadApp {
     pub shell_thickness: String,
     pub pick_edges: Option<crate::edge_pick::EdgePick>,
     pub blend_size: String,
+    /// Which part "Add part" makes: an index into `PartDef::defaults()`.
+    pub part_choice: usize,
     pub new_sketch_base: BasePlane,
     pub new_sketch_offset: String,
     pub feature_sel: Option<FeatureId>,
@@ -326,6 +328,7 @@ impl CadApp {
             shell_thickness: "2 mm".into(),
             pick_edges: None,
             blend_size: "2 mm".into(),
+            part_choice: 0,
             new_sketch_base: BasePlane::XY,
             new_sketch_offset: "0".into(),
             feature_sel: None,

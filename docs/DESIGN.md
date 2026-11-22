@@ -21,7 +21,7 @@ subsystem is first built (rule 7 of the brief).
 | Constraint solver | Own Levenberg-Marquardt on faer sparse normal equations (`cad-constraints`) | ezpz (KittyCAD) | ezpz exists (MIT, crate `kcl-ezpz`, 0.2.x) but is pre-1.0 and built around the KCL data model; we need degrees-of-freedom and redundancy reports over our own shapes. Not benchmarked against ours (re-verify). Sparse numeric Jacobian, sparse Cholesky (faer); rank from dense pivoted QR. | Phase 2 |
 | Spatial index | Linear scan; rstar (2D snap) when needed; BVH over body triangles for 3D picks (Phase 3) | octree, k-d tree, grid | Measured: snap over 100 000 lines about 1 ms, pick about 11 ms (`docs/BENCHMARKS.md`). No index needed yet. | Phase 7 |
 | Parallelism | rayon | scoped threads | Added with the first measured hot loop (tessellation). | Phase 3 |
-| Collision / physics | parry, rapier | own | Pure Rust, mature. | Phase 5 |
+| Collision / physics | parry3d-f64 (clearance, Phase 5 batch D); rapier later | own | Pure Rust, mature, Apache-2.0, no build script. Interference volumes come from the manifold boolean, which parry cannot give. | Phase 5 |
 | Text | egui built-in now; cosmic-text for drawing text | — | Dimension text needs shaping and outlines. | Phase 2 |
 
 Rule check: every dependency must be pure Rust. `cargo tree -i cc`, `-i cmake`, `-i bindgen` must report
@@ -34,6 +34,7 @@ cad-app ──► cad-document ──► cad-constraints ──► cad-geometry 
                   ├──► cad-params
                   └──► cad-modeler ──► cad-topology, cad-geometry, manifold-rust, earcutr
                   └──► cad-arch ──► cad-modeler, cad-geometry
+                  └──► cad-mech ──► cad-modeler, cad-geometry
    │
    └──────► cad-renderer ──► wgpu
 ```
@@ -41,6 +42,7 @@ cad-app ──► cad-document ──► cad-constraints ──► cad-geometry 
 - `cad-geometry`: shapes, tolerance, validation, tessellation, picking math. No UI, no GPU.
 - `cad-document`: entities, commands, undo/redo history, native file format.
 - `cad-arch` (Phase 4): wall joins, plan outlines with opening gaps, wall solids with opening cuts, door and window symbols, room areas, floor slab, roof and stair solids, IFC classes on a level. Works on shapes, not on the document; `cad-document` (rebuild) and `cad-app` (plan drawing) depend on it.
+- `cad-mech` (Phase 5): part generators (involute spur gear, stepped shaft, helical spring, ISO 4017 screw, ISO 4032 nut) as solids from evaluated parameters, their designations and threads. Works on numbers, not on the document; `cad-document` (part features) depends on it. Assembly math (joint placements, BOM rows, interference) joins it in later batches.
 - `cad-renderer`: wgpu pipelines and WGSL. Knows only vertices and matrices; it does not depend on the kernel.
 - `cad-app`: egui UI, cameras, tools, viewports.
 - `cad-import-export` (added in Phase 2): `to_svg` and `to_dxf`. Depends on `cad-document` and `cad-geometry`;
@@ -48,7 +50,7 @@ cad-app ──► cad-document ──► cad-constraints ──► cad-geometry 
 
 The brief lists 23 crates. A crate is created when its first real code exists; empty crates are not created.
 Planned splits: `cad-topology` and `cad-modeler` (Phase 3), `cad-constraints` and `cad-drafting` (Phase 2),
-`cad-arch` (Phase 4, built), `cad-mechanical` and `cad-assembly` (Phase 5), `cad-analysis` (Phase 6),
+`cad-arch` (Phase 4, built), `cad-mech` (Phase 5, built), `cad-analysis` (Phase 6),
 `cad-import-export` and `cad-plugin-api` (Phase 7).
 
 ## 3. Geometry representation
@@ -178,3 +180,12 @@ all UI clicks, so adding rows does not break them. Picks inside the 3D viewport 
 - Stairs: `Shape::Stair` stores start, end of the run, width, height and riser count; the tread depth is the run over the treads (one fewer than the risers), so transforms work on the two points. The Stair tool takes the riser count from the storey height and the maximum riser. The solid (`cad_arch::stair_body`) is the stepped side profile, filled to the floor, extruded across the width.
 - Multi-floor: the 3D view shows every level at its elevation; the plan can draw the level below or all other levels in grey under the active one. `Document::level_change` stores an edited level and gives a new storey height to the walls and stairs that still have the old one, in one undo step.
 - BIM: the entity `meta` map is the property bag (`Pset_X.Prop` keys become IFC property sets). IFC class from the shape kind, storey from the level, quantities computed from the solids and GlobalIds derived at export. Doors and windows export as IfcDoor/IfcWindow (`cad_arch::ifc_class`) with an IfcOpeningElement that voids the host wall. Rooms export as IfcSpace (number as Name, name as LongName, NetFloorArea and NetPerimeter from the region) and floors as IfcSlab. Roofs export as IfcRoof and stairs as IfcStair. IFC export itself is deferred to Phase 7.
+
+## 11. Mechanical parts (Phase 5)
+
+- Parts are features: `FeatureKind::Part { def, sketch, x, y, op, target }`. `PartDef` holds the generator parameters as expressions (teeth and turns are plain numbers, the thread size names a table row). The part sits on the sketch plane at (x, y) with its axis along the plane normal and combines with the bodies like an extrude (new body by default). `Document::part` evaluates it into a `cad_mech::Part`; the rebuild treats it as an `Inputs` with `Tool::Part`, so op, target, patterns and the cache (keyed by the evaluated part's Debug text) need no new code. A sketch used by a part cannot be removed.
+- Gear: involute of the base circle, roll angle t: rb (cos t + t sin t, sin t - t cos t); tooth thickness pi m / 2 on the pitch circle (no shift, no backlash); 10 lines per flank, exact tip and root arcs; below the base circle the flank is radial. Extruded as a B-Rep.
+- Shaft: the half section (steps and 45 degree end chamfers) turned by `cad_modeler::lathe`, which builds the mesh directly (regular polygons per ring, plane, cylinder and cone faces), because `revolve` needs a profile off the axis.
+- Spring: a 24-gon wire section at right angles to the first segment of a helix polyline (48 segments per turn), swept with mitred corners; its volume is exactly the section area times the polyline length.
+- Fasteners: hexagon head extruded and united with a shank that starts inside the head (no coplanar faces); nut = hexagon with a hole. Threads are cosmetic (nominal diameter); `Part::thread` names them.
+- BOM data is derived: `Part::designation` and `Part::thread` come from the evaluated parameters; the part name is the feature name. Components, joints, exploded views, the BOM table and interference checks follow in batches B to D (see the roadmap).

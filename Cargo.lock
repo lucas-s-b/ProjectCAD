@@ -275,6 +275,7 @@ dependencies = [
  "cad-arch",
  "cad-constraints",
  "cad-geometry",
+ "cad-mech",
  "cad-modeler",
  "cad-params",
  "serde",
@@ -300,6 +301,14 @@ dependencies = [
  "cad-modeler",
  "dxf",
  "roxmltree",
+]
+
+[[package]]
+name = "cad-mech"
+version = "0.1.0"
+dependencies = [
+ "cad-geometry",
+ "cad-modeler",
 ]
 
 [[package]]

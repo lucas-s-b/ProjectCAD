@@ -5,7 +5,7 @@ use crate::rebuild_pattern::{Pattern, resolve_pattern};
 use crate::rebuild_shell::Shell;
 use crate::rebuild_sweep::resolve_sweep;
 use crate::refs::face_plane;
-use crate::sketch::{PlaneDef, Sketch, SketchPlanes};
+use crate::sketch::{PlaneDef, Sketch, SketchId, SketchPlanes};
 use cad_geometry::profile::Profile;
 use cad_geometry::{DVec2, Shape};
 use cad_modeler::{Body, BoolOp, ModelError, PathPiece, Plane3, Section, boolean, extrude, extrude_tapered, loft, revolve, sweep};
@@ -70,6 +70,8 @@ pub(crate) enum Tool {
     /// The inputs' profile and plane are carried along the path.
     Sweep { path: Vec<PathPiece>, closed: bool },
     Loft { sections: Vec<(Profile, Plane3)>, smooth: bool },
+    /// A generated part; the plane is its placement.
+    Part(cad_mech::Part),
 }
 
 /// For a loft the profile and plane are those of the first section.
@@ -122,6 +124,9 @@ fn resolve(doc: &Document, f: &Feature, states: &BTreeMap<FeatureId, FeatureStat
 }
 
 pub(crate) fn resolve_solid(doc: &Document, f: &Feature, planes: &SketchPlanes) -> Result<Inputs, String> {
+    if matches!(f.kind, FeatureKind::Part { .. }) {
+        return crate::part::resolve_part(doc, f, planes);
+    }
     if matches!(f.kind, FeatureKind::Sweep { .. } | FeatureKind::Loft { .. }) {
         return resolve_sweep(doc, f, planes);
     }
@@ -192,6 +197,7 @@ impl Inputs {
             }
             Tool::Sweep { closed, .. } => ("sweep", vec![u64::from(*closed)]),
             Tool::Loft { smooth, .. } => ("loft", vec![u64::from(*smooth)]),
+            Tool::Part(_) => ("part", Vec::new()),
         };
         let Plane3 { origin, x, y } = self.plane;
         numbers.extend([origin, x, y].iter().flat_map(|v| v.to_array()).map(f64::to_bits));
@@ -216,6 +222,7 @@ impl Inputs {
                 let sections: Vec<Section> = sections.iter().map(|(profile, plane)| Section { profile, plane }).collect();
                 loft(&sections, *smooth, BODY_TOLERANCE)
             }
+            Tool::Part(part) => part.body(&self.plane, BODY_TOLERANCE),
         };
         body.map_err(|e| e.to_string())
     }
@@ -329,7 +336,8 @@ impl Rebuilder {
                 prev = hash_of((prev, f.id, "suppressed"));
                 continue;
             }
-            for s in f.entities().iter().filter_map(|id| doc.get(*id)).filter_map(|e| doc.sketch(e.sketch)) {
+            let sketches: Vec<SketchId> = f.entities().iter().filter_map(|id| doc.get(*id)).map(|e| e.sketch).chain(f.sketch()).collect();
+            for s in sketches.into_iter().filter_map(|id| doc.sketch(id)) {
                 place_sketch(s, &bodies, &mut planes);
             }
             let step = match resolve(doc, f, &states, &planes) {

@@ -7,6 +7,7 @@ mod edges;
 mod extrude;
 #[cfg(test)]
 mod fixtures;
+mod lathe;
 mod loft;
 mod mass;
 mod plane;
@@ -26,6 +27,7 @@ pub use edges::{BodyEdge, Convexity, EdgeGeom};
 pub use cad_geometry::shape::GeomError;
 pub use cad_topology::{Surface, TopoError};
 pub use extrude::extrude;
+pub use lathe::lathe;
 pub use loft::{Section, loft};
 pub use mass::prism_volume;
 pub use plane::Plane3;

@@ -105,6 +105,7 @@ fn new_controls(app: &mut CadApp, ui: &mut egui::Ui) {
     crate::model_pattern::controls(app, ui, !bodies.is_empty());
     crate::model_sweep::controls(app, ui);
     crate::model_shell::controls(app, ui, !bodies.is_empty());
+    crate::model_parts::controls(app, ui);
 }
 
 fn blend_controls(app: &mut CadApp, ui: &mut egui::Ui, has_body: bool) {
@@ -169,6 +170,11 @@ fn editor(app: &mut CadApp, ui: &mut egui::Ui) {
         app.feature_edit = app.doc.feature(id).map(|f| (id, f.clone()));
     }
     let bodies = app.body_ids();
+    // Designation and thread of a part, from the stored feature (the buffer may hold an unfinished expression).
+    let part = app.doc.feature(id).and_then(|f| match &f.kind {
+        FeatureKind::Part { def, .. } => Some(app.doc.part(def)),
+        _ => None,
+    });
     let Some((_, buffer)) = app.feature_edit.as_mut() else { return };
     ui.separator();
     ui.label("Selected feature");
@@ -185,6 +191,21 @@ fn editor(app: &mut CadApp, ui: &mut egui::Ui) {
         });
     };
     field(ui, "Name", &mut buffer.name);
+    match &part {
+        Some(Ok(p)) => {
+            let text = format!("Designation: {}", p.designation());
+            let r = ui.label(&text);
+            // Tagged so MCP clients can read it from `widgets`.
+            w::tag(ui, &text, r);
+            if let Some(t) = p.thread() {
+                ui.label(format!("Thread {t} (cosmetic)"));
+            }
+        }
+        Some(Err(e)) => {
+            ui.label(RichText::new(e).color(Color32::RED));
+        }
+        None => {}
+    }
     match &mut buffer.kind {
         FeatureKind::Extrude { distance, offset, taper, op, flip, target, .. } => {
             field(ui, "Distance", distance);
@@ -212,6 +233,14 @@ fn editor(app: &mut CadApp, ui: &mut egui::Ui) {
         FeatureKind::Fillet { radius, .. } => field(ui, "Fillet radius", radius),
         FeatureKind::Chamfer { distance, .. } => field(ui, "Chamfer distance", distance),
         FeatureKind::Shell { thickness, .. } => field(ui, "Thickness", thickness),
+        FeatureKind::Part { def, x, y, op, target, .. } => {
+            let mut changed = crate::model_parts::fields(ui, def, &mut field);
+            field(ui, "Part X", x);
+            field(ui, "Part Y", y);
+            changed |= op_combo(ui, "edit_op", op);
+            changed |= target_combo(ui, "edit_target", target, &bodies);
+            commit |= changed;
+        }
         kind => {
             let changed = crate::model_pattern::fields(ui, &app.doc, kind, &mut field);
             commit |= changed;

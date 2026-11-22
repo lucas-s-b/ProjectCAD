@@ -22,6 +22,7 @@ mod model_features;
 mod model_shell;
 mod model_section;
 mod model_pattern;
+mod model_parts;
 mod model_sweep;
 mod model_panel;
 mod panels;

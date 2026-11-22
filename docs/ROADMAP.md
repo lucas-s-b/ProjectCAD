@@ -177,9 +177,29 @@ Deferred to later phases:
 - Stairs with landings, turns or spirals, railings, the stair opening in the slab above: Phase 7
 - Plan cut height, walls attached to the level above, openings in slabs, dragging openings along their wall: Phase 7
 
-## Phase 5: Mechanical CAD (next)
+## Phase 5: Mechanical CAD (in progress)
 Parametric generators (gears, shafts, bearings, springs, fasteners, threads), assemblies, joints,
 collision and interference checks (parry), exploded views, bill of materials.
+
+Done (unit-tested; part generators and their parameters checked in the running app through MCP):
+- [x] Part features: gear, shaft, spring, bolt and nut generators in the feature history ("Add part" in the Model tab), placed on a sketch plane at an (x, y) point with the axis along the plane normal; every parameter is an expression; a part makes a new body by default and can add, cut or intersect; patterns and mirrors copy parts; file format version 19
+- [x] Involute spur gear: module, teeth, pressure angle, face width, bore; no profile shift or backlash, addendum 1 m, dedendum 1.25 m; flanks in 10 lines, tip and root as arcs
+- [x] Stepped shaft: diameter and length per step, 45 degree chamfer at both ends (`cad_modeler::lathe`, a turned mesh with exact plane, cylinder and cone faces)
+- [x] Helical compression spring: wire and mean diameter, pitch, turns; plain ends
+- [x] ISO 4017 hex head screw and ISO 4032 hex nut, M3 to M24 coarse; cosmetic thread (nominal diameter, thread named only)
+- [x] Bill-of-materials data per part: designation ("ISO 4017 M8x30", "Spur gear m2 z20 b10") and thread derived from the parameters, shown in the feature editor
+
+Limits:
+- Gears: no undercut or trochoid root fillet (below the base circle the flank runs radially), no helical, internal or bevel gears, no profile shift or backlash.
+- Springs: 24-sided wire and 48 segments per turn whatever the tolerance; no closed or ground ends.
+- Fasteners: no head chamfer or washer face; threads are cosmetic, so a bolt and its nut touch without overlap.
+
+Remaining:
+- B: components (instances of bodies with rigid placements, grounded), Assembly tab, bill of materials table with CSV export, component metadata (material, part number)
+- C: joints (fixed, revolute, slider) placed by tree propagation, joint values as expressions, exploded views
+- D: interference (manifold intersection volume) and clearance (parry3d-f64) checks
+- E: bearing generator, modelled helical threads, draft of existing faces, corner blending
+- F: dependency graph between sketches, features and bodies; stable face references
 
 ## Phase 6: Advanced engineering
 Mass properties, kinematics, static structural analysis, FEA infrastructure. Every result is labelled
