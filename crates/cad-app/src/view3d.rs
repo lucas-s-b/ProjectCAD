@@ -1,10 +1,11 @@
 use crate::app::{CadApp, PickFace};
-use cad_document::EntityId;
+use cad_document::{ComponentId, EntityId, Overlap};
 use cad_geometry::{DVec2, DVec3, distance_2d, outline, ray_hit, tessellate};
 use cad_renderer::{SceneRenderer, Vertex};
 use eframe::egui::{self, PointerButton};
 use eframe::{egui_wgpu, wgpu};
 use glam::Vec2;
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 type Geometry = (Vec<Vertex>, Vec<Vertex>);
@@ -142,17 +143,28 @@ fn build_scene(app: &CadApp) -> Geometry {
     // The selected component follows a gizmo drag in progress (the gizmo moves it when no entity is selected).
     let moving = app.gizmo.as_ref().filter(|_| app.selection.is_empty()).map_or(DVec3::ZERO, crate::gizmo::GizmoDrag::delta);
     let offsets = app.doc.explode_offsets(app.explode_factor());
+    // The last check, drawn with the assembled placements, so only while not exploded.
+    let check = app.check_result().filter(|_| app.explode_factor() == 0.0);
+    // Components that interfere are drawn as edges only, so the red common solid inside them shows (no x-ray pass).
+    let wire: BTreeSet<ComponentId> = check
+        .iter()
+        .flat_map(|c| &c.meetings)
+        .filter(|m| matches!(m.kind, Ok(Overlap::Interference { .. })))
+        .flat_map(|m| [m.a, m.b])
+        .collect();
     let shown = app.shown_bodies().map(|(id, b)| (Some(*id), None, b));
     let placed = app.placed_components().map(|(c, b)| (None, Some(c), b));
     for (id, comp, body) in shown.chain(placed) {
         let selected = comp.is_some() && comp == app.component_sel;
         let shift = if selected { moving } else { DVec3::ZERO } + comp.and_then(|c| offsets.get(&c)).copied().unwrap_or(DVec3::ZERO);
         let (mesh, grey) = (&body.mesh, [0.72, 0.75, 0.80]);
-        for (corner, (&i, n)) in mesh.indices.iter().zip(&mesh.normals).enumerate() {
-            let face = id.is_some_and(|id| app.face_sel == Some((id, body.tri_face[corner / 3])));
-            let picked = selected && app.component_face.is_some_and(|(c, f)| Some(c) == comp && f == body.tri_face[corner / 3]);
-            let color = if picked { PICKED_FACE } else if selected || face { SELECTED } else { grey };
-            tris.push(vertex(mesh.positions[i as usize] + shift, n.as_vec3().to_array(), color));
+        if !comp.is_some_and(|c| wire.contains(&c)) {
+            for (corner, (&i, n)) in mesh.indices.iter().zip(&mesh.normals).enumerate() {
+                let face = id.is_some_and(|id| app.face_sel == Some((id, body.tri_face[corner / 3])));
+                let picked = selected && app.component_face.is_some_and(|(c, f)| Some(c) == comp && f == body.tri_face[corner / 3]);
+                let color = if picked { PICKED_FACE } else if selected || face { SELECTED } else { grey };
+                tris.push(vertex(mesh.positions[i as usize] + shift, n.as_vec3().to_array(), color));
+            }
         }
         for [a, b] in body.feature_edges() {
             lines.push(vertex(a + shift, [0.0; 3], [0.12, 0.12, 0.14]));
@@ -182,6 +194,21 @@ fn build_scene(app: &CadApp) -> Geometry {
                 lines.push(vertex(m, [0.0; 3], TRAIL));
                 lines.push(vertex(m + off, [0.0; 3], TRAIL));
             }
+        }
+    }
+    const INTERFERENCE: [f32; 3] = [0.9, 0.12, 0.1];
+    const CLEARANCE: [f32; 3] = [0.1, 0.75, 0.3];
+    for m in check.iter().flat_map(|c| &c.meetings) {
+        if let Ok(Overlap::Interference { region, .. }) = &m.kind {
+            for (&i, n) in region.mesh.indices.iter().zip(&region.mesh.normals) {
+                tris.push(vertex(region.mesh.positions[i as usize], n.as_vec3().to_array(), INTERFERENCE));
+            }
+        }
+    }
+    for (_, _, k) in check.iter().flat_map(|c| &c.clearances) {
+        if let Some((p, q)) = k.points {
+            lines.push(vertex(p, [0.0; 3], CLEARANCE));
+            lines.push(vertex(q, [0.0; 3], CLEARANCE));
         }
     }
     // Wall solids in a warm grey; the generic outline at their foot is drawn with the entities above.

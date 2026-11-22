@@ -52,7 +52,7 @@ pub use feature::{Axis3, BODY_TOLERANCE, BodyOp, EDGE_PICK_TOLERANCE, Feature, F
 pub use history::History;
 pub use joint::{ExplodeStep, Frame, Joint, JointId, JointKind};
 pub use linetype::LineType;
-pub use cad_mech::Part;
+pub use cad_mech::{Check, Clearance, Meeting, Overlap, Part};
 pub use bom::{BomRow, bom_csv};
 pub use component::{Component, ComponentId, mm};
 pub use part::PartDef;

@@ -8,3 +8,4 @@ repository.workspace = true
 [dependencies]
 cad-geometry = { version = "0.1.0", path = "../cad-geometry" }
 cad-modeler = { version = "0.1.0", path = "../cad-modeler" }
+parry3d-f64 = "0.19"

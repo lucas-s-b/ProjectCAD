@@ -2,6 +2,7 @@ mod app;
 mod app_files;
 mod app_ops;
 mod arrange;
+mod assembly_check;
 mod assembly_joints;
 mod assembly_panel;
 mod camera;

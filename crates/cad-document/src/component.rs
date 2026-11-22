@@ -1,8 +1,9 @@
 //! Components: placed instances of bodies inside the document (an assembly without external files).
 use crate::document::{Command, DocError, Document};
-use crate::feature::FeatureId;
-use crate::rebuild::{Bodies, eval};
+use crate::feature::{BODY_TOLERANCE, FeatureId};
+use crate::rebuild::{Bodies, RebuildResult, eval};
 use cad_geometry::{DAffine3, DQuat, DVec3};
+use cad_mech::Check;
 use cad_modeler::Body;
 use cad_params::parse;
 use serde::{Deserialize, Serialize};
@@ -52,6 +53,15 @@ impl Document {
         let id = self.next_component_id;
         self.next_component_id += 1;
         id
+    }
+
+    /// Interference, contact and clearance between the placed components of `result` (`cad_mech::check`): common
+    /// solids thinner than twice `BODY_TOLERANCE` count as contact; clearances up to `limit`, a length expression
+    /// (negative counts as 0), are listed. Components that failed to place are skipped.
+    pub fn check(&self, result: &RebuildResult, limit: &str) -> Result<Check, String> {
+        let limit = eval(self, limit, false)?.max(0.0);
+        let solids: Vec<(ComponentId, &Body)> = result.components.iter().filter_map(|(id, r)| r.as_ref().ok().map(|b| (*id, &**b))).collect();
+        Ok(cad_mech::check(&solids, 2.0 * BODY_TOLERANCE, limit))
     }
 
     /// The rigid motion of `c` with its expressions evaluated.
