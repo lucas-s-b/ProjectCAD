@@ -1,6 +1,6 @@
 use crate::document::{Command, DocError, Document, EntityId};
 use crate::part::PartDef;
-use crate::refs::FaceKey;
+use crate::refs::{FaceKey, FaceRef};
 use crate::sketch::{BasePlane, SketchId};
 use cad_geometry::DVec3;
 use cad_params::parse;
@@ -138,6 +138,11 @@ pub enum FeatureKind {
         #[serde(default)]
         target: Target,
     },
+    /// Turns planar faces of body `body` about the neutral plane, the plane of `sketch` (pull direction: its normal),
+    /// by `angle`; positive narrows the solid away from that plane. Each face is a reference found again on every
+    /// rebuild, so the draft follows when earlier features move the faces. Faces next to a drafted face must be planes
+    /// at right angles to it (`cad_modeler::draft_face`).
+    Draft { body: FeatureId, faces: Vec<FaceRef>, sketch: SketchId, angle: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -162,9 +167,9 @@ impl Feature {
         }
     }
 
-    /// The sketch a part sits on; None for other features (their sketches come from their entities).
+    /// The sketch a part sits on or the neutral plane of a draft; None for other features (their sketches come from their entities).
     pub fn sketch(&self) -> Option<SketchId> {
-        if let FeatureKind::Part { sketch, .. } = &self.kind { Some(*sketch) } else { None }
+        if let FeatureKind::Part { sketch, .. } | FeatureKind::Draft { sketch, .. } = &self.kind { Some(*sketch) } else { None }
     }
 
     /// The entities that must lie in one sketch each.
@@ -187,6 +192,7 @@ impl Feature {
             FeatureKind::CircularPattern { count, angle, cx, cy, cz, .. } => [count, angle, cx, cy, cz].map(String::as_str).to_vec(),
             FeatureKind::Mirror { offset, .. } => vec![offset.as_str()],
             FeatureKind::Part { def, x, y, .. } => def.expressions().into_iter().chain([x.as_str(), y.as_str()]).collect(),
+            FeatureKind::Draft { angle, .. } => vec![angle.as_str()],
             FeatureKind::Sweep { .. } | FeatureKind::Loft { .. } => Vec::new(),
         }
     }
@@ -277,6 +283,17 @@ impl Document {
                     return Err(DocError::SketchNotFound(*sketch));
                 }
                 def.check().map_err(bad)?;
+            }
+            (FeatureKind::Draft { faces, sketch, .. }, _) => {
+                if faces.is_empty() {
+                    return Err(bad("no faces"));
+                }
+                if !faces.iter().all(|r| r.at.is_finite()) {
+                    return Err(bad("face point is not finite"));
+                }
+                if self.sketch(*sketch).is_none() {
+                    return Err(DocError::SketchNotFound(*sketch));
+                }
             }
             (FeatureKind::Sweep { profile, path, .. }, _) if profile.is_empty() || path.is_empty() => {
                 return Err(bad("empty profile or path"));

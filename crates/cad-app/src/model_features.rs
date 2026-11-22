@@ -175,6 +175,11 @@ fn editor(app: &mut CadApp, ui: &mut egui::Ui) {
         FeatureKind::Part { def, .. } => Some(app.doc.part(def)),
         _ => None,
     });
+    // What the feature read in the last rebuild (`RebuildResult::depends`), by feature name.
+    let uses = app.model_result().and_then(|r| r.depends.get(&id)).map(|ids| {
+        let names: Vec<String> = ids.iter().map(|i| app.doc.feature(*i).map_or_else(|| format!("feature {i}"), |f| f.name.clone())).collect();
+        format!("Uses: {}", if names.is_empty() { "none".to_string() } else { names.join(", ") })
+    });
     let Some((_, buffer)) = app.feature_edit.as_mut() else { return };
     ui.separator();
     ui.label("Selected feature");
@@ -191,6 +196,10 @@ fn editor(app: &mut CadApp, ui: &mut egui::Ui) {
         });
     };
     field(ui, "Name", &mut buffer.name);
+    if let Some(text) = &uses {
+        let r = ui.label(text);
+        w::tag(ui, text, r);
+    }
     match &part {
         Some(Ok(p)) => {
             let text = format!("Designation: {}", p.designation());
@@ -241,6 +250,10 @@ fn editor(app: &mut CadApp, ui: &mut egui::Ui) {
             changed |= op_combo(ui, "edit_op", op);
             changed |= target_combo(ui, "edit_target", target, &bodies);
             commit |= changed;
+        }
+        FeatureKind::Draft { angle, faces, sketch, .. } => {
+            field(ui, "Draft angle", angle);
+            ui.label(format!("{} faces, neutral plane: sketch {sketch}", faces.len()));
         }
         kind => {
             let changed = crate::model_pattern::fields(ui, &app.doc, kind, &mut field);

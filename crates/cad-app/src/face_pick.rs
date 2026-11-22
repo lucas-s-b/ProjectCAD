@@ -1,5 +1,5 @@
 use crate::app::{CadApp, PickFace, ViewMode};
-use cad_document::{Body, Bvh, Command, FeatureId, FeatureKind, PlaneDef, Sketch, Surface};
+use cad_document::{Body, Bvh, Command, FaceKey, FaceRef, FeatureId, FeatureKind, PlaneDef, Sketch, Surface};
 use cad_geometry::DVec3;
 use std::sync::Arc;
 
@@ -45,14 +45,14 @@ fn plane_normal(surface: &Surface) -> Option<DVec3> {
     }
 }
 
-/// Handles a click while a face is being picked: a hit on a planar face creates and activates a sketch on it, or adds a shell open at it.
+/// Handles a click while a face is being picked: a hit on a planar face creates and activates a sketch on it, adds a shell open at it, or adds it to a draft.
 pub fn click(app: &mut CadApp, origin: DVec3, dir: DVec3) {
     let best = ray_body(app, origin, dir).and_then(|(id, tri, t)| {
         let body = app.model.iter().flat_map(|(_, m)| &m.bodies).find(|(i, _)| *i == id).map(|(_, b)| b)?;
         let f = &body.faces[body.tri_face[tri] as usize];
-        Some((id, t, plane_normal(&f.surface), f.outward))
+        Some((id, t, plane_normal(&f.surface), f.outward, FaceKey::of(f)))
     });
-    let Some((id, t, normal, outward)) = best else {
+    let Some((id, t, normal, outward, key)) = best else {
         app.status = "No face there".into();
         return;
     };
@@ -61,6 +61,31 @@ pub fn click(app: &mut CadApp, origin: DVec3, dir: DVec3) {
         return;
     };
     let hit = origin + dir * t;
+    if let PickFace::Draft(session) = app.pick_face {
+        let r = FaceRef { key, at: hit };
+        match session.and_then(|s| app.doc.feature(s).cloned()) {
+            Some(mut f) => {
+                let FeatureKind::Draft { body, faces, .. } = &mut f.kind else { return };
+                if *body != id {
+                    app.status = format!("Pick faces of body {body}");
+                    return;
+                }
+                faces.push(r);
+                app.exec(vec![Command::SetFeature(f)]);
+            }
+            None => {
+                let kind = FeatureKind::Draft { body: id, faces: vec![r], sketch: app.sketch, angle: app.draft_angle.clone() };
+                let fid = crate::model_features::add_feature(app, "Draft", kind);
+                if app.doc.feature(fid).is_none() {
+                    return;
+                }
+                app.feature_sel = Some(fid);
+                app.pick_face = PickFace::Draft(Some(fid));
+            }
+        }
+        app.status = "Click more faces to draft; Esc to finish".into();
+        return;
+    }
     if app.pick_face == PickFace::Shell {
         let kind = FeatureKind::Shell { thickness: app.shell_thickness.clone(), open: Some(hit), at: hit };
         let id = crate::model_features::add_feature(app, "Shell", kind);

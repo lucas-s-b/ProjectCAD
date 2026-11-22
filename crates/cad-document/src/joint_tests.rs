@@ -20,7 +20,7 @@ fn comp(id: ComponentId, at: [&str; 3], grounded: bool) -> Component {
 
 /// Parent frame at `parent_origin` along `parent_axis`; child frame at the child's origin along -Z.
 fn joint(id: JointId, kind: JointKind, parent: ComponentId, child: ComponentId, parent_origin: [&str; 3], parent_axis: [&str; 3], value: &str) -> Joint {
-    let parent_frame = Frame { origin: parent_origin.map(String::from), axis: parent_axis.map(String::from) };
+    let parent_frame = Frame { origin: parent_origin.map(String::from), axis: parent_axis.map(String::from), face: None };
     Joint { id, kind, parent, child, parent_frame, child_frame: Frame::from_vectors(DVec3::ZERO, -DVec3::Z), value: value.into() }
 }
 
@@ -35,7 +35,7 @@ fn strings(a: [&str; 3]) -> [String; 3] {
 #[test]
 fn frames_from_vectors_and_faces() {
     let f = Frame::from_vectors(DVec3::new(1.0 / 3.0, 0.0, -1e-9), DVec3::new(0.0, 0.6, -0.8));
-    assert_eq!(f, Frame { origin: strings(["0.333 mm", "0 mm", "0 mm"]), axis: strings(["0", "0.6", "-0.8"]) });
+    assert_eq!(f, Frame { origin: strings(["0.333 mm", "0 mm", "0 mm"]), axis: strings(["0", "0.6", "-0.8"]), face: None });
     assert_eq!(Frame::from_vectors(DVec3::ZERO, -DVec3::Z).axis, strings(["0", "0", "-1"]));
     let r = Rebuilder::default().rebuild(&boxed());
     let body = r.body(1).unwrap();
@@ -125,7 +125,7 @@ fn joints_save_and_load() {
     assert_eq!(loaded.explode_steps(), d.explode_steps());
     assert!(loaded.component(1).unwrap().grounded);
     assert_eq!(loaded.alloc_joint_id(), 3);
-    assert_eq!(FORMAT_VERSION, 22);
+    assert_eq!(FORMAT_VERSION, 23);
 }
 
 #[test]
@@ -232,7 +232,7 @@ fn slider_joint_along_x() {
     bbox_is(&rebuilt(&d), 2, [12.0, 0.0, 0.0], [22.0, 20.0, 5.0]);
     set_param(&mut d, "dx", "7 mm");
     bbox_is(&rebuilt(&d), 2, [17.0, 0.0, 0.0], [27.0, 20.0, 5.0]);
-    ok(&mut d, Command::SetJoint(Joint { parent_frame: Frame { origin: strings(["10 mm", "0", "0"]), axis: strings(O) }, ..j }));
+    ok(&mut d, Command::SetJoint(Joint { parent_frame: Frame { origin: strings(["10 mm", "0", "0"]), axis: strings(O), face: None }, ..j }));
     assert_eq!(rebuilt(&d).components[1].1.as_ref().err(), Some(&"joint 1: zero-length axis".to_string()));
 }
 
@@ -259,4 +259,38 @@ fn explode_offsets_run_in_steps() {
     assert_eq!(d.explode_vector(&s(2, O, "5 mm")), Err("zero-length direction".to_string()));
     assert_eq!(d.explode_vector(&s(1, Z, "1 deg")), Err("expected a length".to_string()));
     bbox_is(&rebuilt(&d), 1, [0.0, 0.0, 0.0], [10.0, 20.0, 5.0]);
+}
+
+#[test]
+fn frame_on_a_face_follows_the_part() {
+    let mut d = Document::new("asm");
+    set_param(&mut d, "h", "5 mm");
+    put(&mut d, 1, 0, rect(0.0, 0.0, 10.0, 20.0));
+    push(&mut d, extrude(1, 1, "h", BodyOp::New));
+    ok(&mut d, Command::AddComponent(comp(1, O, true)));
+    ok(&mut d, Command::AddComponent(comp(2, O, false)));
+    let body = rebuilt(&d).body(1).unwrap().clone();
+    let top = (0..body.faces.len()).find(|&i| Frame::from_face(&body, i).is_some_and(|f| f.axis == strings(Z))).unwrap();
+    let parent_frame = Frame::from_face(&body, top).unwrap();
+    assert!(matches!(parent_frame.face, Some(FaceRef { key: FaceKey::Plane(n), .. }) if n.distance(DVec3::Z) <= 1e-12));
+    let j = Joint { parent_frame, child_frame: Frame::from_vectors(DVec3::new(5.0, 10.0, 0.0), -DVec3::Z), ..joint(1, JointKind::Fixed, 1, 2, O, Z, "0") };
+    ok(&mut d, Command::AddJoint(j.clone()));
+    bbox_is(&rebuilt(&d), 2, [0.0, 0.0, 5.0], [10.0, 20.0, 10.0]);
+    set_param(&mut d, "h", "8 mm");
+    bbox_is(&rebuilt(&d), 2, [0.0, 0.0, 8.0], [10.0, 20.0, 16.0]);
+    ok(&mut d, Command::SetJoint(Joint { parent_frame: Frame { face: None, ..j.parent_frame.clone() }, ..j.clone() }));
+    bbox_is(&rebuilt(&d), 2, [0.0, 0.0, 5.0], [10.0, 20.0, 13.0]);
+    let lost = Frame { face: Some(FaceRef { key: FaceKey::Plane(DVec3::X), at: DVec3::new(100.0, 100.0, 100.0) }), ..j.parent_frame.clone() };
+    ok(&mut d, Command::SetJoint(Joint { parent_frame: lost, ..j }));
+    assert_eq!(rebuilt(&d).components[1].1.as_ref().err(), Some(&"joint 1: face not found; pick it again".to_string()));
+}
+
+#[test]
+fn frame_face_serialisation() {
+    assert!(!serde_json::to_string(&Frame::from_vectors(DVec3::ZERO, DVec3::Z)).unwrap().contains("\"face\""));
+    let old: Frame = serde_json::from_str(r#"{"origin":["0","0","0"],"axis":["0","0","1"]}"#).unwrap();
+    assert_eq!(old.face, None);
+    let f = Frame { face: Some(FaceRef { key: FaceKey::Cylinder(DVec3::Z), at: DVec3::new(1.0, 2.0, 3.0) }), ..old };
+    let back: Frame = serde_json::from_str(&serde_json::to_string(&f).unwrap()).unwrap();
+    assert_eq!(back, f);
 }

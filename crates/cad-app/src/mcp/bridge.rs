@@ -375,6 +375,9 @@ fn insert_model(app: &CadApp, m: &mut serde_json::Map<String, Value>) {
     }).collect();
     m.insert("body".into(), json!(body));
     m.insert("feature_states".into(), Value::Object(states));
+    let depends: serde_json::Map<String, Value> = model.into_iter().flat_map(|r| &r.depends).map(|(id, d)| (id.to_string(), json!(d))).collect();
+    m.insert("depends".into(), Value::Object(depends));
+    m.insert("recomputed".into(), json!(model.map(|r| r.recomputed)));
     m.insert("param_values".into(), Value::Object(values));
     m.insert("side_tab".into(), json!(format!("{:?}", app.side_tab)));
 }
