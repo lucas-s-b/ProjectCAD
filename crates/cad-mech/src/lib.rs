@@ -1,7 +1,8 @@
-//! Mechanical parts: gears, shafts, springs and ISO metric fasteners as solids from their parameters. Works on numbers,
-//! knows no document.
+//! Mechanical parts: gears, shafts, springs and ISO metric fasteners as solids from their parameters, and assembly math
+//! (joint frames, interference). Works on numbers, knows no document.
 mod fastener;
 mod gear;
+mod interference;
 mod joint;
 mod material;
 mod part;
@@ -10,6 +11,7 @@ mod spring;
 
 pub use fastener::{Bolt, METRIC, Metric, Nut, metric};
 pub use gear::{FLANK_SEGMENTS, Gear};
+pub use interference::{CONTACT_GAP, CONTACT_VOLUME, Check, Clearance, Meeting, Overlap, check, clearance, overlap};
 pub use joint::{face_frame, frame, mate};
 pub use material::{MATERIALS, density};
 pub use part::Part;

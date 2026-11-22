@@ -343,6 +343,22 @@ fn insert_model(app: &CadApp, m: &mut serde_json::Map<String, Value>) {
     let offsets: serde_json::Map<String, Value> =
         app.doc.explode_offsets(factor).into_iter().map(|(id, v)| (id.to_string(), json!([v.x, v.y, v.z]))).collect();
     m.insert("explode".into(), json!({ "factor": factor, "offsets": offsets }));
+    let check = app.check_result().map(|c| {
+        let meetings: Vec<Value> = c.meetings.iter().map(|m| {
+            let (kind, volume, error) = match &m.kind {
+                Ok(cad_document::Overlap::Interference { volume, .. }) => ("interference", Some(*volume), None),
+                Ok(cad_document::Overlap::Contact) => ("contact", None, None),
+                Err(e) => ("error", None, Some(e.clone())),
+            };
+            json!({ "a": m.a, "b": m.b, "kind": kind, "volume": volume, "error": error })
+        }).collect();
+        let clearances: Vec<Value> = c.clearances.iter().map(|(a, b, k)| {
+            let points = k.points.map(|(p, q)| [[p.x, p.y, p.z], [q.x, q.y, q.z]]);
+            json!({ "a": a, "b": b, "distance": k.distance, "points": points })
+        }).collect();
+        json!({ "meetings": meetings, "clearances": clearances })
+    });
+    m.insert("check".into(), json!(check));
     let rooms: Vec<Value> =
         model.into_iter().flat_map(|r| &r.rooms).map(|(id, g)| json!({ "id": id, "area": g.area, "perimeter": g.perimeter })).collect();
     m.insert("rooms".into(), json!(rooms));

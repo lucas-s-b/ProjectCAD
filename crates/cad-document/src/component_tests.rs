@@ -185,3 +185,27 @@ fn parameters_move_components() {
     assert!((r.component(1).unwrap().bbox().0.x - 70.0).abs() <= 1e-9);
     assert_eq!(r.recomputed, 0);
 }
+
+#[test]
+fn check_lists_interference_contact_and_clearance() {
+    let mut d = boxed();
+    for c in [comp(1, 1, ["0"; 3], ["0"; 3]), comp(2, 1, ["5 mm", "0", "0"], ["0"; 3]), comp(3, 1, ["15 mm", "0", "0"], ["0"; 3])] {
+        d.apply(Command::AddComponent(c)).unwrap();
+    }
+    let r = Rebuilder::default().rebuild(&d);
+    let c = d.check(&r, "6 mm").unwrap();
+    assert_eq!(c.meetings.len(), 2);
+    assert_eq!((c.meetings[0].a, c.meetings[0].b), (1, 2));
+    let Ok(Overlap::Interference { volume, .. }) = &c.meetings[0].kind else { panic!("{:?}", c.meetings[0]) };
+    assert!((volume - 500.0).abs() <= 1e-6, "{volume}");
+    assert_eq!((c.meetings[1].a, c.meetings[1].b), (2, 3));
+    assert!(matches!(c.meetings[1].kind, Ok(Overlap::Contact)));
+    assert_eq!(c.clearances.len(), 1);
+    let (a, b, k) = &c.clearances[0];
+    assert_eq!((*a, *b), (1, 3));
+    assert!((k.distance - 5.0).abs() <= 1e-6);
+    let (p, q) = k.points.unwrap();
+    assert!((p.x - 10.0).abs() <= 1e-6 && (q.x - 15.0).abs() <= 1e-6);
+    assert!(d.check(&r, "4 mm").unwrap().clearances.is_empty());
+    assert_eq!(d.check(&r, "1 deg"), Err("expected a length".to_string()));
+}

@@ -7,7 +7,7 @@ use eframe::egui::{self, Color32, RichText, TextEdit};
 
 const KINDS: [(JointKind, &str); 3] = [(JointKind::Fixed, "Type: Fixed"), (JointKind::Revolute, "Type: Revolute"), (JointKind::Slider, "Type: Slider")];
 
-fn name(app: &CadApp, id: ComponentId) -> String {
+pub(crate) fn name(app: &CadApp, id: ComponentId) -> String {
     app.doc.component(id).map_or_else(|| format!("component {id}"), |c| c.name.clone())
 }
 

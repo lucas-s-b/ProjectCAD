@@ -181,7 +181,7 @@ Deferred to later phases:
 Parametric generators (gears, shafts, bearings, springs, fasteners, threads), assemblies, joints,
 collision and interference checks (parry), exploded views, bill of materials.
 
-Done (unit-tested; part generators, components, the bill of materials, joints and exploded views checked in the running app through MCP):
+Done (unit-tested; part generators, components, the bill of materials, joints, exploded views and the interference check checked in the running app through MCP):
 - [x] Part features: gear, shaft, spring, bolt and nut generators in the feature history ("Add part" in the Model tab), placed on a sketch plane at an (x, y) point with the axis along the plane normal; every parameter is an expression; a part makes a new body by default and can add, cut or intersect; patterns and mirrors copy parts; file format version 19
 - [x] Involute spur gear: module, teeth, pressure angle, face width, bore; no profile shift or backlash, addendum 1 m, dedendum 1.25 m; flanks in 10 lines, tip and root as arcs
 - [x] Stepped shaft: diameter and length per step, 45 degree chamfer at both ends (`cad_modeler::lathe`, a turned mesh with exact plane, cylinder and cone faces)
@@ -194,6 +194,7 @@ Done (unit-tested; part generators, components, the bill of materials, joints an
 - [x] Grounded components (never a joint child; the gizmo does not move them)
 - [x] Exploded views: steps that move one component along a direction by a distance, run one after another; on/off toggle, explode slider and factor, trail lines; display only (BOM, state placements and export stay assembled)
 - [x] STL/OBJ/STEP export writes the shown bodies and the placed components (joints applied), each solid named (`Body_<id>` or the component name)
+- [x] Interference and clearance check between placed components, on demand ("Check" in the Assembly tab): pairs whose bounding boxes are near are intersected with the manifold boolean (exact common volume, the common solid drawn red with its components as edges); touching faces and slivers thinner than 0.04 mm count as contact, so a bolt in its nut (cosmetic thread) is contact; minimum distance up to a clearance limit with `parry3d-f64`, the closest points drawn as a line; results in the MCP `state` (`check`), dropped by any edit
 
 Limits:
 - Gears: no undercut or trochoid root fillet (below the base circle the flank runs radially), no helical, internal or bevel gears, no profile shift or backlash.
@@ -201,9 +202,9 @@ Limits:
 - Fasteners: no head chamfer or washer face; threads are cosmetic, so a bolt and its nut touch without overlap.
 - Components: the gizmo only translates and writes plain millimetres over position expressions; no rotate gizmo; material and part number are set per component.
 - Joints: tree only (closed loops such as four-bar linkages need the solver, Phase 6); no joint limits; frames picked from faces are stored as numbers and do not follow later edits of the part; no dragging of joints with the mouse.
+- Interference: on demand only, not while a joint is driven or a component dragged; common solids thinner than 0.04 mm (twice the facet tolerance) count as contact; booleans and distances run on the tessellation, so curved faces are measured as facets; only components are checked, not shown bodies; clearance is listed for all pairs up to a limit (no pick of two components).
 
 Remaining:
-- D: interference (manifold intersection volume) and clearance (parry3d-f64) checks
 - E: bearing generator, modelled helical threads, draft of existing faces, corner blending
 - F: dependency graph between sketches, features and bodies; stable face references
 

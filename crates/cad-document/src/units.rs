@@ -60,6 +60,12 @@ impl Settings {
         format!("{:.*} {}\u{b2}", self.precision as usize, mm2 / (k * k), self.units.suffix())
     }
 
+    /// `mm3` (cubic millimetres) in the display unit cubed, with `precision` decimals and the unit suffix.
+    pub fn format_volume(&self, mm3: f64) -> String {
+        let k = self.units.mm_per_unit();
+        format!("{:.*} {}\u{b3}", self.precision as usize, mm3 / (k * k * k), self.units.suffix())
+    }
+
     /// Display text of an annotation label.
     pub fn label_text(&self, t: &LabelText) -> String {
         match t {
@@ -75,6 +81,13 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn formats_volumes() {
+        assert_eq!(Settings::default().format_volume(125.0), "125.00 mm\u{b3}");
+        assert_eq!(Settings { units: Units::Centimeter, precision: 3 }.format_volume(1500.0), "1.500 cm\u{b3}");
+        assert_eq!(Settings { units: Units::Inch, precision: 1 }.format_volume(16387.064), "1.0 in\u{b3}");
+    }
 
     #[test]
     fn formats_in_units() {

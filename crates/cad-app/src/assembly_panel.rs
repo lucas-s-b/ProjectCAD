@@ -47,6 +47,7 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     editor(app, ui);
     crate::assembly_joints::joints(app, ui);
     crate::assembly_joints::explode(app, ui);
+    crate::assembly_check::show(app, ui);
     ui.separator();
     ui.heading("Bill of materials");
     bom(app, ui);

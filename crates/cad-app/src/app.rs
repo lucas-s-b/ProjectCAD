@@ -2,7 +2,7 @@ use crate::camera::{Camera2D, OrbitCamera};
 use crate::mcp::{self, bridge::Bridge};
 use crate::rebuild_worker::RebuildWorker;
 use crate::{panels, view2d, view3d};
-use cad_document::{ExplodeStep, Joint, JointId, Component, ComponentId, Plane3, Command, ConstraintId, Document, Entity, EntityId, History, LayerId, BodyOp, Feature, FeatureId, PointRef, RebuildResult, RevolveAxis, SketchId, BasePlane, Target};
+use cad_document::{Check, ExplodeStep, Joint, JointId, Component, ComponentId, Plane3, Command, ConstraintId, Document, Entity, EntityId, History, LayerId, BodyOp, Feature, FeatureId, PointRef, RebuildResult, RevolveAxis, SketchId, BasePlane, Target};
 use cad_geometry::snap::Snap;
 use cad_geometry::{DVec2, DVec3, HatchPattern, Opening, OpeningKind, Roof, RoofKind, Shape, Wall, WallAlign};
 use std::collections::BTreeSet;
@@ -246,6 +246,10 @@ pub struct CadApp {
     pub explode_trails: bool,
     /// Uncommitted edit of the explode steps.
     pub explode_edit: Option<Vec<ExplodeStep>>,
+    /// Clearance limit of the interference check, a length expression.
+    pub check_limit: String,
+    /// The last interference check and the document revision it ran on (see `check_result`).
+    pub check: Option<(u64, Check)>,
     pub worker: RebuildWorker,
     /// Document revision last sent to the worker.
     pub requested: Option<u64>,
@@ -365,6 +369,8 @@ impl CadApp {
             explode: 1.0,
             explode_trails: false,
             explode_edit: None,
+            check_limit: "5 mm".into(),
+            check: None,
             worker: RebuildWorker::spawn(cc.egui_ctx.clone()),
             requested: None,
             model: None,
@@ -434,6 +440,11 @@ impl CadApp {
     pub fn shown_bodies(&self) -> impl Iterator<Item = &(FeatureId, Arc<cad_document::Body>)> + '_ {
         let placed: BTreeSet<FeatureId> = self.doc.components().map(|c| c.body).collect();
         self.model.iter().flat_map(|(_, m)| &m.bodies).filter(move |(id, _)| !placed.contains(id))
+    }
+
+    /// The last interference check while the document is unchanged since it ran; any edit, undo or redo drops it.
+    pub fn check_result(&self) -> Option<&Check> {
+        self.check.as_ref().filter(|(rev, _)| *rev == self.doc.revision()).map(|(_, c)| c)
     }
 
     /// The explode factor in effect: 0 while the exploded view is off.

@@ -17,6 +17,7 @@ impl CadApp {
         self.joint_sel = None;
         self.joint_edit = None;
         self.explode_edit = None;
+        self.check = None;
         self.reset_model();
         self.constraint_cache = None;
         self.drag = None;
