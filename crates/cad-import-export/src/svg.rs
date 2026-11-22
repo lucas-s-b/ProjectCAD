@@ -69,6 +69,16 @@ fn shape(out: &mut String, s: &Shape, col: &str, doc: &Document) {
         Shape::Slab(s) => {
             let _ = writeln!(out, "<polygon points=\"{}\"/>", points(&s.outline));
         }
+        Shape::Roof(r) => {
+            for p in r.pieces() {
+                let _ = writeln!(out, "<polygon points=\"{}\"/>", points(&p.outline));
+            }
+        }
+        Shape::Stair(st) => {
+            for [p, q] in st.symbol() {
+                line(out, p, q);
+            }
+        }
         // shortcut: room tags are not exported; write TEXT when SVG plans need them
         Shape::Room(_) => {}
         Shape::Arc { center, radius, .. } if shape_is_full(s) => circle(out, *center, *radius),

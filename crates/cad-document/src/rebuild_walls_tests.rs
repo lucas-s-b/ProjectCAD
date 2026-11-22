@@ -1,5 +1,5 @@
 use crate::*;
-use cad_geometry::{DVec2, Opening, OpeningKind, Room, Shape, Slab, Wall, WallAlign};
+use cad_geometry::{DVec2, Opening, OpeningKind, Roof, RoofKind, Room, Shape, Slab, Stair, Wall, WallAlign};
 
 fn close(a: f64, b: f64) {
     assert!((a - b).abs() <= 1e-9 * b.abs().max(1.0), "{a} vs {b}");
@@ -125,4 +125,56 @@ fn rooms_and_floors_on_rebuild() {
         close(g.area, 10640000.0);
         close(g.perimeter, 13200.0);
     }
+}
+
+fn stair_21() -> Shape {
+    Shape::Stair(Stair { a: DVec2::new(500.0, 500.0), b: DVec2::new(500.0, 2500.0), width: 900.0, height: 2500.0, risers: 11 })
+}
+
+#[test]
+fn roofs_and_stairs_on_rebuild() {
+    let mut d = house();
+    let outline = vec![DVec2::ZERO, DVec2::new(4000.0, 0.0), DVec2::new(4000.0, 3000.0), DVec2::new(0.0, 3000.0)];
+    d.apply(Command::Add(in_level(20, Shape::Roof(Roof { outline, kind: RoofKind::Gable, pitch: 45.0, thickness: 100.0, overhang: 0.0 })))).unwrap();
+    d.apply(Command::Add(in_level(21, stair_21()))).unwrap();
+    let r = Rebuilder::default().rebuild(&d);
+    let ids: Vec<EntityId> = r.walls.iter().map(|(id, _)| *id).collect();
+    assert_eq!(ids[ids.len() - 2..], [20, 21]);
+    let roof = &r.walls[ids.len() - 2].1;
+    close6(roof.volume(), 1.2e9 * 2f64.sqrt());
+    let (lo, hi) = roof.bbox();
+    close6(lo.z, 5500.0);
+    close6(hi.z, 5500.0 + 1500.0 + 100.0 * 2f64.sqrt());
+    let stair = &r.walls[ids.len() - 1].1;
+    close6(stair.volume(), 2.25e9);
+    let (lo, hi) = stair.bbox();
+    close6(lo.z, 3000.0);
+    close6(hi.z, 3000.0 + 10.0 * 2500.0 / 11.0);
+}
+
+#[test]
+fn level_height_carries_to_walls_and_stairs() {
+    let mut d = house();
+    let w4 = Wall { a: DVec2::new(0.0, 3000.0), b: DVec2::new(4000.0, 3000.0), thickness: 200.0, height: 2000.0, align: WallAlign::Center };
+    d.apply(Command::Add(in_level(4, Shape::Wall(w4)))).unwrap();
+    d.apply(Command::Add(in_level(21, stair_21()))).unwrap();
+    let s = Sketch { level: Some(Level { height: "2800 mm".into() }), ..d.sketch(1).unwrap().clone() };
+    let cmds = d.level_change(s.clone());
+    assert_eq!(cmds.len(), 5);
+    for c in cmds {
+        d.apply(c).unwrap();
+    }
+    for id in [1, 2, 3] {
+        let Some(Shape::Wall(w)) = d.get(id).map(|e| e.shape.clone()) else { panic!("wall {id}") };
+        close(w.height, 2800.0);
+    }
+    let Some(Shape::Wall(w)) = d.get(4).map(|e| e.shape.clone()) else { panic!("wall 4") };
+    close(w.height, 2000.0);
+    let Some(Shape::Stair(st)) = d.get(21).map(|e| e.shape.clone()) else { panic!("stair") };
+    close(st.height, 2800.0);
+    assert_eq!(st.risers, 11);
+    assert_eq!(d.level_height(1), Ok(2800.0));
+    assert_eq!(d.level_change(s).len(), 1);
+    let zero = Sketch { level: Some(Level { height: "0".into() }), ..d.sketch(1).unwrap().clone() };
+    assert_eq!(d.level_change(zero).len(), 1);
 }

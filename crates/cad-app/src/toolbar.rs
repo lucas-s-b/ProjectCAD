@@ -31,6 +31,7 @@ pub fn toolbar(app: &mut CadApp, ui: &mut egui::Ui) {
                 (Tool::Door, "Door"),
                 (Tool::Window, "Window"),
                 (Tool::Room, "Room"),
+                (Tool::Stair, "Stair"),
             ] {
                 w::selectable_value(ui, &mut app.tool, tool, label);
             }
@@ -79,6 +80,14 @@ pub fn toolbar(app: &mut CadApp, ui: &mut egui::Ui) {
                             w::selectable_value(ui, &mut app.wall_align, a, &format!("{a:?}"));
                         }
                     });
+                }
+                Tool::Stair => {
+                    ui.label("Width");
+                    w::add(ui, "Stair width", egui::DragValue::new(&mut app.stair_width).speed(1.0).range(1.0..=f64::MAX));
+                    ui.label("Max riser");
+                    w::add(ui, "Max riser", egui::DragValue::new(&mut app.stair_max_riser).speed(1.0).range(1.0..=f64::MAX));
+                    ui.label("Tread");
+                    w::add(ui, "Tread", egui::DragValue::new(&mut app.stair_tread).speed(1.0).range(1.0..=f64::MAX));
                 }
                 Tool::Door | Tool::Window => {
                     let o = if app.tool == Tool::Door { &mut app.door } else { &mut app.window };

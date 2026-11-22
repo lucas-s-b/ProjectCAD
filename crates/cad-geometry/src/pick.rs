@@ -32,6 +32,7 @@ pub fn distance_2d(shape: &Shape, p: DVec2) -> f64 {
     let corners = match shape {
         Shape::Wall(w) => Some(w.corners()),
         Shape::Opening(o) => Some(o.corners()),
+        Shape::Stair(s) => Some(s.corners()),
         _ => None,
     };
     if let Some(c) = corners

@@ -2,7 +2,7 @@ use crate::app::CadApp;
 use crate::app::Tool;
 use cad_document::{Command, Entity, EntityId, LayerId, SketchId};
 use cad_geometry::xform::rotation_about;
-use cad_geometry::{DAffine2, DVec2, DVec3, GeomError, Opening, Room, Shape, Wall, distance_2d, point_segment_distance};
+use cad_geometry::{DAffine2, DVec2, DVec3, GeomError, Opening, Room, Shape, Stair, Wall, distance_2d, point_segment_distance};
 use std::collections::BTreeMap;
 
 impl CadApp {
@@ -190,6 +190,23 @@ impl CadApp {
             .unwrap_or(0)
             + 1;
         self.add_shape(Shape::Room(Room { seed: p, name: "Room".into(), number: n.to_string() }));
+    }
+
+    /// A stair on the active level from `a` towards `towards` with the Stair tool settings: as many risers as the level
+    /// height needs at `stair_max_riser` each, `stair_tread` deep treads. None off a level or for a zero direction.
+    pub fn stair_from(&self, a: DVec2, towards: DVec2) -> Option<Stair> {
+        let height = self.doc.level_height(self.sketch).ok()?;
+        let d = (towards - a).try_normalize()?;
+        let risers = Stair::risers_for(height, self.stair_max_riser);
+        Some(Stair { a, b: a + d * (f64::from(risers - 1) * self.stair_tread), width: self.stair_width, height, risers })
+    }
+
+    /// Adds `stair_from(a, towards)`, or says why not.
+    pub fn add_stair(&mut self, a: DVec2, towards: DVec2) {
+        match self.stair_from(a, towards) {
+            Some(s) => self.add_shape(Shape::Stair(s)),
+            None => self.status = "Stairs go on a level (add one in the Model tab); click a second point for the direction".into(),
+        }
     }
 }
 

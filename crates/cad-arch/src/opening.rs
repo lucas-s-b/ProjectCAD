@@ -80,6 +80,8 @@ pub fn ifc_class(shape: &Shape) -> Option<&'static str> {
         }),
         Shape::Room(_) => Some("IfcSpace"),
         Shape::Slab(_) => Some("IfcSlab"),
+        Shape::Roof(_) => Some("IfcRoof"),
+        Shape::Stair(_) => Some("IfcStair"),
         _ => None,
     }
 }

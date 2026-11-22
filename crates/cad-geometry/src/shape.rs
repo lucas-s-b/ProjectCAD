@@ -1,7 +1,9 @@
 use crate::annot::{dim_layout, fills, labels, strokes, text_box};
 use crate::tol::Tolerance;
 use crate::opening::{Opening, OpeningKind};
+use crate::roof::{Roof, RoofKind};
 use crate::room::{Room, Slab};
+use crate::stair::Stair;
 use crate::wall::Wall;
 use glam::{DVec2, DVec3};
 use serde::{Deserialize, Serialize};
@@ -60,6 +62,10 @@ pub enum Shape {
     Room(Room),
     /// A floor slab below its level; only in level sketches.
     Slab(Slab),
+    /// A roof on top of its level; only in level sketches. Its planes and solid come from `Roof::pieces` and cad-arch.
+    Roof(Roof),
+    /// A straight stair; only in level sketches.
+    Stair(Stair),
 }
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
@@ -143,6 +149,8 @@ impl Shape {
             }
             Shape::Room(r) => r.seed.is_finite(),
             Shape::Slab(s) => s.thickness.is_finite() && s.outline.iter().all(|p| p.is_finite()),
+            Shape::Roof(r) => r.pitch.is_finite() && r.thickness.is_finite() && r.overhang.is_finite() && r.outline.iter().all(|p| p.is_finite()),
+            Shape::Stair(s) => s.a.is_finite() && s.b.is_finite() && s.width.is_finite() && s.height.is_finite(),
         };
         if !finite {
             return Err(GeomError::NonFinite);
@@ -256,13 +264,29 @@ impl Shape {
             Shape::Slab(s) if s.outline.len() < 3 || s.area().abs() <= t * t => {
                 Err(GeomError::Degenerate("slab outline needs three points and an area"))
             }
+            Shape::Roof(r) if r.thickness <= t || r.overhang < 0.0 => {
+                Err(GeomError::Degenerate("roof thickness must be positive and its overhang not negative"))
+            }
+            Shape::Roof(r) if r.outline.len() < 3 || r.area().abs() <= t * t => {
+                Err(GeomError::Degenerate("roof outline needs three points and an area"))
+            }
+            Shape::Roof(r) if r.kind != RoofKind::Flat && !(r.pitch > 0.0 && r.pitch <= 75.0) => {
+                Err(GeomError::Degenerate("roof pitch must be above 0 and at most 75 degrees"))
+            }
+            Shape::Roof(r) if matches!(r.kind, RoofKind::Gable | RoofKind::Hip) && !r.is_convex() => {
+                Err(GeomError::Degenerate("gable and hip roofs need a convex outline"))
+            }
+            Shape::Stair(s) if s.a.distance(s.b) <= t || s.width <= t || s.height <= t => {
+                Err(GeomError::Degenerate("stair needs a run, a width and a height"))
+            }
+            Shape::Stair(s) if s.risers < 2 => Err(GeomError::Degenerate("stair needs at least two risers")),
             _ => Ok(()),
         }
     }
 
     /// Shapes that live only in level sketches (an opening is held there by its host wall instead).
     pub fn needs_level(&self) -> bool {
-        matches!(self, Shape::Wall(_) | Shape::Room(_) | Shape::Slab(_))
+        matches!(self, Shape::Wall(_) | Shape::Room(_) | Shape::Slab(_) | Shape::Roof(_) | Shape::Stair(_))
     }
 
     pub fn is_solid(&self) -> bool {
@@ -294,6 +318,8 @@ impl Shape {
             },
             Shape::Room(_) => "Room",
             Shape::Slab(_) => "Floor",
+            Shape::Roof(_) => "Roof",
+            Shape::Stair(_) => "Stair",
         }
     }
 
@@ -330,6 +356,11 @@ impl Shape {
             }
             Shape::Room(r) => r.seed += d2,
             Shape::Slab(s) => s.outline.iter_mut().for_each(|p| *p += d2),
+            Shape::Roof(r) => r.outline.iter_mut().for_each(|p| *p += d2),
+            Shape::Stair(s) => {
+                s.a += d2;
+                s.b += d2;
+            }
             Shape::Box { center, .. }
             | Shape::Cylinder { center, .. }
             | Shape::Sphere { center, .. } => *center += d,
@@ -415,6 +446,18 @@ impl Shape {
             Shape::Slab(s) => {
                 let lo = s.outline.iter().fold(DVec2::INFINITY, |m, p| m.min(*p));
                 let hi = s.outline.iter().fold(DVec2::NEG_INFINITY, |m, p| m.max(*p));
+                (lo.extend(0.0), hi.extend(0.0))
+            }
+            Shape::Roof(r) => {
+                let e = r.eaves();
+                let lo = e.iter().fold(DVec2::INFINITY, |m, p| m.min(*p));
+                let hi = e.iter().fold(DVec2::NEG_INFINITY, |m, p| m.max(*p));
+                (lo.extend(0.0), hi.extend(0.0))
+            }
+            Shape::Stair(s) => {
+                let c = s.corners();
+                let lo = c.iter().fold(DVec2::INFINITY, |m, p| m.min(*p));
+                let hi = c.iter().fold(DVec2::NEG_INFINITY, |m, p| m.max(*p));
                 (lo.extend(0.0), hi.extend(0.0))
             }
             Shape::Spline { points, closed } => {

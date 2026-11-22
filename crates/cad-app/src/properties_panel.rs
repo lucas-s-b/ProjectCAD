@@ -1,7 +1,7 @@
 use crate::app::CadApp;
-use cad_document::{Command, LayerId};
+use cad_document::{Command, LayerId, Settings};
 use cad_geometry::xform::{mirror_across, rotation_about, scale_about};
-use cad_geometry::{DVec2, DVec3, OpeningKind, Shape, WallAlign};
+use cad_geometry::{DVec2, DVec3, OpeningKind, RoofKind, Shape, WallAlign};
 use crate::widgets as w;
 use eframe::egui;
 use std::collections::BTreeSet;
@@ -22,6 +22,7 @@ pub fn properties(app: &mut CadApp, ui: &mut egui::Ui, ctx: &egui::Context) {
     crate::groups::metadata(app, ui);
     crate::hatch_panel::hatch_group(app, ui);
     crate::floor_panel::floor_group(app, ui);
+    crate::floor_panel::roof_group(app, ui);
 }
 
 /// A mixed selection shows unchecked; a click sets every selected entity.
@@ -129,9 +130,10 @@ fn inspector(app: &mut CadApp, ui: &mut egui::Ui, ctx: &egui::Context) {
     if app.inspector.as_ref().is_none_or(|(i, _)| *i != id) {
         app.inspector = app.doc.get(id).map(|e| (id, e.shape.clone()));
     }
+    let settings = *app.doc.settings();
     let Some((_, buffer)) = app.inspector.as_mut() else { return };
     ui.label(buffer.kind());
-    edit_shape(ui, buffer);
+    edit_shape(ui, buffer, settings);
 
     let stored = app.doc.get(id).map(|e| e.shape.clone());
     let Some((_, buffer)) = app.inspector.clone() else { return };
@@ -175,7 +177,7 @@ fn vec3(ui: &mut egui::Ui, label: &str, v: &mut DVec3) {
     num(ui, &format!("{label} z"), &mut v.z);
 }
 
-fn edit_shape(ui: &mut egui::Ui, shape: &mut Shape) {
+fn edit_shape(ui: &mut egui::Ui, shape: &mut Shape, settings: Settings) {
     if let Some(class) = cad_arch::ifc_class(shape) {
         ui.label(format!("IFC class: {class}"));
     }
@@ -299,6 +301,26 @@ fn edit_shape(ui: &mut egui::Ui, shape: &mut Shape) {
         Shape::Slab(s) => {
             ui.label(format!("{} outline points", s.outline.len()));
             num(ui, "thickness", &mut s.thickness);
+        }
+        Shape::Roof(r) => {
+            ui.label(format!("{} outline points", r.outline.len()));
+            let kind = r.kind;
+            w::combo(ui, "kind", egui::ComboBox::from_id_salt("roof_kind_inspector").selected_text(format!("{kind:?}")), |ui| {
+                for k in [RoofKind::Flat, RoofKind::Shed, RoofKind::Gable, RoofKind::Hip] {
+                    w::selectable_value(ui, &mut r.kind, k, &format!("{k:?}"));
+                }
+            });
+            num(ui, "pitch", &mut r.pitch);
+            num(ui, "thickness", &mut r.thickness);
+            num(ui, "overhang", &mut r.overhang);
+        }
+        Shape::Stair(s) => {
+            vec2(ui, "a", &mut s.a);
+            vec2(ui, "b", &mut s.b);
+            num(ui, "width", &mut s.width);
+            num(ui, "height", &mut s.height);
+            w::add(ui, "risers", egui::DragValue::new(&mut s.risers).range(2..=500));
+            ui.label(format!("tread {}, riser {}", settings.format_length(s.tread()), settings.format_length(s.riser())));
         }
     }
 }

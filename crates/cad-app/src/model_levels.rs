@@ -1,5 +1,5 @@
 //! Levels: the list, Add level, and the elevation and height of the active level.
-use crate::app::CadApp;
+use crate::app::{CadApp, LevelView};
 use crate::widgets as w;
 use cad_document::{BasePlane, Command, EntityId, Level, PlaneDef, Sketch, SketchId};
 use cad_geometry::{Room, Shape};
@@ -24,6 +24,13 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
             ui.small(text);
         });
     }
+    // Wrapped: three labelled buttons in one row are wider than the panel.
+    ui.horizontal_wrapped(|ui| {
+        ui.label("Show");
+        for (v, label) in [(LevelView::Active, "Active level"), (LevelView::Below, "Level below"), (LevelView::All, "All levels")] {
+            w::selectable_value(ui, &mut app.level_view, v, label);
+        }
+    });
     ui.horizontal(|ui| {
         ui.label("Elevation");
         w::add(ui, "Level elevation", TextEdit::singleline(&mut app.level_elevation).desired_width(70.0));
@@ -47,7 +54,8 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
         if w::add_enabled(ui, active.is_some(), "Apply to level", egui::Button::new("Apply to level")).clicked()
             && let Some(s) = active
         {
-            app.exec(vec![Command::SetSketch(Sketch { plane, level, ..s })]);
+            let cmds = app.doc.level_change(Sketch { plane, level, ..s });
+            app.exec(cmds);
         }
     });
     rooms(app, ui);

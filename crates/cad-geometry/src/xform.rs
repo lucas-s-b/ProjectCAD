@@ -1,6 +1,8 @@
 use crate::shape::{GeomError, Shape};
 use crate::opening::Opening;
+use crate::roof::Roof;
 use crate::room::{Room, Slab};
+use crate::stair::Stair;
 use crate::wall::{Wall, WallAlign};
 use glam::{DAffine2, DMat2, DVec2};
 
@@ -115,6 +117,10 @@ impl Shape {
             Shape::Slab(s) => {
                 Shape::Slab(Slab { outline: s.outline.iter().map(|p| m.transform_point2(*p)).collect(), thickness: s.thickness })
             }
+            // A mirror reverses the outline; `Roof::pieces` turns it counter-clockwise and keeps the first edge first.
+            Shape::Roof(r) => Shape::Roof(Roof { outline: r.outline.iter().map(|p| m.transform_point2(*p)).collect(), ..r.clone() }),
+            // Width is kept under scaling, like wall thickness; the run scales, so the tread does.
+            Shape::Stair(s) => Shape::Stair(Stair { a: m.transform_point2(s.a), b: m.transform_point2(s.b), ..*s }),
             Shape::Box { .. } | Shape::Cylinder { .. } | Shape::Sphere { .. } => {
                 return Err(GeomError::Unsupported("2D transform of a solid"));
             }

@@ -4,7 +4,7 @@ use crate::rebuild_worker::RebuildWorker;
 use crate::{panels, view2d, view3d};
 use cad_document::{Plane3, Command, ConstraintId, Document, Entity, EntityId, History, LayerId, BodyOp, Feature, FeatureId, PointRef, RebuildResult, RevolveAxis, SketchId, BasePlane, Target};
 use cad_geometry::snap::Snap;
-use cad_geometry::{DVec2, DVec3, HatchPattern, Opening, OpeningKind, Shape, Wall, WallAlign};
+use cad_geometry::{DVec2, DVec3, HatchPattern, Opening, OpeningKind, Roof, RoofKind, Shape, Wall, WallAlign};
 use std::collections::BTreeSet;
 use eframe::egui;
 use std::path::PathBuf;
@@ -35,6 +35,14 @@ impl SectionView {
     }
 }
 
+/// Which other levels the 2D view draws in grey under the active one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LevelView {
+    Active,
+    Below,
+    All,
+}
+
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Tool {
     Select,
@@ -55,6 +63,7 @@ pub enum Tool {
     Door,
     Window,
     Room,
+    Stair,
     Trim,
     Extend,
     Offset,
@@ -162,6 +171,14 @@ pub struct CadApp {
     pub window: Opening,
     /// Thickness of floors made with "Make floor".
     pub floor_thickness: f64,
+    /// Kind, pitch, thickness and overhang of roofs made with "Make roof" (the outline is unused).
+    pub roof: Roof,
+    /// Stair tool settings: width, highest riser, tread depth.
+    pub stair_width: f64,
+    pub stair_max_riser: f64,
+    pub stair_tread: f64,
+    /// Other levels drawn in the 2D view.
+    pub level_view: LevelView,
     /// Elevation and height fields of the Levels controls.
     pub level_elevation: String,
     pub level_height: String,
@@ -277,6 +294,11 @@ impl CadApp {
             door: opening_template(OpeningKind::Door, 900.0, 2100.0, 0.0),
             window: opening_template(OpeningKind::Window, 1200.0, 1200.0, 900.0),
             floor_thickness: 200.0,
+            roof: Roof { outline: Vec::new(), kind: RoofKind::Gable, pitch: 30.0, thickness: 200.0, overhang: 500.0 },
+            stair_width: 1000.0,
+            stair_max_riser: 180.0,
+            stair_tread: 280.0,
+            level_view: LevelView::Active,
             level_elevation: "0".into(),
             level_height: "3000 mm".into(),
             radial_diameter: false,
