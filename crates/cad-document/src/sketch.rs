@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 pub type SketchId = u32;
-pub const FORMAT_VERSION: u32 = 18;
+pub const FORMAT_VERSION: u32 = 19;
 
 /// Axes (x, y, normal): XY = (X, Y, +Z); XZ = (X, Z, -Y); YZ = (Y, Z, +X).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -217,7 +217,7 @@ impl Document {
                 if !self.sketches.contains_key(&id) {
                     return Err(DocError::SketchNotFound(id));
                 }
-                if self.entities_in(id).next().is_some() {
+                if self.entities_in(id).next().is_some() || self.features.iter().any(|f| f.sketch() == Some(id)) {
                     return Err(DocError::SketchInUse(id));
                 }
                 Ok(Command::AddSketch(self.sketches.remove(&id).expect("checked above")))

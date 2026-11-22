@@ -1,6 +1,7 @@
 use crate::document::{Command, DocError, Document, EntityId};
+use crate::part::PartDef;
 use crate::refs::FaceKey;
-use crate::sketch::BasePlane;
+use crate::sketch::{BasePlane, SketchId};
 use cad_geometry::DVec3;
 use cad_params::parse;
 use serde::{Deserialize, Serialize};
@@ -126,6 +127,17 @@ pub enum FeatureKind {
     /// Hollows the body whose surface passes through `at` (as picked; a snapshot like the points of a fillet), leaving walls
     /// of `thickness`. With `open`, the planar face nearest to that point is removed.
     Shell { thickness: String, open: Option<DVec3>, at: DVec3 },
+    /// A generated part (`PartDef`) on the plane of `sketch`, its axis along the plane normal through the point (x, y)
+    /// of the sketch. Combined with the bodies like an extrude.
+    Part {
+        def: PartDef,
+        sketch: SketchId,
+        x: String,
+        y: String,
+        op: BodyOp,
+        #[serde(default)]
+        target: Target,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -150,6 +162,11 @@ impl Feature {
         }
     }
 
+    /// The sketch a part sits on; None for other features (their sketches come from their entities).
+    pub fn sketch(&self) -> Option<SketchId> {
+        if let FeatureKind::Part { sketch, .. } = &self.kind { Some(*sketch) } else { None }
+    }
+
     /// The entities that must lie in one sketch each.
     fn groups(&self) -> Vec<Vec<EntityId>> {
         match &self.kind {
@@ -169,6 +186,7 @@ impl Feature {
             FeatureKind::LinearPattern { count, dx, dy, dz, .. } => [count, dx, dy, dz].map(String::as_str).to_vec(),
             FeatureKind::CircularPattern { count, angle, cx, cy, cz, .. } => [count, angle, cx, cy, cz].map(String::as_str).to_vec(),
             FeatureKind::Mirror { offset, .. } => vec![offset.as_str()],
+            FeatureKind::Part { def, x, y, .. } => def.expressions().into_iter().chain([x.as_str(), y.as_str()]).collect(),
             FeatureKind::Sweep { .. } | FeatureKind::Loft { .. } => Vec::new(),
         }
     }
@@ -253,6 +271,12 @@ impl Document {
                 if !at.is_finite() || open.is_some_and(|p| !p.is_finite()) {
                     return Err(bad("shell point is not finite"));
                 }
+            }
+            (FeatureKind::Part { def, sketch, .. }, _) => {
+                if self.sketch(*sketch).is_none() {
+                    return Err(DocError::SketchNotFound(*sketch));
+                }
+                def.check().map_err(bad)?;
             }
             (FeatureKind::Sweep { profile, path, .. }, _) if profile.is_empty() || path.is_empty() => {
                 return Err(bad("empty profile or path"));

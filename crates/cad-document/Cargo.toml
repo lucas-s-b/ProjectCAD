@@ -9,6 +9,7 @@ repository.workspace = true
 cad-arch = { version = "0.1.0", path = "../cad-arch" }
 cad-constraints = { version = "0.1.0", path = "../cad-constraints" }
 cad-geometry = { version = "0.1.0", path = "../cad-geometry" }
+cad-mech = { version = "0.1.0", path = "../cad-mech" }
 cad-modeler = { version = "0.1.0", path = "../cad-modeler" }
 cad-params = { version = "0.1.0", path = "../cad-params" }
 serde = { version = "1.0.229", features = ["derive"] }

@@ -7,6 +7,7 @@ mod group;
 pub mod history;
 pub mod linetype;
 mod openings;
+pub mod part;
 pub mod rebuild;
 mod rebuild_blend;
 mod rebuild_pattern;
@@ -32,6 +33,8 @@ mod group_tests;
 #[cfg(test)]
 mod hatch_tests;
 #[cfg(test)]
+mod part_feature_tests;
+#[cfg(test)]
 mod pattern_feature_tests;
 #[cfg(test)]
 mod shell_feature_tests;
@@ -45,6 +48,8 @@ pub use document::{Command, ConstraintId, DocError, Document, Entity, EntityId, 
 pub use feature::{Axis3, BODY_TOLERANCE, BodyOp, EDGE_PICK_TOLERANCE, Feature, FeatureId, FeatureKind, MirrorSource, RevolveAxis, Target};
 pub use history::History;
 pub use linetype::LineType;
+pub use cad_mech::Part;
+pub use part::PartDef;
 pub use refs::{FaceKey, edge_keys};
 pub use rebuild::{FeatureState, RebuildResult, Rebuilder, panic_message};
 pub use sketch::{BasePlane, Level, PlaneDef, Sketch, SketchId, SketchPlanes};
