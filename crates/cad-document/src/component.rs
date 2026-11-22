@@ -18,7 +18,8 @@ pub fn mm(v: f64) -> String {
 
 /// One placed instance of a body. Its solid is the body turned about the world X, then Y, then Z axis through the
 /// origin by `angles`, then moved by `at`: p' = Rz Ry Rx p + at. Several components may place the same body; a body
-/// with components is drawn only through them.
+/// with components is drawn only through them. A component that is a joint child is placed by its joint instead
+/// (`Document::placements`) and its `at`/`angles` are ignored.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Component {
     pub id: ComponentId,
@@ -32,6 +33,9 @@ pub struct Component {
     /// Free key/value notes; the bill of materials reads "material" and "part_number".
     #[serde(default)]
     pub meta: BTreeMap<String, String>,
+    /// Never the child of a joint; the gizmo does not move it.
+    #[serde(default)]
+    pub grounded: bool,
 }
 
 impl Document {
@@ -67,15 +71,18 @@ impl Document {
         Ok(Component { at: [mm(at.x), mm(at.y), mm(at.z)], ..c.clone() })
     }
 
-    /// The solid of `c`: its body in `bodies` moved by `placement`.
-    pub(crate) fn place_component(&self, c: &Component, bodies: &Bodies) -> Result<Arc<Body>, String> {
+    /// The solid of `c`: its body in `bodies` moved by `placement` (from `Document::placements`).
+    pub(crate) fn place_component(&self, c: &Component, placement: &DAffine3, bodies: &Bodies) -> Result<Arc<Body>, String> {
         let body = bodies.iter().find(|(id, _)| *id == c.body).map(|(_, b)| b).ok_or_else(|| format!("body {} not found", c.body))?;
-        body.transformed(&self.placement(c)?).map(Arc::new).map_err(|e| e.to_string())
+        body.transformed(placement).map(Arc::new).map_err(|e| e.to_string())
     }
 
     fn check_component(&self, c: &Component) -> Result<(), DocError> {
         if c.name.trim().is_empty() {
             return Err(DocError::BadComponent("empty name"));
+        }
+        if c.grounded && self.parent_joint(c.id).is_some() {
+            return Err(DocError::BadComponent("a joint child cannot be grounded"));
         }
         if self.feature(c.body).is_none() {
             return Err(DocError::FeatureNotFound(c.body));
@@ -98,6 +105,9 @@ impl Document {
                 Ok(Command::RemoveComponent(id))
             }
             Command::RemoveComponent(id) => {
+                if self.joints.values().any(|j| j.parent == id || j.child == id) {
+                    return Err(DocError::ComponentInUse(id));
+                }
                 let c = self.components.remove(&id).ok_or(DocError::ComponentNotFound(id))?;
                 Ok(Command::AddComponent(c))
             }

@@ -37,7 +37,7 @@ pub struct RebuildResult {
     pub walls: Vec<(EntityId, Arc<Body>)>,
     /// The enclosed area of each room whose seed lies in one, by room entity id (`rebuild_walls`).
     pub rooms: Vec<(EntityId, cad_arch::Region)>,
-    /// The solid of every component in id order, or why it could not be placed (`Document::place_component`).
+    /// The solid of every component in id order, or why it could not be placed (`Document::placements`, `Document::place_component`).
     pub components: Vec<(ComponentId, Result<Arc<Body>, String>)>,
 }
 
@@ -383,7 +383,11 @@ impl Rebuilder {
         let walls = crate::rebuild_walls::wall_bodies(doc);
         let rooms = crate::rebuild_walls::room_regions(doc);
         // Not cached: a placement is a mesh copy, and features stay cached.
-        let components = doc.components().map(|c| (c.id, doc.place_component(c, &bodies))).collect();
+        let placements = doc.placements();
+        let components = doc
+            .components()
+            .map(|c| (c.id, placements[&c.id].clone().and_then(|p| doc.place_component(c, &p, &bodies))))
+            .collect();
         Some(RebuildResult { bodies, states, recomputed, planes, walls, rooms, components })
     }
 }

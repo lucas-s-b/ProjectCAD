@@ -20,12 +20,24 @@ pub fn select(app: &mut CadApp, id: Option<ComponentId>) {
     }
 }
 
-/// The component whose solid the ray hits first, when no shown body is nearer.
-pub fn pick(app: &mut CadApp, origin: DVec3, dir: DVec3) -> Option<ComponentId> {
+/// The component and body face whose (exploded) solid the ray hits first, when no shown body is nearer.
+pub fn pick(app: &mut CadApp, origin: DVec3, dir: DVec3) -> Option<(ComponentId, u32)> {
+    let offsets = app.doc.explode_offsets(app.explode_factor());
     let placed: Vec<(u64, Arc<Body>)> = app.placed_components().map(|(id, b)| (id, b.clone())).collect();
-    let (id, _, t) = crate::face_pick::nearest(app, &placed, origin, dir)?;
-    let body = crate::face_pick::ray_body(app, origin, dir).map_or(f64::INFINITY, |(.., t)| t);
-    (t < body).then_some(id)
+    let mut best: Option<(ComponentId, usize, f64)> = None;
+    for (id, body) in placed {
+        // The solid is drawn moved by its offset: move the ray back instead.
+        let shift = offsets.get(&id).copied().unwrap_or(DVec3::ZERO);
+        if let Some((_, tri, t)) = crate::face_pick::nearest(app, &[(id, body)], origin - shift, dir)
+            && best.is_none_or(|(.., b)| t < b)
+        {
+            best = Some((id, tri, t));
+        }
+    }
+    let (id, tri, t) = best?;
+    let nearer = crate::face_pick::ray_body(app, origin, dir).is_some_and(|(.., b)| b <= t);
+    let face = *app.model_result()?.component(id)?.tri_face.get(tri)?;
+    (!nearer).then_some((id, face))
 }
 
 pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
@@ -33,6 +45,8 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     add_controls(app, ui);
     list(app, ui);
     editor(app, ui);
+    crate::assembly_joints::joints(app, ui);
+    crate::assembly_joints::explode(app, ui);
     ui.separator();
     ui.heading("Bill of materials");
     bom(app, ui);
@@ -74,7 +88,7 @@ fn add(app: &mut CadApp) {
     });
     let id = app.doc.alloc_component_id();
     let zero = || "0".to_string();
-    let c = Component { id, name: format!("{feature} #{}", n + 1), body, at: [mm(n as f64 * (width + 10.0)), zero(), zero()], angles: [zero(), zero(), zero()], meta };
+    let c = Component { id, name: format!("{feature} #{}", n + 1), body, at: [mm(n as f64 * (width + 10.0)), zero(), zero()], angles: [zero(), zero(), zero()], meta, grounded: false };
     app.exec(vec![Command::AddComponent(c)]);
     if app.doc.component(id).is_some() {
         select(app, Some(id));
@@ -106,9 +120,13 @@ fn editor(app: &mut CadApp, ui: &mut egui::Ui) {
     if app.component_edit.as_ref().is_none_or(|c| c.id != id) {
         app.component_edit = app.doc.component(id).cloned();
     }
+    let jointed = app.doc.parent_joint(id).map(|j| j.id);
     let Some(buffer) = app.component_edit.as_mut() else { return };
     ui.separator();
     ui.label("Selected component");
+    if let Some(j) = jointed {
+        ui.small(format!("Placed by joint {j}: position and rotation are ignored"));
+    }
     let mut commit = false;
     let mut field = |ui: &mut egui::Ui, label: &str, text: &mut String| {
         ui.horizontal(|ui| {
@@ -132,10 +150,18 @@ fn editor(app: &mut CadApp, ui: &mut egui::Ui) {
             buffer.meta.insert(key.to_string(), text);
         }
     }
+    commit |= w::checkbox(ui, &mut buffer.grounded, "Grounded").changed();
     // `field` and `buffer` are not used below, so `app` is free again.
     if w::button(ui, "Delete component").clicked() {
         app.component_edit = None;
-        app.exec(vec![Command::RemoveComponent(id)]);
+        app.joint_edit = None;
+        app.explode_edit = None;
+        let mut cmds: Vec<Command> = app.doc.joints().filter(|j| j.parent == id || j.child == id).map(|j| Command::RemoveJoint(j.id)).collect();
+        if app.doc.explode_steps().iter().any(|s| s.component == id) {
+            cmds.push(Command::SetExplode(app.doc.explode_steps().iter().filter(|s| s.component != id).cloned().collect()));
+        }
+        cmds.push(Command::RemoveComponent(id));
+        app.exec(cmds);
         return;
     }
     if commit {

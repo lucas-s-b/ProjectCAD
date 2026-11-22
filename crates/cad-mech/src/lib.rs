@@ -2,6 +2,7 @@
 //! knows no document.
 mod fastener;
 mod gear;
+mod joint;
 mod material;
 mod part;
 mod shaft;
@@ -9,6 +10,7 @@ mod spring;
 
 pub use fastener::{Bolt, METRIC, Metric, Nut, metric};
 pub use gear::{FLANK_SEGMENTS, Gear};
+pub use joint::{face_frame, frame, mate};
 pub use material::{MATERIALS, density};
 pub use part::Part;
 pub use shaft::Shaft;

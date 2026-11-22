@@ -37,7 +37,7 @@ fn refs(ids: &[usize]) -> String {
 }
 
 /// Writes one FACETED_BREP (one planar FACE_SURFACE per triangle, as before) and returns its id.
-fn faceted_brep(w: &mut W, id: u64, body: &Body) -> usize {
+fn faceted_brep(w: &mut W, label: &str, body: &Body) -> usize {
     let m = &body.mesh;
     let points: Vec<usize> = m.positions.iter().map(|p| w.add(&format!("CARTESIAN_POINT('',{})", triple(*p)))).collect();
     let mut faces = Vec::new();
@@ -58,7 +58,7 @@ fn faceted_brep(w: &mut W, id: u64, body: &Body) -> usize {
         faces.push(w.add(&format!("FACE_SURFACE('',(#{bound}),#{plane},.T.)")));
     }
     let shell = w.add(&format!("CLOSED_SHELL('',({}))", refs(&faces)));
-    w.add(&format!("FACETED_BREP('Body_{id}',#{shell})"))
+    w.add(&format!("FACETED_BREP('{}',#{shell})", q(label)))
 }
 
 /// `.T.` or `.F.`
@@ -78,7 +78,7 @@ fn place(w: &mut W, origin: DVec3, z: DVec3, x: DVec3) -> usize {
 }
 
 /// Writes one MANIFOLD_SOLID_BREP of ADVANCED_FACEs and returns its id.
-fn advanced_brep(w: &mut W, id: u64, t: &TrimmedBody) -> usize {
+fn advanced_brep(w: &mut W, label: &str, t: &TrimmedBody) -> usize {
     let vertex_points: Vec<usize> = t.vertices.iter().map(|p| w.add(&format!("CARTESIAN_POINT('',{})", triple(*p)))).collect();
     let vertices: Vec<usize> = vertex_points.iter().map(|p| w.add(&format!("VERTEX_POINT('',#{p})"))).collect();
     let mut curves = Vec::new();
@@ -126,13 +126,13 @@ fn advanced_brep(w: &mut W, id: u64, t: &TrimmedBody) -> usize {
         faces.push(w.add(&format!("ADVANCED_FACE('',({}),#{surface},{})", refs(&bounds), flag(f.outward))));
     }
     let shell = w.add(&format!("CLOSED_SHELL('',({}))", refs(&faces)));
-    w.add(&format!("MANIFOLD_SOLID_BREP('Body_{id}',#{shell})"))
+    w.add(&format!("MANIFOLD_SOLID_BREP('{}',#{shell})", q(label)))
 }
 
-/// One solid per body; `name` is the product name. A body of planes and cylinders becomes a MANIFOLD_SOLID_BREP
+/// One solid per body, named by its label; `name` is the product name. A body of planes and cylinders becomes a MANIFOLD_SOLID_BREP
 /// of ADVANCED_FACEs; any other body a FACETED_BREP whose triangles are planar FACE_SURFACEs bounded by a POLY_LOOP.
 // shortcut: bodies with cones, spheres, tori, free-form faces or other curves are written faceted; add those surfaces when users need them
-pub fn to_step(bodies: &[(u64, &Body)], name: &str) -> String {
+pub fn to_step(bodies: &[(&str, &Body)], name: &str) -> String {
     let name = q(name);
     let mut w = W { out: String::new(), next: 0 };
     let _ = write!(
@@ -159,10 +159,10 @@ pub fn to_step(bodies: &[(u64, &Body)], name: &str) -> String {
     let x = w.add("DIRECTION('',(1.,0.,0.))");
     let ax = w.add(&format!("AXIS2_PLACEMENT_3D('',#{o},#{z},#{x})"));
     let (mut advanced, mut faceted) = (Vec::new(), Vec::new());
-    for (id, body) in bodies {
+    for (label, body) in bodies {
         match TrimmedBody::from_body(body) {
-            Ok(t) => advanced.push(advanced_brep(&mut w, *id, &t)),
-            Err(_) => faceted.push(faceted_brep(&mut w, *id, body)),
+            Ok(t) => advanced.push(advanced_brep(&mut w, label, &t)),
+            Err(_) => faceted.push(faceted_brep(&mut w, label, body)),
         }
     }
     let shape_rep = |w: &mut W, kind: &str, items: &[usize]| {

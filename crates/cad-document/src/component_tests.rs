@@ -15,7 +15,7 @@ fn boxed() -> Document {
 }
 
 fn comp(id: ComponentId, body: FeatureId, at: [&str; 3], angles: [&str; 3]) -> Component {
-    Component { id, name: format!("c{id}"), body, at: at.map(String::from), angles: angles.map(String::from), meta: Default::default() }
+    Component { id, name: format!("c{id}"), body, at: at.map(String::from), angles: angles.map(String::from), meta: Default::default(), grounded: false }
 }
 
 #[test]
@@ -91,7 +91,7 @@ fn components_save_and_load() {
     let mut loaded = loaded.unwrap();
     assert_eq!(loaded.components().cloned().collect::<Vec<_>>(), d.components().cloned().collect::<Vec<_>>());
     assert_eq!(loaded.alloc_component_id(), 3);
-    assert_eq!(FORMAT_VERSION, 20);
+    assert_eq!(FORMAT_VERSION, 21);
 }
 
 #[test]

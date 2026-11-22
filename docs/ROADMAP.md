@@ -181,7 +181,7 @@ Deferred to later phases:
 Parametric generators (gears, shafts, bearings, springs, fasteners, threads), assemblies, joints,
 collision and interference checks (parry), exploded views, bill of materials.
 
-Done (unit-tested; part generators, components and the bill of materials checked in the running app through MCP):
+Done (unit-tested; part generators, components, the bill of materials, joints and exploded views checked in the running app through MCP):
 - [x] Part features: gear, shaft, spring, bolt and nut generators in the feature history ("Add part" in the Model tab), placed on a sketch plane at an (x, y) point with the axis along the plane normal; every parameter is an expression; a part makes a new body by default and can add, cut or intersect; patterns and mirrors copy parts; file format version 19
 - [x] Involute spur gear: module, teeth, pressure angle, face width, bore; no profile shift or backlash, addendum 1 m, dedendum 1.25 m; flanks in 10 lines, tip and root as arcs
 - [x] Stepped shaft: diameter and length per step, 45 degree chamfer at both ends (`cad_modeler::lathe`, a turned mesh with exact plane, cylinder and cone faces)
@@ -190,15 +190,19 @@ Done (unit-tested; part generators, components and the bill of materials checked
 - [x] Bill-of-materials data per part: designation ("ISO 4017 M8x30", "Spur gear m2 z20 b10") and thread derived from the parameters, shown in the feature editor
 - [x] Components (assemblies inside one document): placed instances of bodies, one body any number of times; translation and turns about X, Y and Z as expressions; a body with components is drawn only through them; Assembly tab (add from a body, list, select in the list or in 3D, name, position, rotation, material, part number, delete); the translate gizmo moves the selected component; a placed body cannot be removed; file format version 20
 - [x] Bill of materials: rows grouped by designation (by body when there is none), material and part number; item, part name, designation, quantity, mass from a density table; shown in the Assembly tab, exported as CSV (File > Export BOM CSV..., `export_project` with `.csv`), in the MCP `state` (`bom`)
+- [x] Joints between components: fixed, revolute (angle) and slider (distance), values as expressions (driving a joint or a parameter moves the child and everything jointed to it); a frame (origin and axis) on each component, typed or taken from a clicked flat or cylindrical face; placed by walking the joint tree from the roots, exact, no solver; a second parent, a loop or a grounded child is refused; Assembly tab "Joints" section; file format version 21
+- [x] Grounded components (never a joint child; the gizmo does not move them)
+- [x] Exploded views: steps that move one component along a direction by a distance, run one after another; on/off toggle, explode slider and factor, trail lines; display only (BOM, state placements and export stay assembled)
+- [x] STL/OBJ/STEP export writes the shown bodies and the placed components (joints applied), each solid named (`Body_<id>` or the component name)
 
 Limits:
 - Gears: no undercut or trochoid root fillet (below the base circle the flank runs radially), no helical, internal or bevel gears, no profile shift or backlash.
 - Springs: 24-sided wire and 48 segments per turn whatever the tolerance; no closed or ground ends.
 - Fasteners: no head chamfer or washer face; threads are cosmetic, so a bolt and its nut touch without overlap.
-- Components: STL/OBJ/STEP export still writes the bodies of the feature history, not the placed components (C); the gizmo only translates and writes plain millimetres over position expressions; no rotate gizmo; material and part number are set per component.
+- Components: the gizmo only translates and writes plain millimetres over position expressions; no rotate gizmo; material and part number are set per component.
+- Joints: tree only (closed loops such as four-bar linkages need the solver, Phase 6); no joint limits; frames picked from faces are stored as numbers and do not follow later edits of the part; no dragging of joints with the mouse.
 
 Remaining:
-- C: joints (fixed, revolute, slider) placed by tree propagation, joint values as expressions, exploded views
 - D: interference (manifold intersection volume) and clearance (parry3d-f64) checks
 - E: bearing generator, modelled helical threads, draft of existing faces, corner blending
 - F: dependency graph between sketches, features and bodies; stable face references
