@@ -72,6 +72,7 @@ fn build_shape(app: &CadApp, points: &[DVec2], cursor: DVec2) -> Option<Shape> {
         (Tool::AngleDim, 2) => angle_dim(first, points[1], cursor, text_height),
         // the preview is 2D, its height is never shown
         (Tool::Wall, 1) => Some(Shape::Wall(Wall { a: first, b: cursor, thickness: app.wall_thickness, height: 1.0, align: app.wall_align })),
+        (Tool::Stair, 1) => app.stair_from(first, cursor).map(Shape::Stair),
         (Tool::Polyline | Tool::Spline | Tool::Leader, _) => {
             let mut pts = points.to_vec();
             pts.push(cursor);
@@ -108,6 +109,14 @@ pub fn tool_point(app: &mut CadApp, p: DVec2) {
         // One click per room; the tool stays active.
         app.points.clear();
         app.add_room(p);
+        return;
+    }
+    if app.tool == Tool::Stair {
+        // Start point, then direction; the tool stays active.
+        if let [a, b] = app.points[..] {
+            app.points.clear();
+            app.add_stair(a, b);
+        }
         return;
     }
     let needed = match app.tool {

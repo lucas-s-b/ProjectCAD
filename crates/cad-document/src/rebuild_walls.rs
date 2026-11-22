@@ -1,12 +1,12 @@
-//! Solids of the walls and floor slabs on every level, and the areas of the rooms, built by `cad_arch` on every rebuild.
+//! Solids of the walls, floor slabs, roofs and stairs on every level, and the areas of the rooms, built by `cad_arch` on every rebuild.
 use crate::document::{Document, EntityId};
 use crate::feature::BODY_TOLERANCE;
-use cad_arch::{Region, cut_openings, footprints, regions, slab_body, wall_body};
+use cad_arch::{Region, cut_openings, footprints, regions, roof_body, slab_body, stair_body, wall_body};
 use cad_geometry::{DVec2, Opening, Shape, Wall};
 use cad_modeler::Body;
 use std::sync::Arc;
 
-/// One solid per wall, then one per floor slab, that is not construction, by level then entity id. A level whose plane does not resolve has
+/// One solid per wall, then one per floor slab, roof and stair (by entity id), that is not construction, by level. A level whose plane does not resolve has
 /// none; a wall whose joined outline is degenerate is left out. Doors and windows that are not construction are cut
 /// from their wall.
 // shortcut: no cache and no union of the walls; cache per level when large projects rebuild slowly
@@ -38,11 +38,17 @@ pub(crate) fn wall_bodies(doc: &Document) -> Vec<(EntityId, Arc<Body>)> {
                 out.push((*id, Arc::new(cut_openings(body, &mine, &plane, BODY_TOLERANCE))));
             }
         }
+        // Roofs sit on top of the level; without a valid storey height they are left out.
+        let top = doc.level_height(s.id).ok();
         for x in doc.entities_in(s.id).filter(|x| !x.construction) {
-            if let Shape::Slab(slab) = &x.shape
-                && let Ok(body) = slab_body(slab, &plane, BODY_TOLERANCE)
-            {
-                out.push((x.id, Arc::new(body)));
+            let body = match &x.shape {
+                Shape::Slab(slab) => slab_body(slab, &plane, BODY_TOLERANCE).ok(),
+                Shape::Roof(r) => top.and_then(|t| roof_body(r, &plane, t, BODY_TOLERANCE).ok()),
+                Shape::Stair(st) => stair_body(st, &plane, BODY_TOLERANCE).ok(),
+                _ => None,
+            };
+            if let Some(b) = body {
+                out.push((x.id, Arc::new(b)));
             }
         }
     }

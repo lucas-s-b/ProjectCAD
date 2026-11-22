@@ -120,6 +120,8 @@ pub fn outline_paths(shape: &Shape) -> Vec<Vec<DVec3>> {
         Shape::Opening(o) => out.push(ring(&o.corners().map(|p| p.extend(0.0)))),
         Shape::Slab(s) => out.push(ring(&s.outline.iter().map(|p| p.extend(0.0)).collect::<Vec<_>>())),
         Shape::Room(_) => {}
+        Shape::Roof(r) => out.extend(r.pieces().iter().map(|p| ring(&p.outline.iter().map(|q| q.extend(0.0)).collect::<Vec<_>>()))),
+        Shape::Stair(s) => out.extend(s.symbol().into_iter().map(|[p, q]| vec![p.extend(0.0), q.extend(0.0)])),
         Shape::Rect { min, max } => {
             let c = [*min, DVec2::new(max.x, min.y), *max, DVec2::new(min.x, max.y)];
             out.push(ring(&c.map(|p| p.extend(0.0))));

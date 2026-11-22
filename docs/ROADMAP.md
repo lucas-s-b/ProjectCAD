@@ -139,11 +139,11 @@ Deferred to later phases:
 - NURBS curves and surfaces: Phase 7
 - STEP export of cones, spheres, tori and free-form faces (planes and cylinders done): Phase 7. Phase 5 parts are mesh-boolean solids checked with parry on meshes, so they do not need it first.
 
-## Phase 4: Architectural CAD (in progress)
+## Phase 4: Architectural CAD (done; IFC export and other deferred items listed below)
 Walls with automatic joins, doors, windows, floors, roofs, stairs, room detection and areas,
 multi-floor projects, BIM metadata designed for later IFC export.
 
-Done (unit-tested; levels, walls, joins, doors, windows, rooms, floors and their edits checked in the running app through MCP):
+Done (unit-tested; levels, walls, joins, doors, windows, rooms, floors, roofs, stairs, level views and their edits checked in the running app through MCP):
 - [x] Levels: a sketch on XY with a storey height; its offset expression is the elevation; several levels make a multi-floor project; file format version 15 (older files load without levels)
 - [x] Straight walls (baseline, thickness, height, centre/left/right alignment) drawn with the Wall tool on a level, edited in Properties, moved, copied and mirrored like other entities
 - [x] Automatic joins (`cad-arch`): L mitres, T ends stop at the through wall's face, X crossings, three or more walls at a point share the hub
@@ -153,9 +153,12 @@ Done (unit-tested; levels, walls, joins, doors, windows, rooms, floors and their
 - [x] Each opening cuts a box from its wall solid (manifold boolean) and a gap from the plan; doors show a leaf and swing arc, windows the face and glass lines; IFC classes IfcDoor/IfcWindow from the kind
 - [x] Rooms: one click inside an area enclosed by walls with the Room tool; the area is found from the cleaned wall outline on every rebuild (doors do not break it, free-standing walls are subtracted), so names stay when walls move; net area and perimeter; tag in the plan; Rooms list with name and number edited in place; IfcSpace
 - [x] Floors (slabs): "Make floor" in Properties from a room's area or a drawn closed outline (the outline becomes the floor), with a thickness; a solid below the level in 3D; IfcSlab; file format version 17
+- [x] Roofs: "Make roof" in Properties from a room's area or a drawn closed outline; flat, shed (rises from the outline's first edge), gable (from the longest edge and the edges parallel to it) and hip (from every edge); gable and hip need a convex outline, where the roof planes are its straight skeleton; pitch, thickness at right angles to the slope, overhang; sits on top of its level; roof planes drawn in the plan; IfcRoof
+- [x] Stairs: straight flight with the Stair tool (start point, direction); as many risers as the level height needs at the maximum riser, treads of the set depth; sides, riser lines and walking arrow in the plan, a stepped solid in 3D; IfcStair; file format version 18
+- [x] Multi-floor: the plan shows the active level alone, with the level below, or with all levels, the others in grey; the 3D view shows every level at its elevation; "Apply to level" gives a new storey height to the walls and stairs that still have the old one (one undo step)
 
 Limits of this slice:
-- Wall height is copied from the level when the wall is drawn; it does not follow later level edits, and no wall attaches to the level above.
+- Walls and stairs copy the storey height when drawn; "Apply to level" updates those that still have the old height, but a change of a parameter used in the height expression does not, and no wall attaches to the level above.
 - Ends join only within 0.001 mm of each other or of another wall's baseline; joins sharper than about 6 degrees get square ends.
 - 3D wall solids are separate per wall (join lines show as edges), not pickable above the floor, and get no section caps.
 - The plan shows the whole wall outline; there is no cut height yet.
@@ -164,13 +167,17 @@ Limits of this slice:
 - A floor made from a room is a copy of its outline: it does not follow later wall edits. Slab outline points are not editable one by one.
 - Room tags are drawn at a fixed screen size, show areas in the display unit squared, and are not exported to DXF/SVG; a room's new number is the highest numeric room number on the level plus one.
 
-Remaining:
-1. Roofs
-2. Stairs
-3. Multi-floor views: levels above and below, visibility
-4. IFC export: storeys, walls, openings, spaces, slabs, property sets from entity metadata
+- Roofs: gable and hip only on convex outlines (no straight skeleton for concave ones); the planes are separate solids in one body, joined without a union; walls are not trimmed to the roof; a roof made from a room starts at the inner wall faces unless the overhang adds the wall thickness; "Make roof" or "Make floor" from a drawn curve replaces the curve, so make the other one from a room or a new curve.
+- Stairs: straight flights only, no landings, turns, railings or opening in the slab above; the solid is filled down to the floor; a new height keeps the riser count.
+- Level views are 2D only and not exported; other levels are neither pickable nor snappable.
 
-## Phase 5: Mechanical CAD
+Deferred to later phases:
+- IFC export: storeys, walls, openings, spaces, slabs, roofs, stairs, property sets from entity metadata (the design above: classes from `cad_arch::ifc_class`, quantities from the solids, GlobalIds derived at export): Phase 7 (export formats)
+- Roofs on concave outlines (straight skeleton), dormers, roof openings, walls trimmed to the roof: Phase 7
+- Stairs with landings, turns or spirals, railings, the stair opening in the slab above: Phase 7
+- Plan cut height, walls attached to the level above, openings in slabs, dragging openings along their wall: Phase 7
+
+## Phase 5: Mechanical CAD (next)
 Parametric generators (gears, shafts, bearings, springs, fasteners, threads), assemblies, joints,
 collision and interference checks (parry), exploded views, bill of materials.
 

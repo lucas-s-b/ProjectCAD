@@ -334,3 +334,16 @@ fn openings_roundtrip() {
     std::fs::remove_file(&p).unwrap();
     assert_eq!(back.get(2), d.get(2));
 }
+
+#[test]
+fn levels_by_elevation() {
+    let mut d = doc_with_sketch_1();
+    for (id, offset) in [(2, "3000 mm"), (3, "0"), (4, "6000 mm")] {
+        d.apply(Command::AddSketch(level(id, offset))).unwrap();
+    }
+    assert_eq!(d.levels(), vec![(3, 0.0), (2, 3000.0), (4, 6000.0)]);
+    assert_eq!(d.level_below(2), Some(3));
+    assert_eq!(d.level_below(4), Some(2));
+    assert_eq!(d.level_below(3), None);
+    assert_eq!(d.level_below(1), None);
+}

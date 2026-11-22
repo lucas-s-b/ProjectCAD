@@ -32,7 +32,7 @@ pub struct RebuildResult {
     pub recomputed: usize,
     /// Planes of the sketches on faces, as this rebuild placed them.
     pub planes: SketchPlanes,
-    /// Wall and floor slab solids by entity id (`rebuild_walls`).
+    /// Wall, floor slab, roof and stair solids by entity id (`rebuild_walls`).
     pub walls: Vec<(EntityId, Arc<Body>)>,
     /// The enclosed area of each room whose seed lies in one, by room entity id (`rebuild_walls`).
     pub rooms: Vec<(EntityId, cad_arch::Region)>,

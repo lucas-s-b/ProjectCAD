@@ -1,13 +1,13 @@
 use crate::document::{Command, DocError, Document, Entity};
 use crate::feature::FeatureId;
-use cad_geometry::DVec3;
+use cad_geometry::{DVec3, Shape, Stair, Wall};
 use cad_modeler::Plane3;
 use cad_params::parse;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 pub type SketchId = u32;
-pub const FORMAT_VERSION: u32 = 17;
+pub const FORMAT_VERSION: u32 = 18;
 
 /// Axes (x, y, normal): XY = (X, Y, +Z); XZ = (X, Z, -Y); YZ = (Y, Z, +X).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -113,6 +113,49 @@ impl Document {
         let level = self.sketch(sketch).and_then(|s| s.level.as_ref()).ok_or("not a level")?;
         let h = crate::rebuild::eval(self, &level.height, false)?;
         if h > 0.0 { Ok(h) } else { Err("level height must be positive".into()) }
+    }
+
+    /// The levels whose plane resolves, with their elevation, lowest first (equal elevations by sketch id).
+    pub fn levels(&self) -> Vec<(SketchId, f64)> {
+        let mut out: Vec<(SketchId, f64)> = self
+            .sketches()
+            .filter(|s| s.level.is_some())
+            .filter_map(|s| Some((s.id, self.resolve_plane(s.id).ok()?.origin.z)))
+            .collect();
+        out.sort_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)));
+        out
+    }
+
+    /// The level right below `sketch` (the one before it in `levels`); None for the lowest level or a sketch that is
+    /// not a level.
+    pub fn level_below(&self, sketch: SketchId) -> Option<SketchId> {
+        let l = self.levels();
+        let i = l.iter().position(|x| x.0 == sketch)?;
+        i.checked_sub(1).map(|k| l[k].0)
+    }
+
+    /// Commands that store `s` (an edited level) and give its new height to the walls and stairs on it that still
+    /// have the old one (within 1e-6 mm); the others keep theirs. Only the `SetSketch` when either height does not
+    /// evaluate to a positive length or the height is unchanged.
+    pub fn level_change(&self, s: Sketch) -> Vec<Command> {
+        let old = self.level_height(s.id);
+        let new = s.level.as_ref().map(|l| crate::rebuild::eval(self, &l.height, false));
+        let id = s.id;
+        let mut cmds = vec![Command::SetSketch(s)];
+        if let (Ok(old), Some(Ok(new))) = (old, new)
+            && new > 0.0
+            && (new - old).abs() > 1e-6
+        {
+            for x in self.entities_in(id) {
+                let shape = match &x.shape {
+                    Shape::Wall(w) if (w.height - old).abs() <= 1e-6 => Shape::Wall(Wall { height: new, ..*w }),
+                    Shape::Stair(st) if (st.height - old).abs() <= 1e-6 => Shape::Stair(Stair { height: new, ..*st }),
+                    _ => continue,
+                };
+                cmds.push(Command::SetShape { id: x.id, shape });
+            }
+        }
+        cmds
     }
 
     pub fn sketches(&self) -> impl Iterator<Item = &Sketch> {

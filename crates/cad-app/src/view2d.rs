@@ -40,6 +40,7 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     painter.rect_filled(rect, 0.0, Color32::from_gray(24));
     draw_grid(app, &painter, rect);
     draw_reference(app, &painter, rect);
+    crate::view2d_walls::draw_others(app, &painter, rect);
     crate::view2d_walls::draw(app, &painter, rect);
     crate::view2d_walls::draw_rooms(app, &painter, rect);
     for e in app.doc.entities_in(app.sketch).filter(|e| app.visible(e)) {
