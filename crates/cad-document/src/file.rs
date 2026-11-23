@@ -97,6 +97,7 @@ impl Document {
             doc.next_joint_id = doc.next_joint_id.max(max.saturating_add(1));
         }
         doc.next_joint_id = doc.next_joint_id.max(1);
+        doc.studies.iter().try_for_each(crate::study::Study::check)?;
         for (dim, (p, q)) in &doc.dim_links {
             if let Some(missing) = [dim, &p.entity, &q.entity].into_iter().find(|e| !doc.entities.contains_key(e)) {
                 return Err(DocError::NotFound(*missing));

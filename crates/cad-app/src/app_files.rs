@@ -20,6 +20,10 @@ impl CadApp {
         self.check = None;
         self.motion = None;
         self.fea_mesh = None;
+        self.fea_study = None;
+        self.study_edit = None;
+        self.study_sel = 0;
+        self.study_face = None;
         self.joint_drag = None;
         self.motion_play = false;
         self.reset_model();

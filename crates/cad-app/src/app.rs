@@ -268,6 +268,22 @@ pub struct CadApp {
     /// Draw the analysis mesh in 3D, as boundary faces with edges or as shrunken elements.
     pub show_mesh: bool,
     pub mesh_shrink: bool,
+    /// Static studies (Model tab): the selected study (index into `Document::studies`), the study being edited and
+    /// the revision and index it was copied at (text fields commit when they lose focus, like `joint_edit`).
+    pub study_sel: usize,
+    pub study_edit: Option<(u64, usize, cad_document::Study)>,
+    /// The face index chosen for a support or load, and the 3D face selection last copied into it.
+    pub study_face: Option<u32>,
+    pub study_face_seen: Option<(FeatureId, u32)>,
+    /// Load values typed before "Add force" (N) and "Add pressure" (MPa).
+    pub study_force: [String; 3],
+    pub study_pressure: String,
+    /// The last study run and the document revision it ran on (see `study_result`).
+    pub fea_study: Option<(u64, Result<cad_document::StudyReport, String>)>,
+    /// Draw the result in 3D, coloured by displacement instead of von Mises, deformed by `study_scale` (0: undeformed).
+    pub show_study: bool,
+    pub study_by_displacement: bool,
+    pub study_scale: f64,
     /// Motion study inputs (Assembly tab) and whether "Run study" also checks collisions.
     pub motion_study: cad_document::MotionStudy,
     pub motion_check: bool,
@@ -407,6 +423,16 @@ impl CadApp {
             fea_mesh: None,
             show_mesh: true,
             mesh_shrink: false,
+            study_sel: 0,
+            study_edit: None,
+            study_face: None,
+            study_face_seen: None,
+            study_force: ["0".into(), "0".into(), "-100".into()],
+            study_pressure: "1".into(),
+            fea_study: None,
+            show_study: true,
+            study_by_displacement: false,
+            study_scale: 1.0,
             motion_study: Default::default(),
             motion_check: false,
             motion: None,
@@ -499,6 +525,11 @@ impl CadApp {
     /// The last analysis mesh while the document is unchanged since it ran; any edit, undo or redo drops it.
     pub fn mesh_result(&self) -> Option<&crate::mesh_panel::MeshRun> {
         self.fea_mesh.as_ref().filter(|(rev, _)| *rev == self.doc.revision()).map(|(_, m)| m)
+    }
+
+    /// The last study run while the document is unchanged since it ran; any edit, undo or redo drops it.
+    pub fn study_result(&self) -> Option<&Result<cad_document::StudyReport, String>> {
+        self.fea_study.as_ref().filter(|(rev, _)| *rev == self.doc.revision()).map(|(_, r)| r)
     }
 
     /// The explode factor in effect: 0 while the exploded view is off.

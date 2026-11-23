@@ -16,7 +16,7 @@ pub use fastener::{Bolt, METRIC, Metric, Nut, THREAD_CLEARANCE, THREAD_SEGMENTS,
 pub use gear::{FLANK_SEGMENTS, Gear};
 pub use interference::{CONTACT_GAP, CONTACT_VOLUME, Check, Clearance, Meeting, Overlap, check, clearance, overlap};
 pub use joint::{face_frame, frame, mate};
-pub use material::{MATERIALS, density};
+pub use material::{MATERIALS, Material, density, material};
 pub use part::Part;
 pub use shaft::Shaft;
 pub use spring::{SEGMENTS_PER_TURN, Spring, WIRE_SIDES};
