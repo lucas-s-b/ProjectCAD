@@ -30,3 +30,8 @@ fn solved_and_validated_labels() {
     assert_eq!(Accuracy::Approximate(SOLVED).to_string(), "approximate (loop closed to 1e-9 mm)");
     assert_eq!(Accuracy::Validated(crate::FOUR_BAR).to_string(), "validated against four-bar position analysis");
 }
+
+#[test]
+fn meshed_label() {
+    assert_eq!(Accuracy::Approximate(crate::MESHED).to_string(), "approximate (mesh)");
+}

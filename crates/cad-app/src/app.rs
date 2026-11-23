@@ -260,6 +260,14 @@ pub struct CadApp {
     pub show_com: bool,
     /// The last interference check and the document revision it ran on (see `check_result`).
     pub check: Option<(u64, Check)>,
+    /// Element size of the analysis mesh (a length expression) and the body to mesh (Model tab).
+    pub mesh_size: String,
+    pub mesh_body: FeatureId,
+    /// The last analysis mesh and the document revision it ran on (see `mesh_result`).
+    pub fea_mesh: Option<(u64, crate::mesh_panel::MeshRun)>,
+    /// Draw the analysis mesh in 3D, as boundary faces with edges or as shrunken elements.
+    pub show_mesh: bool,
+    pub mesh_shrink: bool,
     /// Motion study inputs (Assembly tab) and whether "Run study" also checks collisions.
     pub motion_study: cad_document::MotionStudy,
     pub motion_check: bool,
@@ -394,6 +402,11 @@ impl CadApp {
             mass: None,
             show_com: false,
             check: None,
+            mesh_size: "5 mm".into(),
+            mesh_body: 0,
+            fea_mesh: None,
+            show_mesh: true,
+            mesh_shrink: false,
             motion_study: Default::default(),
             motion_check: false,
             motion: None,
@@ -481,6 +494,11 @@ impl CadApp {
     /// The last motion study while the document is unchanged since it ran; any edit, undo or redo drops it.
     pub fn motion_result(&self) -> Option<&crate::motion_panel::StudyRun> {
         self.motion.as_ref().filter(|(rev, _)| *rev == self.doc.revision()).map(|(_, m)| m)
+    }
+
+    /// The last analysis mesh while the document is unchanged since it ran; any edit, undo or redo drops it.
+    pub fn mesh_result(&self) -> Option<&crate::mesh_panel::MeshRun> {
+        self.fea_mesh.as_ref().filter(|(rev, _)| *rev == self.doc.revision()).map(|(_, m)| m)
     }
 
     /// The explode factor in effect: 0 while the exploded view is off.

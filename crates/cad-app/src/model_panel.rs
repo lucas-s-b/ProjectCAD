@@ -14,6 +14,7 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     ui.separator();
     body(app, ui);
     crate::mass_panel::bodies(app, ui);
+    crate::mesh_panel::show(app, ui);
     ui.separator();
     crate::model_section::controls(app, ui);
     crate::model_sketches::show(app, ui);

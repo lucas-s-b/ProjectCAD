@@ -10,7 +10,7 @@ pub(crate) fn box_mesh(lo: DVec3, hi: DVec3) -> TriMesh {
 }
 
 /// Both meshes in one (disjoint solids).
-fn join(a: &TriMesh, b: &TriMesh) -> TriMesh {
+pub(crate) fn join(a: &TriMesh, b: &TriMesh) -> TriMesh {
     let n = a.positions.len() as u32;
     TriMesh {
         positions: a.positions.iter().chain(&b.positions).copied().collect(),

@@ -1,5 +1,5 @@
 use crate::app::{CadApp, PickFace};
-use cad_document::{ComponentId, EntityId, Overlap};
+use cad_document::{ComponentId, EntityId, Overlap, TET_FACES};
 use cad_geometry::{DAffine3, DVec2, DVec3, distance_2d, outline, ray_hit, tessellate};
 use cad_renderer::{SceneRenderer, Vertex};
 use eframe::egui::{self, PointerButton};
@@ -145,6 +145,7 @@ fn build_scene(app: &CadApp) -> Geometry {
     let offsets = app.doc.explode_offsets(app.explode_factor());
     // The motion study's shown sample; display only (picking stays on the assembled pose).
     let moves = crate::motion_panel::shown_moves(app);
+    let mesh = crate::mesh_panel::shown(app);
     let collision = crate::motion_panel::shown_collision(app);
     // The last check, drawn with the assembled placements, so only while not exploded and no motion study is shown.
     let check = app.check_result().filter(|_| app.explode_factor() == 0.0 && moves.is_none());
@@ -159,12 +160,13 @@ fn build_scene(app: &CadApp) -> Geometry {
     let shown = app.shown_bodies().map(|(id, b)| (Some(*id), None, b));
     let placed = app.placed_components().map(|(c, b)| (None, Some(c), b));
     for (id, comp, body) in shown.chain(placed) {
+        let meshed = id.is_some() && mesh.is_some_and(|m| Some(m.body) == id);
         let selected = comp.is_some() && comp == app.component_sel;
         let shift = if selected { moving } else { DVec3::ZERO } + comp.and_then(|c| offsets.get(&c)).copied().unwrap_or(DVec3::ZERO);
         let turn = comp.and_then(|c| moves.and_then(|m| m.get(&c))).copied().unwrap_or(DAffine3::IDENTITY);
         let at = |p: DVec3| turn.transform_point3(p) + shift;
         let (mesh, grey) = (&body.mesh, [0.72, 0.75, 0.80]);
-        if !comp.is_some_and(|c| wire.contains(&c)) {
+        if !comp.is_some_and(|c| wire.contains(&c)) && !meshed {
             for (corner, (&i, n)) in mesh.indices.iter().zip(&mesh.normals).enumerate() {
                 let face = id.is_some_and(|id| app.face_sel == Some((id, body.tri_face[corner / 3])));
                 let picked = selected && app.component_face.is_some_and(|(c, f)| Some(c) == comp && f == body.tri_face[corner / 3]);
@@ -200,6 +202,38 @@ fn build_scene(app: &CadApp) -> Geometry {
                 let m = (lo + hi) / 2.0;
                 lines.push(vertex(m, [0.0; 3], TRAIL));
                 lines.push(vertex(m + off, [0.0; 3], TRAIL));
+            }
+        }
+    }
+    // The analysis mesh in body coordinates: its boundary faces with their edges, or every element shrunk to 80 %
+    // about its centroid (the inside shows, and the section plane cuts through it).
+    if let Some(rep) = mesh {
+        const MESH_FACE: [f32; 3] = [0.62, 0.78, 0.92];
+        const MESH_EDGE: [f32; 3] = [0.10, 0.25, 0.55];
+        let m = &rep.mesh;
+        let mut face = |p: [DVec3; 3]| {
+            let n = (p[1] - p[0]).cross(p[2] - p[0]).normalize_or_zero().as_vec3().to_array();
+            for q in p {
+                tris.push(vertex(q, n, MESH_FACE));
+            }
+        };
+        if app.mesh_shrink {
+            for k in 0..m.elements.len() {
+                let c = m.corners_of(k);
+                let mid = (c[0] + c[1] + c[2] + c[3]) / 4.0;
+                let c = c.map(|p| mid + (p - mid) * 0.8);
+                for f in TET_FACES {
+                    face(f.map(|q| c[q]));
+                }
+            }
+        } else {
+            for t in m.boundary() {
+                let p = t.map(|v| m.nodes[v as usize]);
+                face(p);
+                for q in 0..3 {
+                    lines.push(vertex(p[q], [0.0; 3], MESH_EDGE));
+                    lines.push(vertex(p[(q + 1) % 3], [0.0; 3], MESH_EDGE));
+                }
             }
         }
     }

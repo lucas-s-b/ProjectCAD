@@ -13,6 +13,10 @@ pub const SAMPLED: &str = "sampled at the steps";
 /// stops when every loop-closure residual is within 1e-9 mm, or 1e-9 for axis directions).
 pub const SOLVED: &str = "loop closed to 1e-9 mm";
 
+/// Reason of `Accuracy::Approximate` for results on a tetrahedral mesh: its boundary only approaches the surface
+/// (nodes snapped to it, sharp edges off the grid rounded off).
+pub const MESHED: &str = "mesh";
+
 /// The label of an analysis result. Nothing is ever presented as certified: results are exact (the computation is
 /// exact for the geometry, e.g. mass properties of a body with only planar faces), approximate (with the reason), or
 /// validated against a named analytic benchmark case.

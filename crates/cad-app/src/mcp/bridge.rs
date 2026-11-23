@@ -398,6 +398,17 @@ fn insert_model(app: &CadApp, m: &mut serde_json::Map<String, Value>) {
         json!({ "meetings": meetings, "clearances": clearances })
     });
     m.insert("check".into(), json!(check));
+    // The last analysis mesh: numbers in mm, mm³, degrees; `volume_error` is a fraction; only `error` when it failed.
+    let fea_mesh = app.mesh_result().map(|run| match &run.result {
+        Ok(rep) => json!({
+            "accuracy": rep.accuracy.to_string(), "body": rep.body, "body_volume": rep.body_volume, "elements": rep.stats.elements,
+            "error": Value::Null, "h": rep.h, "inverted": rep.stats.inverted, "mesh_ms": run.ms, "min_dihedral": rep.stats.min_dihedral,
+            "min_ratio": rep.stats.min_ratio, "nodes": rep.stats.nodes, "unsnapped": rep.mesh.unsnapped, "volume": rep.stats.volume,
+            "volume_error": rep.volume_error(),
+        }),
+        Err(err) => json!({ "error": err }),
+    });
+    m.insert("fea_mesh".into(), json!(fea_mesh));
     // Values in degrees (revolute) or mm; `point` and `value` belong to the shown sample `step`.
     let motion = app.motion_result().map(|run| {
         let mo = &run.motion;
