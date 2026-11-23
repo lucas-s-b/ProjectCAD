@@ -152,7 +152,10 @@ pub struct Document {
     pub(crate) revision: u64,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+/// One reversible document edit. Its serde JSON (externally tagged: `{"Remove":3}`, `{"SetParam":{"name":"w","expr":"5 mm"}}`,
+/// tuple variants as arrays: `{"AddConstraint":[4,{…}]}`) is the schema of MCP `apply_commands`. The payloads are the
+/// project file's types, so the schema changes with `FORMAT_VERSION`. Commands are never stored in the project file.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Command {
     Add(Entity),
     Remove(EntityId),
@@ -201,6 +204,20 @@ pub enum Command {
     SetExplode(Vec<ExplodeStep>),
     /// Replaces the whole list of static studies.
     SetStudies(Vec<crate::study::Study>),
+}
+
+/// The ids the document hands out next, per kind (ids below them may be taken). A plugin numbers its new objects from
+/// these (MCP `apply_commands`). The counters never go down, not even on undo, so an id is never handed out twice.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NextIds {
+    pub component: ComponentId,
+    pub constraint: ConstraintId,
+    pub entity: EntityId,
+    pub feature: FeatureId,
+    pub group: u32,
+    pub joint: JointId,
+    pub layer: LayerId,
+    pub sketch: SketchId,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -365,6 +382,20 @@ impl Document {
         let id = self.next_id;
         self.next_id += 1;
         id
+    }
+
+    /// The next free id of every kind.
+    pub fn next_ids(&self) -> NextIds {
+        NextIds {
+            component: self.next_component_id,
+            constraint: self.next_constraint_id,
+            entity: self.next_id,
+            feature: self.next_feature_id,
+            group: self.next_group_id,
+            joint: self.next_joint_id,
+            layer: self.next_layer_id,
+            sketch: self.next_sketch_id,
+        }
     }
 
     /// Validates first, so a failed apply changes nothing. Returns the inverse command.

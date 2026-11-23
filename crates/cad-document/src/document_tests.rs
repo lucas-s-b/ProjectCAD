@@ -135,3 +135,35 @@ fn line_weight_is_validated() {
     d.apply(Command::SetLayer(l.clone())).unwrap();
     assert_eq!(d.layer(1), Some(&l));
 }
+
+#[test]
+fn commands_as_json() {
+    assert_eq!(serde_json::to_string(&Command::Remove(3)).unwrap(), r#"{"Remove":3}"#);
+    let set = Command::SetParam { name: "w".into(), expr: Some("5 mm".into()) };
+    assert_eq!(serde_json::to_string(&set).unwrap(), r#"{"SetParam":{"name":"w","expr":"5 mm"}}"#);
+    let add = Command::Add(Entity { id: 7, name: "c".into(), shape: Shape::Circle { center: DVec2::new(1.0, 2.0), radius: 3.0 }, layer: 0, sketch: 0, construction: false, group: None, meta: Default::default() });
+    for c in [add, Command::RestoreGroups(vec![(1, None), (2, Some(4))])] {
+        let s = serde_json::to_string(&c).unwrap();
+        let back: Command = serde_json::from_str(&s).unwrap();
+        assert_eq!(serde_json::to_string(&back).unwrap(), s);
+    }
+    let c = serde_json::from_str::<Command>(r#"{"Add":{"id":5,"name":"c","shape":{"Circle":{"center":[0,0],"radius":2}}}}"#);
+    assert!(matches!(c, Ok(Command::Add(Entity { id: 5, layer: 0, sketch: 0, construction: false, .. }))));
+    assert!(serde_json::from_str::<Command>(r#"{"Explode":1}"#).is_err());
+    let err = serde_json::from_str::<Command>(r#"{"Add":{"id":5}}"#).unwrap_err();
+    assert!(err.to_string().contains("missing field"), "{err}");
+}
+
+#[test]
+fn next_ids_follow_added_objects() {
+    use crate::history::History;
+    let mut d = Document::new("t");
+    let n = d.next_ids();
+    assert_eq!((n.component, n.constraint, n.entity, n.feature, n.group, n.joint, n.layer, n.sketch), (1, 1, 1, 1, 1, 1, 1, 1));
+    let mut h = History::default();
+    h.execute(&mut d, vec![Command::Add(entity(7, 1.0))]).unwrap();
+    let n = d.next_ids();
+    assert_eq!((n.entity, n.component, n.feature), (8, 1, 1));
+    h.undo(&mut d);
+    assert_eq!(d.next_ids().entity, 8);
+}

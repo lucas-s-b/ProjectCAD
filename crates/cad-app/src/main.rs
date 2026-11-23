@@ -36,6 +36,7 @@ mod model_sweep;
 mod model_panel;
 mod palette;
 mod panels;
+mod plugins;
 mod rebuild_worker;
 mod scene_mesh;
 mod settings;

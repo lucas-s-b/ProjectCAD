@@ -15,7 +15,7 @@ pub fn definitions() -> Value {
     let (shift, ctrl) = (json!({"type": "boolean", "default": false}), json!({"type": "boolean", "default": false}));
     json!([
         tool("screenshot", "PNG of the application window. Pixel coordinates of this image are the coordinates used by click, drag and scroll.", json!({}), &[]),
-        tool("state", "JSON: active tool, view, status text, dirty flag, selection, current layer, 2D camera and viewport rectangle (pixels), window size, and the whole document (entities, layers), components, the bill of materials, mass properties of the bodies, components and assembly (mm, g, g·mm², with accuracy labels), the last motion study (joint values, traced point, first collision, with accuracy labels), joints with their loop flags and solved values (deg or mm, approximate (loop closed to 1e-9 mm)), the exploded view, the last interference check, the last analysis mesh (nodes, elements, quality, volume error, approximate (mesh)), the last static study (max displacement and von Mises with their nodes, reactions, out of balance, approximate (FEA, linear elastic, mesh h=…)), the safety factor (yield strength / max von Mises), the last validation report (benchmark rows with reference, result, error, tolerance and label), the timing of the last 3D scene build (perf: scene_ms, scene_vertices, instances, meshes) and the longest frame since the last state read (perf.frame_ms), analysis jobs (jobs: running, finished, cancelled; replies wait while a job runs), the gizmo (gizmo: origin and X, Y, Z arrow tips; gizmo_rings: the 45 and 135 degree points of the X, Y and Z rings; gizmo_joint: kind and points of a jointed component's handle; pixels), the app settings (settings: theme, accent, panel layout), the command search (palette: query and best matches; null when closed), the feature dependency graph and recompute count of the last rebuild.", json!({}), &[]),
+        tool("state", "JSON: active tool, view, status text, dirty flag, selection, current layer, 2D camera and viewport rectangle (pixels), window size, and the whole document (entities, layers), components, the bill of materials, mass properties of the bodies, components and assembly (mm, g, g·mm², with accuracy labels), the last motion study (joint values, traced point, first collision, with accuracy labels), joints with their loop flags and solved values (deg or mm, approximate (loop closed to 1e-9 mm)), the exploded view, the last interference check, the last analysis mesh (nodes, elements, quality, volume error, approximate (mesh)), the last static study (max displacement and von Mises with their nodes, reactions, out of balance, approximate (FEA, linear elastic, mesh h=…)), the safety factor (yield strength / max von Mises), the last validation report (benchmark rows with reference, result, error, tolerance and label), the timing of the last 3D scene build (perf: scene_ms, scene_vertices, instances, meshes) and the longest frame since the last state read (perf.frame_ms), analysis jobs (jobs: running, finished, cancelled; replies wait while a job runs), the gizmo (gizmo: origin and X, Y, Z arrow tips; gizmo_rings: the 45 and 135 degree points of the X, Y and Z rings; gizmo_joint: kind and points of a jointed component's handle; pixels), the app settings (settings: theme, accent, panel layout), the command search (palette: query and best matches; null when closed), plugins (plugins: available names, manifest errors, the running one), the feature dependency graph and recompute count of the last rebuild.", json!({}), &[]),
         tool("click", "Click. With world=true, x and y are millimetres in the 2D view instead of pixels.",
             json!({"x": num, "y": num, "button": button, "world": world, "shift": shift, "ctrl": ctrl}), &["x", "y"]),
         tool("drag", "Press at the first point, move, release at the second.",
@@ -37,7 +37,31 @@ pub fn definitions() -> Value {
             json!({"name": {"type": "string"}, "index": {"type": "integer", "minimum": 0, "default": 0}, "shift": shift, "ctrl": ctrl}), &["name"]),
         tool("set_text", "Click a text field or drag value by name, select all, type the text and press Enter.",
             json!({"name": {"type": "string"}, "index": {"type": "integer", "minimum": 0, "default": 0}, "text": {"type": "string"}}), &["name", "text"]),
+        tool("apply_commands", "Apply document commands in order as one undo step; any error rolls all of them back and changes nothing. Each command is the serde JSON of cad_document::Command, externally tagged (e.g. {\"Remove\":3}, {\"Add\":{\"id\":5,\"name\":\"c\",\"shape\":{\"Circle\":{\"center\":[0,0],\"radius\":2}}}}); the schema follows the project file format version. Commands carry their own ids: an empty list changes nothing and replies the next free ids. Reply: applied (count), features (feature count: AddFeature with this index appends), format_version, next (next free id per kind) and undo (the inverse commands of the step). At most 10000 commands.",
+            json!({"commands": {"type": "array", "items": {"type": "object"}, "maxItems": MAX_COMMANDS}}), &["commands"]),
     ])
+}
+
+/// Most commands one `apply_commands` call takes.
+pub const MAX_COMMANDS: usize = 10_000;
+
+/// The tools a plugin started from the Plugins menu may call: the document tools. Input tools would fight the user's
+/// own mouse and keyboard in the same window; new, open, import and save would skip the unsaved-changes dialog.
+pub fn plugin_allowed(name: &str) -> bool {
+    matches!(name, "state" | "screenshot" | "widgets" | "apply_commands" | "export_project" | "export_motion")
+}
+
+/// The `commands` of `apply_commands`, strictly: no other argument, an array of at most `MAX_COMMANDS`, each one a
+/// `Command` ("command <i>: <reason>" for the first that is not).
+fn commands(args: &Value) -> Result<Vec<cad_document::Command>, String> {
+    if let Some(k) = args.as_object().and_then(|o| o.keys().find(|k| k.as_str() != "commands")) {
+        return Err(format!("unknown argument '{k}'"));
+    }
+    let list = args.get("commands").and_then(Value::as_array).ok_or("missing or non-array argument 'commands'")?;
+    if list.len() > MAX_COMMANDS {
+        return Err(format!("at most {MAX_COMMANDS} commands per call, got {}", list.len()));
+    }
+    list.iter().enumerate().map(|(i, c)| serde_json::from_value(c.clone()).map_err(|err| format!("command {i}: {err}"))).collect()
 }
 
 fn number(args: &Value, k: &str) -> Result<f32, String> {
@@ -123,6 +147,7 @@ pub fn parse(name: &str, args: &Value) -> Result<Request, String> {
         }),
         "export_project" => Request::Export(string(args, "path")?.into()),
         "export_motion" => Request::ExportMotion(string(args, "path")?.into()),
+        "apply_commands" => Request::Apply(commands(args)?),
         _ => return Err(format!("unknown tool '{name}'")),
     })
 }
@@ -162,6 +187,30 @@ mod tests {
         assert!(parse("key", &json!({"key": "NoSuchKey"})).unwrap_err().contains("unknown key"));
         assert!(parse("fly", &json!({})).unwrap_err().contains("unknown tool"));
         assert!(parse("click", &json!({"x": 1, "y": 1, "button": "left"})).is_err());
+    }
+
+    #[test]
+    fn apply_commands_parse_strictly() {
+        use cad_document::Command;
+        let Ok(Request::Apply(v)) = parse("apply_commands", &json!({"commands": [{"Remove": 3}]})) else { panic!("not apply") };
+        assert!(v.len() == 1 && matches!(v[0], Command::Remove(3)));
+        assert!(matches!(parse("apply_commands", &json!({"commands": []})), Ok(Request::Apply(v)) if v.is_empty()));
+        let err = parse("apply_commands", &json!({"commands": [{"Remove": 1}, {"Explode": 1}]})).unwrap_err();
+        assert!(err.starts_with("command 1:") && err.contains("unknown variant"), "{err}");
+        assert_eq!(parse("apply_commands", &json!({})).unwrap_err(), "missing or non-array argument 'commands'");
+        assert_eq!(parse("apply_commands", &json!({"commands": [], "undo": true})).unwrap_err(), "unknown argument 'undo'");
+        let many = vec![json!({"Remove": 1}); 10_001];
+        assert!(parse("apply_commands", &json!({"commands": many})).unwrap_err().contains("at most 10000"));
+    }
+
+    #[test]
+    fn plugin_tools_are_document_tools() {
+        for n in ["state", "screenshot", "widgets", "apply_commands", "export_project", "export_motion"] {
+            assert!(plugin_allowed(n), "{n}");
+        }
+        for n in ["click", "drag", "scroll", "key", "type_text", "click_widget", "set_text", "new_project", "open_project", "import_project", "save_project"] {
+            assert!(!plugin_allowed(n), "{n}");
+        }
     }
 
     #[test]

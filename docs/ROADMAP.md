@@ -294,8 +294,18 @@ Limits of batch D:
 - Command search finds only widgets drawn on screen (no menu items); results are ranked by a greedy fuzzy match.
 - The rotate gizmo turns components only (not solid entities); a ring seen edge-on does not turn; slider drags do not snap.
 
+Done (batch E; unit-tested; checked in the running app through MCP):
+- [x] MCP tool `apply_commands`: document commands as JSON (the serde form of `Command`, versioned by the project file format), applied as one undo step, all or nothing; replies the next free ids and the inverse step
+- [x] Plugins menu: programs listed in `plugins/<file>.json` beside the settings file, started on click as child processes speaking MCP over stdin/stdout (document tools only); "Stop plugin", "Reload plugins"
+- [x] Crate `cad-plugin-api`: typed Rust client (start the app headless or talk to it from the Plugins menu), one method per tool, typed errors; example plugin `bolt_circle`
+- [x] Plugin developer guide: docs/PLUGINS.md
+
+Limits of batch E:
+- Plugins run with the user's rights, without a sandbox; only a click in the Plugins menu starts one, never a project file.
+- One plugin at a time; its arguments are fixed in its manifest (no parameter dialog); menu-started plugins cannot click, type, open or save.
+- A plugin built for another project file format version is refused (rebuild it after a format change).
+
 Remaining:
-- E: plugin API (out-of-process plugins over the MCP protocol, `cad-plugin-api`)
 - F: user guide, README, release v0.2.0 (the tag push is left to the user)
 
 Won't do in this project:

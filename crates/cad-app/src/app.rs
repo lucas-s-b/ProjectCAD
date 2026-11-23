@@ -372,6 +372,14 @@ pub struct CadApp {
     pub theme_applied: Option<(crate::settings::Theme, [u8; 3])>,
     /// Bumped by "Reset layout" so egui forgets the slots' dragged sizes (part of the panel ids).
     pub layout_gen: u32,
+    /// The plugins folder (`plugins` beside the settings file); None without a settings file.
+    pub plugins_dir: Option<std::path::PathBuf>,
+    /// Plugin manifests read at startup or by "Reload plugins", sorted by name.
+    pub plugins: Vec<crate::plugins::Manifest>,
+    /// Manifest files that could not be used, "plugins/<file>: <reason>".
+    pub plugin_errors: Vec<String>,
+    /// The plugin started from the Plugins menu while it runs (one at a time).
+    pub plugin: Option<crate::plugins::Running>,
     /// The open command search (Ctrl+K), see `palette.rs`.
     pub palette: Option<crate::palette::Palette>,
     /// The chosen search result being clicked, one step per frame.
@@ -389,6 +397,8 @@ impl CadApp {
             Some(Err(err)) => (crate::settings::Settings::default(), Some(err)),
             None => (crate::settings::Settings::default(), None),
         };
+        let plugins_dir = crate::plugins::dir(settings_path.as_deref());
+        let (plugins, plugin_errors) = plugins_dir.as_deref().map(crate::plugins::scan).unwrap_or_default();
         Self {
             doc: Document::new("Untitled"),
             history: History::default(),
@@ -530,6 +540,10 @@ impl CadApp {
             settings_path,
             theme_applied: None,
             layout_gen: 0,
+            plugins_dir,
+            plugins,
+            plugin_errors,
+            plugin: None,
             palette: None,
             palette_click: None,
             mcp: mcp.then(|| mcp::spawn(cc.egui_ctx.clone())),
@@ -656,6 +670,15 @@ impl CadApp {
             self.status = e.to_string();
         }
         self.sanitize();
+    }
+
+    /// Like `exec`, but hands the error back instead of showing it in the status line (MCP `apply_commands`).
+    pub fn try_exec(&mut self, cmds: Vec<Command>) -> Result<(), cad_document::DocError> {
+        self.inspector = None;
+        self.status.clear();
+        let r = self.history.execute(&mut self.doc, cmds);
+        self.sanitize();
+        r
     }
 
     /// Like `exec`, but the solve afterwards keeps the pinned entities where the commands put them.
@@ -809,6 +832,17 @@ impl eframe::App for CadApp {
         if let Some(mut b) = self.mcp.take() {
             b.poll(self, &ctx);
             self.mcp = Some(b);
+        }
+        if let Some(mut p) = self.plugin.take() {
+            p.bridge.poll(self, &ctx);
+            match p.finished() {
+                Some(msg) => self.status = msg,
+                None => {
+                    // Keep frames coming so the plugin's requests and its exit are seen.
+                    ctx.request_repaint_after(std::time::Duration::from_millis(100));
+                    self.plugin = Some(p);
+                }
+            }
         }
         if ctx.input(|i| i.viewport().close_requested()) && self.is_dirty() && !self.allow_close {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);

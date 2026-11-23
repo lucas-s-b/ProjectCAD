@@ -349,6 +349,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "cad-plugin-api"
+version = "0.1.0"
+dependencies = [
+ "cad-document",
+ "cad-geometry",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "cad-renderer"
 version = "0.1.0"
 dependencies = [

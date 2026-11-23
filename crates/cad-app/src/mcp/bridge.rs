@@ -39,11 +39,14 @@ pub struct Bridge {
     held: Option<Job>,
     /// Frames still to draw before the first job; named widgets exist only after a drawn frame.
     warmup: u8,
+    /// Hold `state`, `screenshot` and export replies while a plugin runs, so an MCP script reads the plugin's result.
+    /// False for a plugin's own bridge, which would wait for itself.
+    waits_for_plugin: bool,
 }
 
 impl Bridge {
-    pub fn new(rx: Receiver<Job>) -> Self {
-        Self { rx, frames: VecDeque::new(), mods: Modifiers::NONE, pending: None, scrolling: None, held: None, warmup: WARMUP_FRAMES }
+    pub fn new(rx: Receiver<Job>, waits_for_plugin: bool) -> Self {
+        Self { rx, frames: VecDeque::new(), mods: Modifiers::NONE, pending: None, scrolling: None, held: None, warmup: WARMUP_FRAMES, waits_for_plugin }
     }
 
     pub fn feed(&mut self, raw: &mut egui::RawInput) {
@@ -99,7 +102,9 @@ impl Bridge {
             return;
         }
         let Some((req, tx)) = self.held.take().or_else(|| self.rx.try_recv().ok()) else { return };
-        if matches!(req, Request::State | Request::Screenshot | Request::Export(_) | Request::ExportMotion(_)) && !app.idle() {
+        if matches!(req, Request::State | Request::Screenshot | Request::Export(_) | Request::ExportMotion(_))
+            && (!app.idle() || (self.waits_for_plugin && app.plugin.is_some()))
+        {
             self.held = Some((req, tx));
             ctx.request_repaint();
             return;
@@ -153,6 +158,11 @@ impl Bridge {
             }
             Request::ExportMotion(p) => {
                 let r = app.export_motion(p).map(|()| Reply { text: summary(app).to_string(), png: None });
+                let _ = tx.send(r);
+            }
+            Request::Apply(cmds) => {
+                let n = cmds.len();
+                let r = app.try_exec(cmds).map(|()| Reply { text: applied_json(app, n).to_string(), png: None }).map_err(|err| err.to_string());
                 let _ = tx.send(r);
             }
             input => match self.queue(input, app, ctx) {
@@ -308,6 +318,13 @@ fn summary_fields(app: &CadApp) -> serde_json::Map<String, Value> {
 
 fn summary(app: &CadApp) -> Value {
     Value::Object(summary_fields(app))
+}
+
+/// The reply of `apply_commands` after `n` commands: count, feature count, command format version, next free ids and the
+/// inverse step (empty for an empty list, which pushes no undo step).
+fn applied_json(app: &CadApp, n: usize) -> Value {
+    let undo = if n == 0 { &[][..] } else { app.history.last_undo().unwrap_or_default() };
+    json!({"applied": n, "features": app.doc.features().len(), "format_version": cad_document::FORMAT_VERSION, "next": app.doc.next_ids(), "undo": undo})
 }
 
 fn insert_model(app: &CadApp, m: &mut serde_json::Map<String, Value>) {
@@ -520,6 +537,7 @@ fn state_json(app: &CadApp, ctx: &egui::Context) -> Value {
     m.insert("gizmo_joint".into(), json!(app.gizmo_joint.as_ref().map(|(kind, start, pts)| match kind { JointKind::Slider => json!({ "kind": "Slider", "points": [px(*start), px(pts[0])] }), _ => json!({ "kind": "Revolute", "points": [px(*start), px(pts[6]), px(pts[18])] }) })));
     m.insert("settings".into(), serde_json::to_value(&app.settings).unwrap_or_default());
     m.insert("palette".into(), json!(app.palette.as_ref().map(|p| json!({ "matches": crate::palette::ranked(&p.query, &p.items, crate::palette::SHOWN).iter().map(|(n, _)| n).collect::<Vec<_>>(), "query": p.query }))));
+    m.insert("plugins".into(), json!({"available": app.plugins.iter().map(|p| &p.name).collect::<Vec<_>>(), "errors": app.plugin_errors, "running": app.plugin.as_ref().map(|p| &p.name)}));
     m.insert("section_cap_area".into(), json!(cap_area));
     let p = app.perf;
     m.insert("perf".into(), json!({ "frame_ms": p.frame_ms, "instances": p.instances, "meshes": p.meshes, "scene_ms": p.scene_ms, "scene_vertices": p.scene_vertices }));

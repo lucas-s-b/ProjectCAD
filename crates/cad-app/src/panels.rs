@@ -213,6 +213,30 @@ pub fn menu_bar(app: &mut CadApp, ui: &mut egui::Ui) {
                     app.layout_gen += 1;
                 }
             });
+            w::menu_button(ui, "Plugins", |ui| {
+                for m in app.plugins.clone() {
+                    if menu_item(ui, app.plugin.is_none(), &format!("Plugin: {}", m.name), "") {
+                        crate::plugins::start(app, &m, &ctx);
+                    }
+                }
+                if app.plugins.is_empty() {
+                    ui.label(match &app.plugins_dir {
+                        Some(d) => format!("No plugins in {}", d.display()),
+                        None => "No plugins folder (no settings file)".to_string(),
+                    });
+                }
+                for err in &app.plugin_errors {
+                    ui.label(err);
+                }
+                ui.separator();
+                if menu_item(ui, app.plugin.is_some(), "Stop plugin", "") {
+                    app.plugin = None;
+                    app.status = "Plugin stopped".into();
+                }
+                if menu_item(ui, true, "Reload plugins", "") {
+                    crate::plugins::reload(app);
+                }
+            });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 // Picking a panel shows its slot if it was hidden.
                 for tab in [SideTab::Assembly, SideTab::Model, SideTab::Sketch] {
