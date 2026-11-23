@@ -35,6 +35,7 @@ mod model_sweep;
 mod model_panel;
 mod panels;
 mod rebuild_worker;
+mod scene_mesh;
 mod properties_panel;
 mod toolbar;
 mod view2d;

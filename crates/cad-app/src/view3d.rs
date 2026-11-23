@@ -1,16 +1,23 @@
 use crate::app::{CadApp, PickFace};
 use cad_document::{ComponentId, EntityId, Overlap, TET_FACES};
 use cad_geometry::{DAffine3, DVec2, DVec3, distance_2d, outline, ray_hit, tessellate};
-use cad_renderer::{SceneRenderer, Vertex};
+use cad_renderer::{Draw, Instance, MeshData, SceneRenderer, Vertex};
 use eframe::egui::{self, PointerButton};
 use eframe::{egui_wgpu, wgpu};
 use glam::Vec2;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-type Geometry = (Vec<Vertex>, Vec<Vertex>);
+/// One 3D scene build: the per-scene buffers, every body mesh in use, and the instances that draw them.
+struct Scene {
+    tris: Vec<Vertex>,
+    lines: Vec<Vertex>,
+    meshes: Vec<(u64, Arc<MeshData>)>,
+    draws: Vec<Draw>,
+}
 
 const SELECTED: [f32; 3] = [1.0, 0.63, 0.0];
+const GREY: [f32; 3] = [0.72, 0.75, 0.80];
 const PICKED_FACE: [f32; 3] = [1.0, 0.85, 0.3];
 const CAP: [f32; 3] = [0.80, 0.42, 0.32];
 const CAPTURED: [f32; 3] = [0.3, 0.8, 1.0];
@@ -31,7 +38,7 @@ pub fn init_renderer(cc: &eframe::CreationContext<'_>) {
 struct SceneCallback {
     view_proj: [[f32; 4]; 4],
     clip: [f32; 4],
-    geometry: Option<Arc<Geometry>>,
+    geometry: Option<Arc<Scene>>,
 }
 
 impl egui_wgpu::CallbackTrait for SceneCallback {
@@ -45,7 +52,8 @@ impl egui_wgpu::CallbackTrait for SceneCallback {
     ) -> Vec<wgpu::CommandBuffer> {
         if let Some(r) = resources.get_mut::<SceneRenderer>() {
             if let Some(g) = &self.geometry {
-                r.set_geometry(device, &g.0, &g.1);
+                r.set_geometry(device, &g.tris, &g.lines);
+                r.set_instances(device, &g.meshes, &g.draws);
             }
             r.set_camera(queue, self.view_proj, self.clip);
         }
@@ -85,8 +93,9 @@ fn dashed(a: DVec3, b: DVec3, phase: &mut f64) -> Vec<[DVec3; 2]> {
     out
 }
 
-fn build_scene(app: &CadApp) -> Geometry {
+fn build_scene(app: &CadApp) -> Scene {
     let (mut tris, mut lines) = (Vec::new(), Vec::new());
+    let mut draws = Vec::new();
     {
         // Grid and axes never take part in the section (alpha 0, see scene.wgsl).
         let mut fixed = |a: DVec3, b: DVec3, c: [f32; 3]| {
@@ -159,26 +168,45 @@ fn build_scene(app: &CadApp) -> Geometry {
         .flat_map(|m| [m.a, m.b])
         .chain(collision.iter().flat_map(|c| [c.moving, c.other]))
         .collect();
-    let shown = app.shown_bodies().map(|(id, b)| (Some(*id), None, b));
-    let placed = app.placed_components().map(|(c, b)| (None, Some(c), b));
-    for (id, comp, body) in shown.chain(placed) {
+    let model = app.model.as_ref().map(|(_, m)| m);
+    let shown = app.shown_bodies().map(|(id, b)| (Some(*id), None, b, b, DAffine3::IDENTITY));
+    // A component is drawn as its source body under its placement, so the components of one body share one mesh.
+    let placed = app.placed_components().map(|(c, b)| {
+        let source = model.and_then(|m| Some((m.body(app.doc.component(c)?.body)?, *m.placements.get(&c)?)));
+        let (src, base) = source.unwrap_or((b, DAffine3::IDENTITY));
+        (None, Some(c), b, src, base)
+    });
+    for (id, comp, body, source, base) in shown.chain(placed) {
         let meshed = id.is_some() && (mesh.is_some_and(|m| Some(m.body) == id) || study.is_some_and(|s| Some(s.body) == id));
         let selected = comp.is_some() && comp == app.component_sel;
         let shift = if selected { moving } else { DVec3::ZERO } + comp.and_then(|c| offsets.get(&c)).copied().unwrap_or(DVec3::ZERO);
         let turn = comp.and_then(|c| moves.and_then(|m| m.get(&c))).copied().unwrap_or(DAffine3::IDENTITY);
         let at = |p: DVec3| turn.transform_point3(p) + shift;
-        let (mesh, grey) = (&body.mesh, [0.72, 0.75, 0.80]);
-        if !comp.is_some_and(|c| wire.contains(&c)) && !meshed {
-            for (corner, (&i, n)) in mesh.indices.iter().zip(&mesh.normals).enumerate() {
-                let face = id.is_some_and(|id| app.face_sel == Some((id, body.tri_face[corner / 3])));
-                let picked = selected && app.component_face.is_some_and(|(c, f)| Some(c) == comp && f == body.tri_face[corner / 3]);
-                let color = if picked { PICKED_FACE } else if selected || face { SELECTED } else { grey };
-                tris.push(vertex(at(mesh.positions[i as usize]), turn.transform_vector3(*n).as_vec3().to_array(), color));
+        let mesh = &body.mesh;
+        let faces = !comp.is_some_and(|c| wire.contains(&c)) && !meshed;
+        // A body with a highlighted face is drawn per triangle as before (instances colour whole meshes).
+        let highlight = id.is_some_and(|id| app.face_sel.is_some_and(|(b, _)| b == id)) || (selected && app.component_face.is_some_and(|(c, _)| Some(c) == comp));
+        match crate::scene_mesh::key(app, source).filter(|_| !highlight) {
+            Some(key) => {
+                let world = DAffine3::from_translation(shift) * turn * base;
+                let tint = if selected { SELECTED } else { GREY };
+                let instance = Instance { model: glam::DMat4::from(world).as_mat4().to_cols_array_2d(), color: [tint[0], tint[1], tint[2], 1.0] };
+                draws.push(Draw { mesh: key, instance, faces });
             }
-        }
-        for [a, b] in body.feature_edges() {
-            lines.push(vertex(at(a), [0.0; 3], [0.12, 0.12, 0.14]));
-            lines.push(vertex(at(b), [0.0; 3], [0.12, 0.12, 0.14]));
+            None => {
+                if faces {
+                    for (corner, (&i, n)) in mesh.indices.iter().zip(&mesh.normals).enumerate() {
+                        let face = id.is_some_and(|id| app.face_sel == Some((id, body.tri_face[corner / 3])));
+                        let picked = selected && app.component_face.is_some_and(|(c, f)| Some(c) == comp && f == body.tri_face[corner / 3]);
+                        let color = if picked { PICKED_FACE } else if selected || face { SELECTED } else { GREY };
+                        tris.push(vertex(at(mesh.positions[i as usize]), turn.transform_vector3(*n).as_vec3().to_array(), color));
+                    }
+                }
+                for [a, b] in body.feature_edges() {
+                    lines.push(vertex(at(a), [0.0; 3], crate::scene_mesh::EDGE));
+                    lines.push(vertex(at(b), [0.0; 3], crate::scene_mesh::EDGE));
+                }
+            }
         }
         // A cap of a moved solid would sit on the wrong plane.
         if shift == DVec3::ZERO
@@ -306,7 +334,8 @@ fn build_scene(app: &CadApp) -> Geometry {
             }
         }
     }
-    (tris, lines)
+    let meshes = app.scene_meshes.iter().map(|(_, k, m)| (*k, m.clone())).collect();
+    Scene { tris, lines, meshes, draws }
 }
 
 /// Screen position of the world point `q` in the 3D view `rect`; None behind the camera.
@@ -391,7 +420,16 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     let geometry = if preview || app.gpu_stamp != Some(stamp) {
         // While previewing the stamp stays unset, so the final state is uploaded afterwards.
         app.gpu_stamp = if preview { None } else { Some(stamp) };
-        Some(Arc::new(build_scene(app)))
+        crate::scene_mesh::refresh(app);
+        let start = std::time::Instant::now();
+        let scene = build_scene(app);
+        app.perf = crate::app::Perf {
+            scene_ms: start.elapsed().as_secs_f64() * 1000.0,
+            scene_vertices: scene.tris.len() + scene.lines.len(),
+            instances: scene.draws.len(),
+            meshes: scene.meshes.len(),
+        };
+        Some(Arc::new(scene))
     } else {
         None
     };

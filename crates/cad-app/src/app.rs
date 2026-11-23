@@ -10,6 +10,19 @@ use std::sync::Arc;
 use eframe::egui;
 use std::path::PathBuf;
 
+/// The last 3D scene build (MCP `state` key `perf`), timed in `view3d::show`.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Perf {
+    /// Milliseconds of the last `build_scene`.
+    pub scene_ms: f64,
+    /// Vertices that build produced on the CPU (triangle corners and line ends) for the per-scene buffers.
+    pub scene_vertices: usize,
+    /// Instanced draws of that build (one per shown body and component); 0 before instancing.
+    pub instances: usize,
+    /// Body meshes kept on the GPU for instancing; 0 before instancing.
+    pub meshes: usize,
+}
+
 /// Display-only section: keeps the side of the plane `axis = offset` with smaller coordinates, or the other side when flipped.
 pub struct SectionView {
     pub on: bool,
@@ -138,6 +151,8 @@ pub struct CadApp {
     pub confirm: Option<Pending>,
     /// (doc.revision, model revision, sel_rev, section clip) last uploaded to the GPU.
     pub gpu_stamp: Option<(u64, u64, u64, [f32; 4])>,
+    /// Timing of the last 3D scene build.
+    pub perf: Perf,
     /// Central panel rect of the last frame, used to fit the 2D camera.
     pub view_rect: egui::Rect,
     pub last_title: String,
@@ -315,6 +330,10 @@ pub struct CadApp {
     /// Section plane of the 3D view.
     pub section: SectionView,
     pub bvhs: Vec<(std::sync::Arc<cad_document::Body>, std::sync::Arc<cad_document::Bvh>)>,
+    /// GPU meshes of the bodies in `model` for instanced drawing: (body, key, mesh); see `scene_mesh`.
+    pub scene_meshes: Vec<(std::sync::Arc<cad_document::Body>, u64, std::sync::Arc<cad_renderer::MeshData>)>,
+    /// The last key handed out in `scene_meshes`; keys are never reused.
+    pub mesh_key: u64,
     /// Named widgets of the last complete frame.
     pub widgets: Vec<crate::widgets::WidgetHit>,
     /// Present only with --mcp.
@@ -342,6 +361,7 @@ impl CadApp {
             cursor_world: DVec2::ZERO,
             confirm: None,
             gpu_stamp: None,
+            perf: Perf::default(),
             view_rect: egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 700.0)),
             last_title: String::new(),
             allow_close: false,
@@ -448,6 +468,8 @@ impl CadApp {
             model: None,
             fit_on_model: false,
             bvhs: Vec::new(),
+            scene_meshes: Vec::new(),
+            mesh_key: 0,
             section: SectionView { on: false, axis: 2, offset: "0".into(), flip: false },
             face_sel: None,
             edge_sel: None,
