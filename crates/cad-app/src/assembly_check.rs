@@ -1,4 +1,5 @@
 //! The Assembly tab's interference section: interference, contact and clearance between placed components, on demand.
+use crate::analysis_worker::{JobKind, JobOutput};
 use crate::app::CadApp;
 use crate::assembly_joints::name;
 use crate::widgets as w;
@@ -13,17 +14,23 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     ui.horizontal_wrapped(|ui| {
         ui.label("Clearance limit");
         w::add(ui, "Clearance limit", TextEdit::singleline(&mut app.check_limit).desired_width(70.0));
-        run = w::add_enabled(ui, current, "Check", egui::Button::new("Check")).clicked();
+        run = w::add_enabled(ui, current && app.jobs.running().is_none(), "Check", egui::Button::new("Check")).clicked();
     });
     if run {
-        run_check(app);
+        run_check(app, ui.ctx());
     }
     rows(app, ui);
 }
 
-/// Runs `Document::check` on the current rebuild; the status line gives the counts or the limit's error.
-fn run_check(app: &mut CadApp) {
-    let Some(result) = app.model_result().map(|r| app.doc.check(r, &app.check_limit)) else { return };
+/// Starts `Document::check` on the current rebuild on the analysis worker; `finish` takes the result.
+fn run_check(app: &mut CadApp, ctx: &egui::Context) {
+    let Some(r) = app.model_result().cloned() else { return };
+    let (doc, limit) = (app.doc.clone(), app.check_limit.clone());
+    app.jobs.start(ctx, JobKind::Check, Some(app.doc.revision()), move || JobOutput::Check(doc.check(&r, &limit)));
+}
+
+/// Shows a finished check; the status line gives the counts or the limit's error.
+pub fn finish(app: &mut CadApp, result: Result<Check, String>) {
     match result {
         Ok(c) => {
             app.status = summary(&c);

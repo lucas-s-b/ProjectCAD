@@ -226,6 +226,17 @@ pub fn status_bar(app: &mut CadApp, ui: &mut egui::Ui) {
     egui::Panel::bottom("status").show(ui, |ui| {
         ui.horizontal(|ui| {
             crate::coord_input::show(app, ui);
+            if let Some((kind, secs)) = app.jobs.running() {
+                ui.spinner();
+                ui.label(format!("Running {}: {secs:.1} s", kind.name()));
+                if w::button(ui, "Cancel job").clicked() {
+                    app.jobs.cancel();
+                    app.status = format!("Cancelled the {}", kind.name());
+                }
+                // The seconds tick while nothing else repaints.
+                ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
+                ui.separator();
+            }
             ui.label(if app.status.is_empty() && app.rebuilding() { "Rebuilding..." } else { &app.status });
             ui.separator();
             let (s, c) = (app.doc.settings(), app.cursor_world);

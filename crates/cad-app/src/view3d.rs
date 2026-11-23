@@ -428,6 +428,7 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
             scene_vertices: scene.tris.len() + scene.lines.len(),
             instances: scene.draws.len(),
             meshes: scene.meshes.len(),
+            ..app.perf
         };
         Some(Arc::new(scene))
     } else {

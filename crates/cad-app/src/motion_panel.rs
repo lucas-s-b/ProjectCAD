@@ -1,4 +1,5 @@
 //! The Assembly tab's motion study: drive one joint over a range, play it back in 3D, find the first collision.
+use crate::analysis_worker::{JobKind, JobOutput};
 use crate::app::CadApp;
 use crate::assembly_joints::name;
 use crate::widgets as w;
@@ -87,26 +88,34 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     let mut run = false;
     ui.horizontal_wrapped(|ui| {
         w::checkbox(ui, &mut app.motion_check, "Check collisions");
-        run = w::add_enabled(ui, current, "Run study", egui::Button::new("Run study")).clicked();
+        run = w::add_enabled(ui, current && app.jobs.running().is_none(), "Run study", egui::Button::new("Run study")).clicked();
     });
     if run {
-        run_study(app);
+        run_study(app, ui.ctx());
     }
     results(app, ui);
 }
 
-/// Runs `Document::drive` and, when asked, `Document::first_collision` on the current rebuild (on this thread: the
-/// app waits; the status line gives both times). Playback starts at the first colliding sample, else at 0.
-fn run_study(app: &mut CadApp) {
-    let Some(result) = app.model_result() else { return };
-    let t = Instant::now();
-    let out = app.doc.drive(result, &app.motion_study).map(|motion| {
-        let drive_ms = ms(t);
+/// Starts `Document::drive` and, when asked, `Document::first_collision` on the current rebuild on the analysis worker;
+/// `finish` takes the result.
+fn run_study(app: &mut CadApp, ctx: &egui::Context) {
+    let Some(result) = app.model_result().cloned() else { return };
+    let (doc, study, check) = (app.doc.clone(), app.motion_study.clone(), app.motion_check);
+    app.jobs.start(ctx, JobKind::Motion, Some(app.doc.revision()), move || {
         let t = Instant::now();
-        let collision = app.motion_check.then(|| app.doc.first_collision(result, &motion));
-        let check_ms = collision.as_ref().map(|_| ms(t));
-        StudyRun { motion, collision, drive_ms, check_ms }
+        let out = doc.drive(&result, &study).map(|motion| {
+            let drive_ms = ms(t);
+            let t = Instant::now();
+            let collision = check.then(|| doc.first_collision(&result, &motion));
+            let check_ms = collision.as_ref().map(|_| ms(t));
+            StudyRun { motion, collision, drive_ms, check_ms }
+        });
+        JobOutput::Motion(out)
     });
+}
+
+/// Shows a finished run (the status line gives both times). Playback starts at the first colliding sample, else at 0.
+pub fn finish(app: &mut CadApp, out: Result<StudyRun, String>) {
     app.motion_play = false;
     // The scene shows the result (see the stamp in `view3d::show`).
     app.sel_rev += 1;

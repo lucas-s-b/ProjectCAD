@@ -1,3 +1,4 @@
+mod analysis_worker;
 mod app;
 mod app_files;
 mod app_ops;

@@ -85,8 +85,8 @@ impl Bridge {
             let scrolling = ctx.input(|i| i.smooth_scroll_delta() != egui::Vec2::ZERO);
             if self.frames.is_empty() && !scrolling {
                 if *left == 0 {
-                    // Keep repainting until the worker has caught up.
-                    if !app.model_current() {
+                    // Keep repainting until the rebuild and any analysis job have finished.
+                    if !app.idle() {
                         return;
                     }
                     let _ = tx.send(Ok(Reply { text: summary(app).to_string(), png: None }));
@@ -98,7 +98,7 @@ impl Bridge {
             return;
         }
         let Some((req, tx)) = self.held.take().or_else(|| self.rx.try_recv().ok()) else { return };
-        if matches!(req, Request::State | Request::Screenshot | Request::Export(_) | Request::ExportMotion(_)) && !app.model_current() {
+        if matches!(req, Request::State | Request::Screenshot | Request::Export(_) | Request::ExportMotion(_)) && !app.idle() {
             self.held = Some((req, tx));
             ctx.request_repaint();
             return;
@@ -107,6 +107,8 @@ impl Bridge {
             Request::State => {
                 let text = serde_json::to_string_pretty(&state_json(app, ctx)).unwrap_or_default();
                 let _ = tx.send(Ok(Reply { text, png: None }));
+                // Each state reports the longest frame since the one before.
+                app.perf.frame_ms = 0.0;
             }
             Request::Screenshot => {
                 ctx.request_screenshot(move |img| {
@@ -514,7 +516,9 @@ fn state_json(app: &CadApp, ctx: &egui::Context) -> Value {
     m.insert("gizmo".into(), json!(app.gizmo_screen.map(|g| g.map(|p| [(p.x * ppp).round(), (p.y * ppp).round()]))));
     m.insert("section_cap_area".into(), json!(cap_area));
     let p = app.perf;
-    m.insert("perf".into(), json!({ "instances": p.instances, "meshes": p.meshes, "scene_ms": p.scene_ms, "scene_vertices": p.scene_vertices }));
+    m.insert("perf".into(), json!({ "frame_ms": p.frame_ms, "instances": p.instances, "meshes": p.meshes, "scene_ms": p.scene_ms, "scene_vertices": p.scene_vertices }));
+    // Replies wait while a job runs, so `running` is null in them; `finished` counts jobs handed over.
+    m.insert("jobs".into(), json!({ "cancelled": app.jobs.cancelled, "finished": app.jobs.finished, "running": app.jobs.running().map(|(k, _)| k.name()) }));
     m.insert("constraint_status".into(), json!(crate::constraints_panel::status_text(&app.doc)));
     m.insert("document".into(), serde_json::to_value(&app.doc).unwrap_or(Value::Null));
     Value::Object(m)

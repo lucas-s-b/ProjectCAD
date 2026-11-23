@@ -21,6 +21,7 @@ impl CadApp {
         self.motion = None;
         self.fea_mesh = None;
         self.fea_study = None;
+        self.jobs.cancel();
         self.study_edit = None;
         self.study_sel = 0;
         self.study_face = None;

@@ -1,5 +1,6 @@
 //! The Model tab's "Static study" section: linear-elastic studies stored in the document, run on demand, and the
 //! colour map and legend the 3D view draws.
+use crate::analysis_worker::{JobKind, JobOutput};
 use crate::app::CadApp;
 use crate::widgets as w;
 use cad_document::{Body, Command, FaceKey, FaceRef, FeatureId, Load, LoadKind, MATERIALS, Study, StudyReport};
@@ -97,10 +98,10 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     editor(app, ui, &labels);
     let mut run_it = false;
     ui.horizontal_wrapped(|ui| {
-        run_it = w::add_enabled(ui, app.model_current(), "Run static study", egui::Button::new("Run static study")).clicked();
+        run_it = w::add_enabled(ui, app.model_current() && app.jobs.running().is_none(), "Run static study", egui::Button::new("Run static study")).clicked();
     });
     if run_it {
-        run(app);
+        run(app, ui.ctx());
     }
     rows(app, ui);
 }
@@ -255,11 +256,17 @@ fn editor(app: &mut CadApp, ui: &mut egui::Ui, labels: &[(FeatureId, String)]) {
     }
 }
 
-/// Runs the selected study on the current rebuild on the UI thread (`MAX_DOFS` keeps it to seconds); sets the
-/// deformation scale so the largest displacement shows as about a tenth of the mesh's size, a power of ten.
-fn run(app: &mut CadApp) {
-    let Some(r) = app.model_result() else { return };
-    let result = app.doc.run_study(r, app.study_sel);
+/// Starts the selected study on the current rebuild on the analysis worker (`MAX_DOFS` keeps it to seconds); `finish`
+/// takes the result.
+fn run(app: &mut CadApp, ctx: &egui::Context) {
+    let Some(r) = app.model_result().cloned() else { return };
+    let (doc, index) = (app.doc.clone(), app.study_sel);
+    app.jobs.start(ctx, JobKind::Study, Some(app.doc.revision()), move || JobOutput::Study(doc.run_study(&r, index)));
+}
+
+/// Shows a finished study: the status line, a deformation scale so the largest displacement shows as about a tenth
+/// of the mesh's size (a power of ten), and the result in 3D.
+pub fn finish(app: &mut CadApp, result: Result<StudyReport, String>) {
     app.status = match &result {
         Ok(rep) => format!("Study: max displacement {:.6} mm, max von Mises {:.3} MPa ({:.0} ms)", rep.result.max_displacement().0, rep.result.max_von_mises().0, rep.mesh_ms + rep.solve_ms),
         Err(err) => format!("study: {err}"),
