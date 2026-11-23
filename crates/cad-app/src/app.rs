@@ -284,6 +284,9 @@ pub struct CadApp {
     pub show_study: bool,
     pub study_by_displacement: bool,
     pub study_scale: f64,
+    /// The last run of the analytic benchmarks (milliseconds, rows; Model tab "Validation report"). Independent of the
+    /// document, so edits, new and open keep it.
+    pub validation: Option<(f64, Result<Vec<cad_document::Benchmark>, String>)>,
     /// Motion study inputs (Assembly tab) and whether "Run study" also checks collisions.
     pub motion_study: cad_document::MotionStudy,
     pub motion_check: bool,
@@ -433,6 +436,7 @@ impl CadApp {
             show_study: true,
             study_by_displacement: false,
             study_scale: 1.0,
+            validation: None,
             motion_study: Default::default(),
             motion_check: false,
             motion: None,

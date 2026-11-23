@@ -14,6 +14,7 @@ mod layers_panel;
 mod mass_panel;
 mod mesh_panel;
 mod study_panel;
+mod validation_panel;
 mod motion_panel;
 mod edge_pick;
 mod face_pick;

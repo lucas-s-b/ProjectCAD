@@ -1,11 +1,11 @@
-//! Benchmark baseline: `cargo run --release -p cad-bench` prints a Markdown table.
+//! Benchmark baseline: `cargo run --release -p cad-bench` prints a Markdown table of timings; `cargo run --release -p cad-bench -- validate` runs the analytic validation cases and writes docs/VALIDATION.md.
 use cad_constraints::{Constraint, PointKind, PointRef, solve};
 use cad_document::{BodyOp, Command, Document, Entity, Feature, FeatureKind, History, Rebuilder, Target};
 use cad_geometry::snap::{intersections, object_snap};
 use cad_geometry::{DVec2, DVec3, Shape, distance_2d, tessellate};
 use std::collections::BTreeMap;
 use std::hint::black_box;
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 const SAMPLES: usize = 7;
 /// Side of the square the random lines live in, in millimetres (10 m).
@@ -160,7 +160,47 @@ fn pattern_case(t: &mut Table) {
     t.add("rebuild plate with a 10 x 10 hole pattern (cold)", format!("4 features, {triangles} triangles"), || Rebuilder::default().rebuild(&doc).recomputed);
 }
 
+/// "2026-11-23": the UTC date `secs` seconds after 1970-01-01 (Howard Hinnant's days-to-civil algorithm).
+fn utc_date(secs: u64) -> String {
+    let z = (secs / 86_400) as i64 + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    format!("{year:04}-{month:02}-{day:02}")
+}
+
+/// Runs `cad_document::benchmarks`, writes docs/VALIDATION.md, prints it, and exits with 1 when a case fails its
+/// tolerance or cannot run.
+fn validate() {
+    let start = Instant::now();
+    let rows = cad_document::benchmarks().unwrap_or_else(|err| {
+        eprintln!("a benchmark could not run: {err}");
+        std::process::exit(1)
+    });
+    let secs = start.elapsed().as_secs_f64();
+    let passed = rows.iter().filter(|b| b.passed()).count();
+    let profile = if cfg!(debug_assertions) { "debug" } else { "release" };
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
+    let header = format!("Date: {} (UTC) | profile: {profile} | {passed} of {} cases within tolerance | {secs:.2} s", utc_date(now), rows.len());
+    let text = cad_document::validation_markdown(&rows, &header);
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/VALIDATION.md");
+    std::fs::write(path, &text).expect("write docs/VALIDATION.md");
+    print!("{text}");
+    if passed < rows.len() {
+        std::process::exit(1);
+    }
+}
+
 fn main() {
+    if std::env::args().nth(1).as_deref() == Some("validate") {
+        validate();
+        return;
+    }
     let mut t = Table(Vec::new());
     let cursor = DVec2::splat(WORLD / 2.0);
     for n in [10_000, 100_000] {
@@ -222,3 +262,7 @@ fn main() {
         println!("| {case} | {n} | {ms:.3} |");
     }
 }
+
+#[cfg(test)]
+#[path = "main_tests.rs"]
+mod tests;

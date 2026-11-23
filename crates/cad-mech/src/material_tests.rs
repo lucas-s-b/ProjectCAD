@@ -15,8 +15,10 @@ fn elastic_constants() {
     let steel = material(" steel ").unwrap();
     assert_eq!((steel.young, steel.poisson, steel.name), (210_000.0, 0.30, "Steel"));
     assert_eq!(material("aluminium").unwrap().young, 69_000.0);
+    assert_eq!(steel.yield_strength, 250.0);
+    assert_eq!(material("aluminium").unwrap().yield_strength, 276.0);
     assert!(material("Unobtainium").is_none());
     for m in MATERIALS {
-        assert!(m.young > 0.0 && (0.0..0.5).contains(&m.poisson) && m.density > 0.0, "{}", m.name);
+        assert!(m.young > 0.0 && (0.0..0.5).contains(&m.poisson) && m.density > 0.0 && m.yield_strength > 0.0, "{}", m.name);
     }
 }

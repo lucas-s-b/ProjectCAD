@@ -171,6 +171,10 @@ fn editor(app: &mut CadApp, ui: &mut egui::Ui, labels: &[(FeatureId, String)]) {
         commit |= field(ui, "Poisson's ratio", &mut buf.poisson);
     });
     ui.horizontal_wrapped(|ui| {
+        ui.label("Yield (MPa)");
+        commit |= field(ui, "Yield strength", &mut buf.yield_strength);
+    });
+    ui.horizontal_wrapped(|ui| {
         ui.label("Density (g/cm\u{b3})");
         commit |= field(ui, "Study density", &mut buf.density);
         commit |= w::checkbox(ui, &mut buf.gravity, "Gravity (-Z)").changed();
@@ -291,6 +295,10 @@ fn rows(app: &mut CadApp, ui: &mut egui::Ui) {
             let lines = vec![
                 format!("Max displacement {d:.6} mm at {}", at(rep.mesh.nodes[dn])),
                 format!("Max von Mises {s:.3} MPa at {}", at(rep.mesh.nodes[sn])),
+                match (rep.yield_strength, rep.safety_factor()) {
+                    (Some(y), Some(f)) => format!("Safety factor {f:.2} (yield strength {y} MPa / max von Mises {s:.3} MPa)"),
+                    _ => "Safety factor: give a yield strength".into(),
+                },
                 format!(
                     "Reaction ({:.3}, {:.3}, {:.3}) N for loads ({:.3}, {:.3}, {:.3}) N, out of balance {:.1e}",
                     r.reaction.x, r.reaction.y, r.reaction.z, r.applied.x, r.applied.y, r.applied.z, r.residual
