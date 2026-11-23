@@ -63,7 +63,7 @@ st() { call "$1" set_text "{\"name\":\"$2\",\"index\":${4:-0},\"text\":\"$3\"}";
   call 41 open_project "{\"path\":\"$SAVED\"}"
   call 42 state '{}'
   call 43 screenshot '{}'
-} | target/debug/cad-app.exe --mcp > "$OUT" 2> target/mcp_phase5b.err
+} | target/debug/cad-app.exe --mcp --background > "$OUT" 2> target/mcp_phase5b.err
 
 fail=0
 bad() { echo "FAIL: $1"; fail=1; }

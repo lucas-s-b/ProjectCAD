@@ -59,7 +59,7 @@ st() { call "$1" set_text "{\"name\":\"$2\",\"index\":${4:-0},\"text\":\"$3\"}";
   call 43 state '{}'
   cw 44 Check
   call 45 state '{}'
-} | target/debug/cad-app.exe --mcp > "$OUT" 2> target/mcp_phase5e.err
+} | target/debug/cad-app.exe --mcp --background > "$OUT" 2> target/mcp_phase5e.err
 
 fail=0
 bad() { echo "FAIL: $1"; fail=1; }

@@ -13,6 +13,7 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     model_features::show(app, ui);
     ui.separator();
     body(app, ui);
+    crate::mass_panel::bodies(app, ui);
     ui.separator();
     crate::model_section::controls(app, ui);
     crate::model_sketches::show(app, ui);
@@ -120,5 +121,6 @@ fn body(app: &CadApp, ui: &mut egui::Ui) {
             ui.label(format!("Body {id}: \u{2248} {:.3} mm\u{b3}", b.volume()));
         }
     }
-    ui.small("approximate: computed from the tessellation at 0.02 mm");
+    let exact = r.bodies.iter().all(|(_, b)| cad_document::Accuracy::of_body(b) == cad_document::Accuracy::Exact);
+    ui.small(if exact { "exact: all faces are planar" } else { "approximate (tessellation at 0.02 mm)" });
 }

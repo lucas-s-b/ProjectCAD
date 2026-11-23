@@ -56,7 +56,7 @@ st() { call "$1" set_text "{\"name\":\"$2\",\"index\":${4:-0},\"text\":\"$3\"}";
   cw 37 3D
   call 38 key '{"key":"F"}'
   call 39 screenshot '{}'
-} | target/debug/cad-app.exe --mcp > "$OUT" 2> target/mcp_phase5a.err
+} | target/debug/cad-app.exe --mcp --background > "$OUT" 2> target/mcp_phase5a.err
 
 fail=0
 bad() { echo "FAIL: $1"; fail=1; }

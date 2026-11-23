@@ -28,7 +28,7 @@ cw() { call "$1" click_widget "{\"name\":\"$2\",\"index\":${3:-0}}"; }
   call 15 set_text '{"name":"Coordinates","text":"5,5"}'
   call 16 state '{}'
   call 17 export_project '{"path":"target/mcp_smoke_none.stl"}'
-} | target/debug/cad-app.exe --mcp > "$OUT" 2> target/mcp_smoke.err
+} | target/debug/cad-app.exe --mcp --background > "$OUT" 2> target/mcp_smoke.err
 
 fail=0
 check() { # description, grep -E pattern, line id

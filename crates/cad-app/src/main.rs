@@ -11,6 +11,7 @@ mod coord_input;
 mod dim_link;
 mod constraints_panel;
 mod layers_panel;
+mod mass_panel;
 mod edge_pick;
 mod face_pick;
 mod gizmo;
@@ -49,6 +50,11 @@ fn main() -> eframe::Result {
     if mcp {
         // The window must not steal the focus from the user.
         viewport = viewport.with_active(false).with_title("ProjectCAD (MCP)");
+        // --background: off-screen, not minimized (a minimized window stops rendering and screenshots fail).
+        // CAD_MCP_SHOW=1 overrides it to watch a test run.
+        if std::env::args().any(|a| a == "--background") && std::env::var_os("CAD_MCP_SHOW").is_none() {
+            viewport = viewport.with_position([-20000.0, -20000.0]).with_taskbar(false);
+        }
     }
     let options = eframe::NativeOptions { renderer: eframe::Renderer::Wgpu, depth_buffer: 32, viewport, ..Default::default() };
     eframe::run_native("ProjectCAD", options, Box::new(move |cc| Ok(Box::new(CadApp::new(cc, mcp)))))

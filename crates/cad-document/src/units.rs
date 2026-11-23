@@ -66,6 +66,17 @@ impl Settings {
         format!("{:.*} {}\u{b3}", self.precision as usize, mm3 / (k * k * k), self.units.suffix())
     }
 
+    /// `g` grams with `precision` decimals and the suffix "g" (masses are always shown in grams).
+    pub fn format_mass(&self, g: f64) -> String {
+        format!("{:.*} g", self.precision as usize, g)
+    }
+
+    /// `g_mm2` (g·mm²) in g times the display unit squared, with `precision` decimals and the unit suffix.
+    pub fn format_inertia(&self, g_mm2: f64) -> String {
+        let k = self.units.mm_per_unit();
+        format!("{:.*} g\u{b7}{}\u{b2}", self.precision as usize, g_mm2 / (k * k), self.units.suffix())
+    }
+
     /// Display text of an annotation label.
     pub fn label_text(&self, t: &LabelText) -> String {
         match t {
@@ -87,6 +98,13 @@ mod tests {
         assert_eq!(Settings::default().format_volume(125.0), "125.00 mm\u{b3}");
         assert_eq!(Settings { units: Units::Centimeter, precision: 3 }.format_volume(1500.0), "1.500 cm\u{b3}");
         assert_eq!(Settings { units: Units::Inch, precision: 1 }.format_volume(16387.064), "1.0 in\u{b3}");
+    }
+
+    #[test]
+    fn mass_and_inertia_text() {
+        assert_eq!(Settings::default().format_mass(62.8), "62.80 g");
+        assert_eq!(Settings::default().format_inertia(2616.6666666666667), "2616.67 g\u{b7}mm\u{b2}");
+        assert_eq!(Settings { units: Units::Inch, precision: 3 }.format_inertia(2616.6666666666667), "4.056 g\u{b7}in\u{b2}");
     }
 
     #[test]

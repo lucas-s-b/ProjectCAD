@@ -51,7 +51,7 @@ st() { call "$1" set_text "{\"name\":\"$2\",\"text\":\"$3\"}"; }
   # 4. back to the first volume
   call 35 key '{"key":"Z","ctrl":true}'
   call 36 state '{}'
-} | target/debug/cad-app.exe --mcp > "$OUT" 2> target/mcp_worker.err
+} | target/debug/cad-app.exe --mcp --background > "$OUT" 2> target/mcp_worker.err
 
 fail=0
 bad() { echo "FAIL: $1"; fail=1; }

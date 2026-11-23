@@ -73,7 +73,7 @@ wc_() { call "$1" click "{\"x\":$2,\"y\":$3,\"world\":true${4:+,\"shift\":true}}
   call 56 key '{"key":"F"}'
   call 57 screenshot '{}'
   call 58 export_project '{"path":"target/mcp_loft.stl"}'
-} | target/debug/cad-app.exe --mcp > "$OUT" 2> target/mcp_sweep.err
+} | target/debug/cad-app.exe --mcp --background > "$OUT" 2> target/mcp_sweep.err
 
 fail=0
 bad() { echo "FAIL: $1"; fail=1; }

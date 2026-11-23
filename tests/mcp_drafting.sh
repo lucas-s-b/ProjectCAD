@@ -31,7 +31,7 @@ cw() { call "$1" click_widget "{\"name\":\"$2\",\"index\":${3:-0}}"; }
   call 17 export_project "{\"path\":\"$SVG\"}"
   call 18 export_project "{\"path\":\"$DXF\"}"
   call 19 export_project '{"path":"target/x.xyz"}'
-} | target/debug/cad-app.exe --mcp > "$OUT" 2> target/mcp_drafting.err
+} | target/debug/cad-app.exe --mcp --background > "$OUT" 2> target/mcp_drafting.err
 
 fail=0
 bad() { echo "FAIL: $1"; fail=1; }

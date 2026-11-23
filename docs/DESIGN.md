@@ -39,6 +39,7 @@ cad-app ──► cad-document ──► cad-constraints ──► cad-geometry 
                   └──► cad-modeler ──► cad-topology, cad-geometry, manifold-rust, earcutr
                   └──► cad-arch ──► cad-modeler, cad-geometry
                   └──► cad-mech ──► cad-modeler, cad-geometry, parry3d-f64
+                  └──► cad-analysis ──► cad-modeler, glam
    │
    └──────► cad-renderer ──► wgpu
 ```
@@ -47,6 +48,7 @@ cad-app ──► cad-document ──► cad-constraints ──► cad-geometry 
 - `cad-document`: entities, commands, undo/redo history, native file format.
 - `cad-arch` (Phase 4): wall joins, plan outlines with opening gaps, wall solids with opening cuts, door and window symbols, room areas, floor slab, roof and stair solids, IFC classes on a level. Works on shapes, not on the document; `cad-document` (rebuild) and `cad-app` (plan drawing) depend on it.
 - `cad-mech` (Phase 5): part generators (involute spur gear, stepped shaft, helical spring, ISO 4017 screw, ISO 4032 nut with cosmetic or modelled threads, ISO 15 deep groove ball bearing) as solids from evaluated parameters, their designations and threads. Works on numbers, not on the document; `cad-document` (part features) depends on it. It also holds the material density table for BOM masses; joint frame math (batch C) and the interference and clearance check (batch D) live here too. BOM rows are built in `cad-document`, because they read feature names and component metadata.
+- `cad-analysis` (Phase 6): accuracy labels and mass properties of meshes (batch A); later kinematics helpers, the tetrahedral mesher and the FEA solver. Works on meshes and numbers, not on the document; `cad-document` builds the reports.
 - `cad-renderer`: wgpu pipelines and WGSL. Knows only vertices and matrices; it does not depend on the kernel.
 - `cad-app`: egui UI, cameras, tools, viewports.
 - `cad-import-export` (added in Phase 2): `to_svg` and `to_dxf`. Depends on `cad-document` and `cad-geometry`;
@@ -54,7 +56,7 @@ cad-app ──► cad-document ──► cad-constraints ──► cad-geometry 
 
 The brief lists 23 crates. A crate is created when its first real code exists; empty crates are not created.
 Planned splits: `cad-topology` and `cad-modeler` (Phase 3), `cad-constraints` and `cad-drafting` (Phase 2),
-`cad-arch` (Phase 4, built), `cad-mech` (Phase 5, built), `cad-analysis` (Phase 6),
+`cad-arch` (Phase 4, built), `cad-mech` (Phase 5, built), `cad-analysis` (Phase 6, built),
 `cad-import-export` and `cad-plugin-api` (Phase 7).
 
 ## 3. Geometry representation
@@ -125,7 +127,10 @@ FEA solvers; hidden-line removal. DWG has no acceptable pure-Rust path and stays
 ## 8. MCP mode (test and automation interface)
 
 `cad-app --mcp` runs the normal GUI and also serves the Model Context Protocol on stdin/stdout
-(`crates/cad-app/src/mcp/`). A client can drive the real application without operating-system input:
+(`crates/cad-app/src/mcp/`). A client can drive the real application without operating-system input.
+`--background` opens the window off-screen with no taskbar button, so test runs do not cover the user's screen;
+it still renders (a minimized window would not). The `tests/mcp_*.sh` scripts and `.mcp.json` pass it;
+set `CAD_MCP_SHOW=1` to watch a run.
 
 - `click`, `drag`, `scroll`, `key`, `type_text` inject events into egui (`App::raw_input_hook`). Positions are
   window pixels, or 2D world millimetres with `world: true`.
@@ -203,3 +208,9 @@ all UI clicks, so adding rows does not break them. Picks inside the 3D viewport 
 - Dependency graph (batch F): the rebuild walks the features in list order, but a feature's key hashes its own evaluated inputs with the versions of the bodies it reads (`Step::reads`: none for `New`, the targets for `Add`/`Cut`/`Intersect`, the root's reads for a pattern, every body for fillet, chamfer, shell and mirror of all bodies, its body for a draft); a body's version is the key of the feature that last wrote it. The cache keeps each feature's `Delta` (bodies put, ids removed) and applies it to the current list on a hit. `RebuildResult::depends` holds the graph (last writers of the bodies read, of the body under a face sketch, and the pattern source); the feature editor shows it as "Uses: ...", the MCP `state` as `depends` with `recomputed`.
 - Face references (batch F): `FaceRef { key, at }`; `find_face` takes the planar face with the same outward normal under `at` along the normal (nearest along it), or the cylinder with the same axis whose area centroid is nearest. `FaceRef::of` uses the centroid of the face's largest triangle, which lies on the face even when it is not convex.
 - Draft (batch F): `FeatureKind::Draft { body, faces, sketch, angle }`; the neutral plane is the sketch's plane, the pull direction its normal. `cad_modeler::draft_face` moves the face's vertices by -h tan(angle) along its outward normal (h above the neutral plane) and sets the plane n cos(angle) + pull sin(angle) through the hinge line. Faces sharing a moving vertex must be planes containing n, so they stay flat and no boolean is needed; others are refused, and so are flipped triangles. All faces of one draft are found on the input body first.
+
+## 12. Engineering analysis (Phase 6)
+
+- Accuracy labels: `cad_analysis::Accuracy` = `Exact` | `Approximate(reason)` | `Validated(case)`, printed as "exact", "approximate (tessellation)", "validated against cantilever beam". Every analysis result carries one; only the analytic benchmark cases (batch F) are ever "validated", and nothing is called certified.
+- Mass properties (batch A): `MassProps::of(mesh, density)` sums signed tetrahedra from a reference point r (the first vertex): d = a · (b × c), V = Σ d/6, first moment Σ d (a+b+c)/24, second moment C = Σ d/120 (a aᵀ + b bᵀ + c cᵀ + s sᵀ), s = a+b+c; centre c = first moment / V, C_c = C − V c cᵀ, inertia I = ρ (tr(C_c) 𝟙 − C_c) with ρ = density/1000 g/mm³ (density in g/cm³, results in mm, g, g·mm²). Exact for the mesh: `Accuracy::of_body` says exact when every face is a plane, approximate (tessellation) otherwise. `inertia_at` and `combine` use the parallel axis theorem; `principal` runs cyclic Jacobi rotations on the 3 x 3 tensor (ascending moments, axes signed so their largest component is positive, the third the cross product of the first two).
+- `Document::mass(result)`: bodies at an assumed 1 g/cm³, placed components at the density of their "material" metadata (unknown: 1 g/cm³, flagged `assumed`), the assembly total about its centre of mass (exact only when every component is). The app computes it once per rebuild result (`CadApp::mass`); the Model and Assembly tabs show it, the 3D view paints a centre of mass symbol on top of the scene (assembly, else all bodies; hidden while exploded), the MCP `state` lists it as `mass`.

@@ -73,7 +73,7 @@ cw() { call "$1" click_widget "{\"name\":\"$2\",\"index\":${3:-0}}"; }
   cw 55 Construction
   call 56 state '{}'
   call 57 export_project "{\"path\":\"$SVG\"}"
-} | target/debug/cad-app.exe --mcp > "$OUT" 2> target/mcp_edit2.err
+} | target/debug/cad-app.exe --mcp --background > "$OUT" 2> target/mcp_edit2.err
 
 fail=0
 bad() { echo "FAIL: $1"; fail=1; }

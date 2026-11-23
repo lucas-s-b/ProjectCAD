@@ -51,7 +51,7 @@ cw() { call "$1" click_widget "{\"name\":\"$2\",\"index\":${3:-0}}"; }
   call 29 new_project '{}'
   call 30 import_project "{\"path\":\"$DXF\"}"
   call 31 state '{}'
-} | target/debug/cad-app.exe --mcp > "$OUT" 2> target/mcp_phase2c.err
+} | target/debug/cad-app.exe --mcp --background > "$OUT" 2> target/mcp_phase2c.err
 
 fail=0
 bad() { echo "FAIL: $1"; fail=1; }

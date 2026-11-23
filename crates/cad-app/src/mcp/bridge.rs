@@ -333,6 +333,30 @@ fn insert_model(app: &CadApp, m: &mut serde_json::Map<String, Value>) {
         json!({ "item": r.item, "name": r.name, "designation": r.designation, "material": r.material, "part_number": r.part_number, "quantity": r.quantity, "mass": r.mass })
     }).collect();
     m.insert("bom".into(), json!(bom));
+    // Inertia as [Ixx, Iyy, Izz, Ixy, Iyz, Izx] (tensor entries, products with the minus sign), g·mm².
+    let row = |r: &cad_document::MassRow| {
+        let (p, i) = (&r.props, r.props.inertia);
+        let (moments, axes) = p.principal();
+        json!({
+            "accuracy": r.accuracy.to_string(), "assumed": r.assumed, "density": r.density, "mass": p.mass, "volume": p.volume,
+            "com": [p.com.x, p.com.y, p.com.z],
+            "inertia": [i.x_axis.x, i.y_axis.y, i.z_axis.z, i.y_axis.x, i.z_axis.y, i.x_axis.z],
+            "principal": moments, "axes": axes.map(|a| [a.x, a.y, a.z]),
+        })
+    };
+    let mass = app.mass.as_ref().map(|rep| {
+        let with = |key: &str, id: u64, r: &cad_document::MassRow| {
+            let mut v = row(r);
+            v[key] = json!(id);
+            v
+        };
+        json!({
+            "assembly": rep.assembly.as_ref().map(row),
+            "bodies": rep.bodies.iter().map(|(id, r)| with("body", *id, r)).collect::<Vec<_>>(),
+            "components": rep.components.iter().map(|(id, r)| with("component", *id, r)).collect::<Vec<_>>(),
+        })
+    });
+    m.insert("mass".into(), json!(mass));
     let joints: Vec<Value> = app.doc.joints().map(|j| {
         let error = model.and_then(|r| r.components.iter().find(|(i, _)| *i == j.child)).and_then(|(_, r)| r.as_ref().err().cloned());
         json!({ "id": j.id, "kind": format!("{:?}", j.kind), "parent": j.parent, "child": j.child, "value": j.value, "error": error })

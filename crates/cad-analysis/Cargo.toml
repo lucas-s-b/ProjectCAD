@@ -1,0 +1,10 @@
+[package]
+name = "cad-analysis"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+cad-modeler = { version = "0.1.0", path = "../cad-modeler" }
+glam = "0.34.3"

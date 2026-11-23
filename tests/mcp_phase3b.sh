@@ -40,7 +40,7 @@ st() { call "$1" set_text "{\"name\":\"$2\",\"index\":${4:-0},\"text\":\"$3\"}";
   call 24 state '{}'
   call 25 drag '{"x1":354,"y1":356,"x2":497,"y2":399,"button":"primary"}'
   call 26 state '{}'
-} | target/debug/cad-app.exe --mcp > "$OUT" 2> target/mcp_phase3b.err
+} | target/debug/cad-app.exe --mcp --background > "$OUT" 2> target/mcp_phase3b.err
 
 fail=0
 bad() { echo "FAIL: $1"; fail=1; }
