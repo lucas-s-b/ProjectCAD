@@ -62,7 +62,7 @@ st() { call "$1" set_text "{\"name\":\"$2\",\"index\":${4:-0},\"text\":\"$3\"}";
   call 44 type_text '{"text":"15 mm"}'
   call 45 key '{"key":"Enter"}'
   call 46 state '{}'
-} | target/debug/cad-app.exe --mcp > "$OUT" 2> target/mcp_phase3d.err
+} | target/debug/cad-app.exe --mcp --background > "$OUT" 2> target/mcp_phase3d.err
 
 fail=0
 bad() { echo "FAIL: $1"; fail=1; }

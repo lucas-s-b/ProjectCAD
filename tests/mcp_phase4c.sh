@@ -70,7 +70,7 @@ wc_() { call "$1" click "{\"x\":$2,\"y\":$3,\"world\":true${4:+,\"shift\":true}}
   cw 50 3D
   call 51 key '{"key":"F"}'
   call 52 screenshot '{}'
-} | target/debug/cad-app.exe --mcp > "$OUT" 2> target/mcp_phase4c.err
+} | target/debug/cad-app.exe --mcp --background > "$OUT" 2> target/mcp_phase4c.err
 
 fail=0
 bad() { echo "FAIL: $1"; fail=1; }

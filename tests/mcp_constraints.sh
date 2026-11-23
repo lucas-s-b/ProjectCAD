@@ -33,7 +33,7 @@ cw() { call "$1" click_widget "{\"name\":\"$2\",\"index\":${3:-0}}"; }
   call 22 click '{"x":20,"y":5,"world":true}'
   call 23 key '{"key":"Delete"}'
   call 24 state '{}'
-} | target/debug/cad-app.exe --mcp > "$OUT" 2> target/mcp_constraints.err
+} | target/debug/cad-app.exe --mcp --background > "$OUT" 2> target/mcp_constraints.err
 
 fail=0
 bad() { echo "FAIL: $1"; fail=1; }

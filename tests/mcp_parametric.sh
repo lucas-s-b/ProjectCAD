@@ -94,7 +94,7 @@ add() { call "$1" click "{\"x\":$2,\"y\":$3,\"world\":true,\"shift\":true}"; }
   # 8. undo
   call 70 key '{"key":"Z","ctrl":true}'
   call 71 state '{}'
-} | target/debug/cad-app.exe --mcp > "$OUT" 2> target/mcp_parametric.err
+} | target/debug/cad-app.exe --mcp --background > "$OUT" 2> target/mcp_parametric.err
 
 fail=0
 bad() { echo "FAIL: $1"; fail=1; }

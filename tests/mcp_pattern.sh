@@ -63,7 +63,7 @@ st() { call "$1" set_text "{\"name\":\"$2\",\"text\":\"$3\"}"; }
   call 45 key '{"key":"F"}'
   call 46 screenshot '{}'
   call 47 export_project '{"path":"target/mcp_pattern.stl"}'
-} | target/debug/cad-app.exe --mcp > "$OUT" 2> target/mcp_pattern.err
+} | target/debug/cad-app.exe --mcp --background > "$OUT" 2> target/mcp_pattern.err
 
 fail=0
 bad() { echo "FAIL: $1"; fail=1; }

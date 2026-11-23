@@ -64,17 +64,9 @@ pub fn hit(origin: Pos2, tips: [Pos2; 3], p: Pos2, tol: f32) -> Option<usize> {
 /// Screen points (origin, X tip, Y tip, Z tip) of the gizmo, moved by the drag in progress; arrows are 0.2 x the camera distance long.
 /// None without a gizmo or when the centre is behind the camera.
 pub fn screen(app: &CadApp, rect: egui::Rect) -> Option<[Pos2; 4]> {
-    let vp = app.cam3d.view_proj(rect.width() / rect.height().max(1.0));
     let c = center(app)? + app.gizmo.as_ref().map_or(DVec3::ZERO, GizmoDrag::delta);
     let len = 0.2 * f64::from(app.cam3d.distance);
-    let project = |q: DVec3| {
-        let c = vp * q.as_vec3().extend(1.0);
-        if c.w <= 1e-6 {
-            return None;
-        }
-        let ndc = c.truncate() / c.w;
-        Some(Pos2::new(rect.left() + (ndc.x + 1.0) / 2.0 * rect.width(), rect.top() + (1.0 - ndc.y) / 2.0 * rect.height()))
-    };
+    let project = |q: DVec3| crate::view3d::project(app, rect, q);
     Some([project(c)?, project(c + AXES[0] * len)?, project(c + AXES[1] * len)?, project(c + AXES[2] * len)?])
 }
 

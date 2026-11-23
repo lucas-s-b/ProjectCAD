@@ -60,7 +60,7 @@ st() { call "$1" set_text "{\"name\":\"$2\",\"index\":${4:-0},\"text\":\"$3\"}";
   # 6. undoing the nut move drops the result again
   call 43 key '{"key":"Z","ctrl":true}'
   call 44 state '{}'
-} | target/debug/cad-app.exe --mcp > "$OUT" 2> target/mcp_phase5d.err
+} | target/debug/cad-app.exe --mcp --background > "$OUT" 2> target/mcp_phase5d.err
 
 fail=0
 bad() { echo "FAIL: $1"; fail=1; }

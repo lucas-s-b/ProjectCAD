@@ -245,6 +245,16 @@ fn build_scene(app: &CadApp) -> Geometry {
     (tris, lines)
 }
 
+/// Screen position of the world point `q` in the 3D view `rect`; None behind the camera.
+pub(crate) fn project(app: &CadApp, rect: egui::Rect, q: DVec3) -> Option<egui::Pos2> {
+    let c = app.cam3d.view_proj(rect.width() / rect.height().max(1.0)) * q.as_vec3().extend(1.0);
+    if c.w <= 1e-6 {
+        return None;
+    }
+    let ndc = c.truncate() / c.w;
+    Some(egui::Pos2::new(rect.left() + (ndc.x + 1.0) / 2.0 * rect.width(), rect.top() + (1.0 - ndc.y) / 2.0 * rect.height()))
+}
+
 pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     let (rect, resp) = ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
     app.view_rect = rect;
@@ -325,6 +335,11 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     app.gizmo_screen = crate::gizmo::screen(app, rect);
     if let Some(p) = app.gizmo_screen {
         crate::gizmo::paint(&ui.painter_at(rect), p, app.gizmo.as_ref().map(|g| g.axis));
+    }
+    if app.show_com
+        && let Some(p) = crate::mass_panel::marker_point(app).and_then(|q| project(app, rect, q))
+    {
+        crate::mass_panel::paint_marker(&ui.painter_at(rect), p);
     }
     ui.painter_at(rect).text(
         rect.left_top() + egui::vec2(8.0, 8.0),

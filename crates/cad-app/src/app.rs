@@ -252,6 +252,10 @@ pub struct CadApp {
     pub explode_edit: Option<Vec<ExplodeStep>>,
     /// Clearance limit of the interference check, a length expression.
     pub check_limit: String,
+    /// Mass properties of `model`, computed when a rebuild result arrives.
+    pub mass: Option<cad_document::MassReport>,
+    /// Draw the centre of mass marker in the 3D view.
+    pub show_com: bool,
     /// The last interference check and the document revision it ran on (see `check_result`).
     pub check: Option<(u64, Check)>,
     pub worker: RebuildWorker,
@@ -375,6 +379,8 @@ impl CadApp {
             explode_trails: false,
             explode_edit: None,
             check_limit: "5 mm".into(),
+            mass: None,
+            show_com: false,
             check: None,
             worker: RebuildWorker::spawn(cc.egui_ctx.clone()),
             requested: None,
@@ -395,6 +401,7 @@ impl CadApp {
     pub fn sync_model(&mut self) {
         if let Some(m) = self.worker.poll() {
             self.model = Some(m);
+            self.mass = self.model.as_ref().map(|(_, r)| self.doc.mass(r));
             self.face_sel = None;
             self.edge_sel = None;
             if std::mem::take(&mut self.fit_on_model) {
@@ -414,6 +421,7 @@ impl CadApp {
         self.worker.reset();
         self.requested = None;
         self.model = None;
+        self.mass = None;
         self.face_sel = None;
         self.edge_sel = None;
         self.fit_on_model = true;

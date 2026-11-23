@@ -56,7 +56,7 @@ st() { call "$1" set_text "{\"name\":\"$2\",\"text\":\"$3\"}"; }
   call 36 new_project '{}'
   call 37 import_project "{\"path\":\"$SVG\"}"
   call 38 state '{}'
-} | target/debug/cad-app.exe --mcp > "$OUT" 2> target/mcp_leftovers2.err
+} | target/debug/cad-app.exe --mcp --background > "$OUT" 2> target/mcp_leftovers2.err
 
 fail=0
 bad() { echo "FAIL: $1"; fail=1; }

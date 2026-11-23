@@ -36,7 +36,7 @@ st() { call "$1" set_text "{\"name\":\"$2\",\"index\":${4:-0},\"text\":\"$3\"}";
   call 20 screenshot '{}'
   # 4. STEP export
   call 21 export_project "{\"path\":\"$STEP\"}"
-} | target/debug/cad-app.exe --mcp > "$OUT" 2> target/mcp_phase3a.err
+} | target/debug/cad-app.exe --mcp --background > "$OUT" 2> target/mcp_phase3a.err
 
 fail=0
 bad() { echo "FAIL: $1"; fail=1; }
