@@ -513,6 +513,8 @@ fn state_json(app: &CadApp, ctx: &egui::Context) -> Value {
     });
     m.insert("gizmo".into(), json!(app.gizmo_screen.map(|g| g.map(|p| [(p.x * ppp).round(), (p.y * ppp).round()]))));
     m.insert("section_cap_area".into(), json!(cap_area));
+    let p = app.perf;
+    m.insert("perf".into(), json!({ "instances": p.instances, "meshes": p.meshes, "scene_ms": p.scene_ms, "scene_vertices": p.scene_vertices }));
     m.insert("constraint_status".into(), json!(crate::constraints_panel::status_text(&app.doc)));
     m.insert("document".into(), serde_json::to_value(&app.doc).unwrap_or(Value::Null));
     Value::Object(m)

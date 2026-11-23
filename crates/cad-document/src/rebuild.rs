@@ -1,4 +1,4 @@
-use crate::component::ComponentId;
+use crate::component::{Component, ComponentId};
 use crate::document::{Document, EntityId};
 use crate::feature::{BODY_TOLERANCE, BodyOp, Feature, FeatureId, FeatureKind, RevolveAxis, Target};
 use crate::joint::JointId;
@@ -10,8 +10,9 @@ use crate::rebuild_sweep::resolve_sweep;
 use crate::refs::face_plane;
 use crate::sketch::{PlaneDef, Sketch, SketchPlanes};
 use cad_geometry::profile::Profile;
-use cad_geometry::{DVec2, Shape};
+use cad_geometry::{DAffine3, DVec2, Shape};
 use cad_modeler::{Body, BoolOp, ModelError, PathPiece, Plane3, Section, boolean, extrude, extrude_tapered, loft, revolve, sweep};
+use rayon::prelude::*;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{BTreeMap, HashMap};
 use std::hash::{Hash, Hasher};
@@ -44,6 +45,9 @@ pub struct RebuildResult {
     pub rooms: Vec<(EntityId, cad_arch::Region)>,
     /// The solid of every component in id order, or why it could not be placed (`Document::placements`, `Document::place_component`).
     pub components: Vec<(ComponentId, Result<Arc<Body>, String>)>,
+    /// The placement (source body coordinates to world) of every component that placed, for instanced drawing;
+    /// `components` holds the same solids already moved.
+    pub placements: BTreeMap<ComponentId, DAffine3>,
     /// Solved values (radians or mm) of the free joints by joint id (`Document::solve_joints`); empty without loops
     /// or when the solve failed (the components' errors say why).
     pub joint_values: BTreeMap<JointId, f64>,
@@ -97,10 +101,16 @@ impl Delta {
 /// Key, change to the body list, state.
 type Cached = (u64, Delta, FeatureState);
 
+/// Source body, placement, placed solid.
+type Placed = (Arc<Body>, DAffine3, Arc<Body>);
+
 /// Keeps what every feature changed in the body list, keyed by a hash of its evaluated inputs and the versions of the bodies it reads.
 #[derive(Default)]
 pub struct Rebuilder {
     cache: HashMap<FeatureId, Cached>,
+    /// Per component: the source body it was placed from, the placement and the placed solid. Reused while both are
+    /// unchanged (the body is the same `Arc`), so unchanged components keep their `Arc` from rebuild to rebuild.
+    placed: HashMap<ComponentId, Placed>,
 }
 
 /// Feature inputs with every expression evaluated.
@@ -385,8 +395,23 @@ fn place_sketch(sketch: &Sketch, bodies: &Bodies, planes: &mut SketchPlanes) {
 }
 
 impl Rebuilder {
+    /// The placed solid of `c` under `placement`: the cached one when its source body (same `Arc`) and placement are
+    /// unchanged, otherwise a fresh copy (`Document::place_component`).
+    fn place(&self, doc: &Document, c: &Component, placement: &Result<DAffine3, String>, bodies: &Bodies) -> Result<Placed, String> {
+        let p = placement.clone()?;
+        let source = bodies.iter().find(|(id, _)| *id == c.body).map(|(_, b)| b.clone()).ok_or_else(|| format!("body {} not found", c.body))?;
+        if let Some((s, q, solid)) = self.placed.get(&c.id)
+            && Arc::ptr_eq(s, &source)
+            && *q == p
+        {
+            return Ok((source, p, solid.clone()));
+        }
+        Ok((source, p, doc.place_component(c, &p, bodies)?))
+    }
+
     /// Walks the features in order; a feature is recomputed only when its own evaluated inputs or a body it reads
     /// changed, otherwise its change comes from the cache. A suppressed or failed feature leaves the bodies as they were and never stops the features after it.
+    /// Components are placed in parallel and reused while their body and placement are unchanged.
     pub fn rebuild(&mut self, doc: &Document) -> RebuildResult {
         self.rebuild_until(doc, &|| false).expect("never stopped")
     }
@@ -470,14 +495,15 @@ impl Rebuilder {
         self.cache.retain(|id, _| doc.feature(*id).is_some());
         let walls = crate::rebuild_walls::wall_bodies(doc);
         let rooms = crate::rebuild_walls::room_regions(doc);
-        // Not cached: a placement is a mesh copy, and features stay cached.
         let mut joint_values = BTreeMap::new();
-        let placements = doc.placements_driven(&bodies, None, &mut joint_values);
-        let components = doc
-            .components()
-            .map(|c| (c.id, placements[&c.id].clone().and_then(|p| doc.place_component(c, &p, &bodies))))
-            .collect();
-        Some(RebuildResult { bodies, states, recomputed, depends, planes, walls, rooms, components, joint_values })
+        let driven = doc.placements_driven(&bodies, None, &mut joint_values);
+        // A placement is a mesh copy: unchanged components reuse theirs, the others are copied in parallel.
+        let list: Vec<&Component> = doc.components().collect();
+        let placed: Vec<(ComponentId, Result<Placed, String>)> = list.par_iter().map(|c| (c.id, self.place(doc, c, &driven[&c.id], &bodies))).collect();
+        self.placed = placed.iter().filter_map(|(id, r)| r.as_ref().ok().map(|p| (*id, p.clone()))).collect();
+        let placements = placed.iter().filter_map(|(id, r)| r.as_ref().ok().map(|(_, p, _)| (*id, *p))).collect();
+        let components = placed.into_iter().map(|(id, r)| (id, r.map(|(_, _, solid)| solid))).collect();
+        Some(RebuildResult { bodies, states, recomputed, depends, planes, walls, rooms, components, placements, joint_values })
     }
 }
 

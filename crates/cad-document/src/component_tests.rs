@@ -1,6 +1,7 @@
 use crate::rebuild_pattern::tests::{extrude, push, put, rect};
 use crate::*;
 use cad_geometry::DVec3;
+use std::sync::Arc;
 
 fn near3(a: DVec3, b: DVec3, tol: f64) {
     assert!(a.distance(b) <= tol, "{a} vs {b}");
@@ -208,4 +209,62 @@ fn check_lists_interference_contact_and_clearance() {
     assert!((p.x - 10.0).abs() <= 1e-6 && (q.x - 15.0).abs() <= 1e-6);
     assert!(d.check(&r, "4 mm").unwrap().clearances.is_empty());
     assert_eq!(d.check(&r, "1 deg"), Err("expected a length".to_string()));
+}
+
+#[test]
+fn unchanged_components_keep_their_solid() {
+    let mut d = boxed();
+    for c in [comp(1, 1, ["0"; 3], ["0"; 3]), comp(2, 1, ["50 mm", "0", "0"], ["0", "0", "90 deg"]), comp(3, 1, ["0", "100 mm", "0"], ["0"; 3])] {
+        d.apply(Command::AddComponent(c)).unwrap();
+    }
+    let mut rb = Rebuilder::default();
+    let a = rb.rebuild(&d);
+    d.apply(Command::SetParam { name: "unused".into(), expr: Some("1".into()) }).unwrap();
+    let b = rb.rebuild(&d);
+    assert_eq!(b.recomputed, 0);
+    for i in 1..=3 {
+        assert!(Arc::ptr_eq(a.component(i).unwrap(), b.component(i).unwrap()), "component {i}");
+    }
+    d.apply(Command::SetComponent(comp(2, 1, ["60 mm", "0", "0"], ["0", "0", "90 deg"]))).unwrap();
+    let c = rb.rebuild(&d);
+    assert!(Arc::ptr_eq(b.component(1).unwrap(), c.component(1).unwrap()));
+    assert!(Arc::ptr_eq(b.component(3).unwrap(), c.component(3).unwrap()));
+    assert!(!Arc::ptr_eq(b.component(2).unwrap(), c.component(2).unwrap()));
+    bbox_is(c.component(2).unwrap(), [40.0, 0.0, 0.0], [60.0, 10.0, 5.0]);
+    assert_eq!(c.placements.len(), 3);
+    near3(c.placements[&2].transform_point3(DVec3::new(10.0, 20.0, 5.0)), DVec3::new(40.0, 10.0, 5.0), 1e-9);
+    let fresh = Rebuilder::default().rebuild(&d);
+    for i in 1..=3 {
+        assert_eq!(**fresh.component(i).unwrap(), **c.component(i).unwrap(), "component {i}");
+    }
+}
+
+#[test]
+fn a_changed_body_replaces_every_placed_solid() {
+    let mut d = Document::new("asm");
+    d.apply(Command::SetParam { name: "h".into(), expr: Some("5 mm".into()) }).unwrap();
+    put(&mut d, 1, 0, rect(0.0, 0.0, 10.0, 20.0));
+    push(&mut d, extrude(1, 1, "h", BodyOp::New));
+    d.apply(Command::AddComponent(comp(1, 1, ["0"; 3], ["0"; 3]))).unwrap();
+    d.apply(Command::AddComponent(comp(2, 1, ["50 mm", "0", "0"], ["0", "0", "90 deg"]))).unwrap();
+    let mut rb = Rebuilder::default();
+    let a = rb.rebuild(&d);
+    d.apply(Command::SetParam { name: "h".into(), expr: Some("6 mm".into()) }).unwrap();
+    let b = rb.rebuild(&d);
+    for i in 1..=2 {
+        assert!(!Arc::ptr_eq(a.component(i).unwrap(), b.component(i).unwrap()), "component {i}");
+    }
+    assert!((b.component(1).unwrap().bbox().1.z - 6.0).abs() <= 1e-9);
+}
+
+#[test]
+fn failed_components_have_no_placement() {
+    let mut d = boxed();
+    for c in [comp(1, 1, ["1 deg", "0", "0"], ["0"; 3]), comp(2, 1, ["0"; 3], ["0"; 3])] {
+        d.apply(Command::AddComponent(c)).unwrap();
+    }
+    let r = rebuilt(&d);
+    assert!(r.component(1).is_none());
+    assert!(!r.placements.contains_key(&1));
+    assert!(r.placements.contains_key(&2));
 }

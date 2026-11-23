@@ -256,6 +256,25 @@ Deferred to later phases:
 - More benchmarks (Lamé thick-walled cylinder, which needs roller supports and curved elements; gravity; pressure on curved faces; stress concentrations); recognising a user's study as a benchmark case: later
 - Continuous collision detection between motion samples, motion studies saved in the document, loops solved per independent group, joint limits as solver constraints: later
 
-## Phase 7: Optimization and production (next)
+## Phase 7: Optimization and production (in progress)
 Profiling-driven work: instancing, culling, LOD, mesh caches, binary cache format, parallel tessellation.
 STEP, IGES, STL, OBJ, 3MF, glTF, PDF, IFC. Plugin API. Docking, themes, command search. Documentation.
+
+Done (batch A; numbers in docs/BENCHMARKS.md; checked in the running app through MCP):
+- [x] Measured first: every optimisation starts with a `cad-bench` case (or the in-app scene timer, `perf` in the MCP `state`) and ends with before and after numbers; `cargo run -p cad-bench -- assembly <path> [n]` writes the benchmark assembly
+- [x] Components are placed in parallel (rayon) and reused while their body and placement are unchanged; `RebuildResult::placements`
+- [x] Instanced 3D drawing: each body's triangles and edges go to the GPU once; shown bodies and components are instances, so a selection, gizmo, explode, motion or drag frame no longer rebuilds triangles
+
+Remaining:
+- B: worker threads and caches where measured: static and motion studies on a worker thread, mass and BOM of large assemblies off the UI thread, frustum culling, rayon in patterns, mirrors, the mesher and FEA assembly, a binary rebuild cache if cold opens exceed 1 s
+- C: glTF and 3MF export, IFC4 export, STL and OBJ import as mesh bodies (file format 28), STEP with analytic cones and spheres
+- D: docking, themes, command search, rotate gizmo for components, dragging jointed components with the gizmo
+- E: plugin API (out-of-process plugins over the MCP protocol, `cad-plugin-api`)
+- F: user guide, README, release v0.2.0 (the tag push is left to the user)
+
+Won't do in this project:
+- A NURBS kernel, exact booleans and everything that needs them: topological naming of faces that tilt, split or merge; corner blending and fillets on other edges; drafts next to curved faces; loft holes and sweep/loft self-intersection checks; mass, interference and collisions on exact geometry (facet errors are measured and labelled)
+- STEP and IGES import, STEP of tori and free-form faces, IGES export (need NURBS; STEP is read everywhere IGES was), 3D PDF
+- LOD and hidden-line rendering, unless batch B measures GPU-bound frames after culling
+- The feature-catalogue items deferred in Phases 2, 4, 5 and 6 (2D blocks and drafting extras, roof, stair and opening extras, gear, spring, thread and bearing variants, further analysis types): modelling features, not optimisation or production
+- Components referencing other project files; a 2D spatial index (measured unnecessary)

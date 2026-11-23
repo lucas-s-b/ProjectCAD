@@ -1,7 +1,10 @@
 use wgpu::util::DeviceExt;
 
+mod instancing;
+pub use instancing::{Batch, Draw, Instance, MeshData, batch};
+
 #[repr(C)]
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex {
     pub pos: [f32; 3],
     pub normal: [f32; 3],
@@ -17,6 +20,28 @@ pub struct SceneRenderer {
     bind_group: wgpu::BindGroup,
     tris: Option<(wgpu::Buffer, u32)>,
     lines: Option<(wgpu::Buffer, u32)>,
+    tri_instanced: wgpu::RenderPipeline,
+    line_instanced: wgpu::RenderPipeline,
+    meshes: std::collections::HashMap<u64, GpuMesh>,
+    instances: Option<wgpu::Buffer>,
+    batches: Vec<Batch>,
+}
+
+/// A body mesh on the GPU, shared by all its instances.
+struct GpuMesh {
+    tris: Option<(wgpu::Buffer, u32)>,
+    lines: Option<(wgpu::Buffer, u32)>,
+}
+
+fn upload(device: &wgpu::Device, v: &[Vertex]) -> Option<(wgpu::Buffer, u32)> {
+    (!v.is_empty()).then(|| {
+        let buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("scene_vertices"),
+            contents: bytemuck::cast_slice(v),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        (buf, v.len() as u32)
+    })
 }
 
 impl SceneRenderer {
@@ -60,19 +85,28 @@ impl SceneRenderer {
         });
 
         let attrs = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x4];
-        let make = |topology: wgpu::PrimitiveTopology, compare: wgpu::CompareFunction| {
+        let inst_attrs = wgpu::vertex_attr_array![3 => Float32x4, 4 => Float32x4, 5 => Float32x4, 6 => Float32x4, 7 => Float32x4];
+        let vertex_layout = wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<Vertex>() as u64,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &attrs,
+        };
+        let instance_layout = wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<Instance>() as u64,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &inst_attrs,
+        };
+        let make = |topology: wgpu::PrimitiveTopology, compare: wgpu::CompareFunction, instanced: bool| {
+            let buffers: &[Option<wgpu::VertexBufferLayout<'_>>] =
+                if instanced { &[Some(vertex_layout.clone()), Some(instance_layout.clone())] } else { &[Some(vertex_layout.clone())] };
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("scene_pipeline"),
                 layout: Some(&pipeline_layout),
                 vertex: wgpu::VertexState {
                     module: &module,
-                    entry_point: Some("vs_main"),
+                    entry_point: Some(if instanced { "vs_instanced" } else { "vs_main" }),
                     compilation_options: Default::default(),
-                    buffers: &[Some(wgpu::VertexBufferLayout {
-                        array_stride: std::mem::size_of::<Vertex>() as u64,
-                        step_mode: wgpu::VertexStepMode::Vertex,
-                        attributes: &attrs,
-                    })],
+                    buffers,
                 },
                 primitive: wgpu::PrimitiveState { topology, cull_mode: None, ..Default::default() },
                 depth_stencil: depth_format.map(|format| wgpu::DepthStencilState {
@@ -98,28 +132,41 @@ impl SceneRenderer {
             })
         };
         Self {
-            tri_pipeline: make(wgpu::PrimitiveTopology::TriangleList, wgpu::CompareFunction::Less),
-            line_pipeline: make(wgpu::PrimitiveTopology::LineList, wgpu::CompareFunction::LessEqual),
+            tri_pipeline: make(wgpu::PrimitiveTopology::TriangleList, wgpu::CompareFunction::Less, false),
+            line_pipeline: make(wgpu::PrimitiveTopology::LineList, wgpu::CompareFunction::LessEqual, false),
+            tri_instanced: make(wgpu::PrimitiveTopology::TriangleList, wgpu::CompareFunction::Less, true),
+            line_instanced: make(wgpu::PrimitiveTopology::LineList, wgpu::CompareFunction::LessEqual, true),
             camera_buffer,
             bind_group,
             tris: None,
             lines: None,
+            meshes: std::collections::HashMap::new(),
+            instances: None,
+            batches: Vec::new(),
         }
     }
 
     pub fn set_geometry(&mut self, device: &wgpu::Device, tris: &[Vertex], lines: &[Vertex]) {
-        let upload = |v: &[Vertex]| {
-            (!v.is_empty()).then(|| {
-                let buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("scene_vertices"),
-                    contents: bytemuck::cast_slice(v),
-                    usage: wgpu::BufferUsages::VERTEX,
-                });
-                (buf, v.len() as u32)
+        self.tris = upload(device, tris);
+        self.lines = upload(device, lines);
+    }
+
+    /// Keeps on the GPU exactly the meshes listed (uploading keys not seen before; a key's data never changes) and
+    /// replaces the instances with `draws`. Draws whose mesh is not listed are skipped.
+    pub fn set_instances(&mut self, device: &wgpu::Device, meshes: &[(u64, std::sync::Arc<MeshData>)], draws: &[Draw]) {
+        self.meshes.retain(|k, _| meshes.iter().any(|(m, _)| m == k));
+        for (k, m) in meshes {
+            self.meshes.entry(*k).or_insert_with(|| GpuMesh { tris: upload(device, &m.tris), lines: upload(device, &m.lines) });
+        }
+        let (instances, batches) = batch(draws);
+        self.instances = (!instances.is_empty()).then(|| {
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("scene_instances"),
+                contents: bytemuck::cast_slice(&instances),
+                usage: wgpu::BufferUsages::VERTEX,
             })
-        };
-        self.tris = upload(tris);
-        self.lines = upload(lines);
+        });
+        self.batches = batches;
     }
 
     /// `clip` is the section plane: points with `dot(clip.xyz, p) > clip.w` are dropped from clippable geometry (vertex alpha 1).
@@ -130,11 +177,26 @@ impl SceneRenderer {
 
     pub fn draw(&self, pass: &mut wgpu::RenderPass<'_>) {
         pass.set_bind_group(0, &self.bind_group, &[]);
-        for (pipeline, geometry) in [(&self.tri_pipeline, &self.tris), (&self.line_pipeline, &self.lines)] {
+        let kinds = [(&self.tri_pipeline, &self.tris, &self.tri_instanced, true), (&self.line_pipeline, &self.lines, &self.line_instanced, false)];
+        for (pipeline, geometry, instanced, triangles) in kinds {
             if let Some((buf, n)) = geometry {
                 pass.set_pipeline(pipeline);
                 pass.set_vertex_buffer(0, buf.slice(..));
                 pass.draw(0..*n, 0..1);
+            }
+            self.draw_instanced(pass, instanced, triangles);
+        }
+    }
+
+    fn draw_instanced(&self, pass: &mut wgpu::RenderPass<'_>, pipeline: &wgpu::RenderPipeline, triangles: bool) {
+        let Some(inst) = &self.instances else { return };
+        pass.set_pipeline(pipeline);
+        pass.set_vertex_buffer(1, inst.slice(..));
+        for b in self.batches.iter().filter(|b| b.faces || !triangles) {
+            let mesh = self.meshes.get(&b.mesh);
+            if let Some((buf, n)) = mesh.and_then(|m| if triangles { m.tris.as_ref() } else { m.lines.as_ref() }) {
+                pass.set_vertex_buffer(0, buf.slice(..));
+                pass.draw(0..*n, b.range.clone());
             }
         }
     }

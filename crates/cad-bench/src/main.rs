@@ -1,6 +1,6 @@
-//! Benchmark baseline: `cargo run --release -p cad-bench` prints a Markdown table of timings; `cargo run --release -p cad-bench -- validate` runs the analytic validation cases and writes docs/VALIDATION.md.
+//! Benchmark baseline: `cargo run --release -p cad-bench` prints a Markdown table of timings; `cargo run --release -p cad-bench -- validate` runs the analytic validation cases and writes docs/VALIDATION.md; `cargo run -p cad-bench -- assembly <path> [n]` writes the benchmark assembly (n components of one gear, default 200) as a project file.
 use cad_constraints::{Constraint, PointKind, PointRef, solve};
-use cad_document::{BodyOp, Command, Document, Entity, Feature, FeatureKind, History, Rebuilder, Target};
+use cad_document::{BodyOp, Command, Component, Document, Entity, Feature, FeatureKind, History, PartDef, Rebuilder, Target};
 use cad_geometry::snap::{intersections, object_snap};
 use cad_geometry::{DVec2, DVec3, Shape, distance_2d, tessellate};
 use std::collections::BTreeMap;
@@ -160,6 +160,47 @@ fn pattern_case(t: &mut Table) {
     t.add("rebuild plate with a 10 x 10 hole pattern (cold)", format!("4 features, {triangles} triangles"), || Rebuilder::default().rebuild(&doc).recomputed);
 }
 
+/// Body 1: an involute spur gear (module 2 mm, 40 teeth, 10 mm wide, 8 mm bore) on the XY plane; `n` components of
+/// it, ten per row, 100 mm apart, named "Gear #<id>".
+fn assembly(n: usize) -> Document {
+    let mut doc = Document::new("assembly");
+    let def = PartDef::Gear { module: "2 mm".into(), teeth: "40".into(), pressure: "20 deg".into(), width: "10 mm".into(), bore: "8 mm".into() };
+    let kind = FeatureKind::Part { def, sketch: 0, x: "0".into(), y: "0".into(), op: BodyOp::New, target: Target::Auto };
+    let body = doc.alloc_feature_id();
+    doc.apply(Command::AddFeature { index: 0, feature: Feature { id: body, name: "Gear".into(), suppressed: false, kind } }).expect("valid gear");
+    for i in 0..n {
+        let id = doc.alloc_component_id();
+        let at = [format!("{} mm", (i % 10) * 100), format!("{} mm", (i / 10) * 100), "0".into()];
+        let c = Component { id, name: format!("Gear #{id}"), body, at, angles: ["0".into(), "0".into(), "0".into()], meta: Default::default(), grounded: false };
+        doc.apply(Command::AddComponent(c)).expect("valid component");
+    }
+    doc
+}
+
+/// 200 components of one gear: a cold rebuild, a rebuild after a change that moves nothing (warm), the feature edges
+/// every 3D scene build recomputes per component, and the assembly's mass properties (read when a rebuild arrives).
+fn assembly_cases(t: &mut Table) {
+    let mut doc = assembly(200);
+    let cold = Rebuilder::default().rebuild(&doc);
+    assert!(cold.components.len() == 200 && cold.components.iter().all(|(_, r)| r.is_ok()), "the assembly must place, otherwise the timing means nothing");
+    let triangles = cold.bodies[0].1.mesh.triangle_count();
+    t.add("assembly rebuild: a gear and 200 components of it (cold)", format!("200 x {triangles} triangles"), || Rebuilder::default().rebuild(&doc).components.len());
+    let mut rebuilder = Rebuilder::default();
+    rebuilder.rebuild(&doc);
+    let (mut flip, mut recomputed) = (false, usize::MAX);
+    let ms = median_ms(|| {
+        flip = !flip;
+        doc.apply(Command::SetParam { name: "unused".into(), expr: Some(if flip { "1" } else { "2" }.into()) }).expect("valid parameter");
+        recomputed = rebuilder.rebuild(&doc).recomputed;
+        recomputed
+    });
+    assert_eq!(recomputed, 0);
+    eprintln!("assembly warm: {ms:.3} ms");
+    t.0.push(("the same after changing an unused parameter (warm)".to_string(), "200 components, 0 features recomputed".to_string(), ms));
+    t.add("feature edges of every component (each 3D scene build)", 200, || cold.components.iter().map(|(_, r)| r.as_ref().map_or(0, |b| b.feature_edges().len())).sum::<usize>());
+    t.add("mass properties of the assembly", 200, || doc.mass(&cold).components.len());
+}
+
 /// "2026-11-23": the UTC date `secs` seconds after 1970-01-01 (Howard Hinnant's days-to-civil algorithm).
 fn utc_date(secs: u64) -> String {
     let z = (secs / 86_400) as i64 + 719_468;
@@ -199,6 +240,12 @@ fn validate() {
 fn main() {
     if std::env::args().nth(1).as_deref() == Some("validate") {
         validate();
+        return;
+    }
+    if std::env::args().nth(1).as_deref() == Some("assembly") {
+        let path = std::env::args().nth(2).expect("usage: cad-bench assembly <path> [components]");
+        let n = std::env::args().nth(3).map_or(200, |s| s.parse().expect("a component count"));
+        assembly(n).save(std::path::Path::new(&path)).expect("save the assembly");
         return;
     }
     let mut t = Table(Vec::new());
@@ -253,6 +300,7 @@ fn main() {
 
     plate_cases(&mut t);
     pattern_case(&mut t);
+    assembly_cases(&mut t);
 
     let cpus = std::thread::available_parallelism().map_or(1, usize::from);
     let profile = if cfg!(debug_assertions) { "debug" } else { "release" };
