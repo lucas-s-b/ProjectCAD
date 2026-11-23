@@ -63,6 +63,7 @@ impl Frame {
 
 /// Places `child` relative to `parent`: child placement = parent placement x `cad_mech::mate(parent frame, motion, child frame)`.
 /// A value outside `min`..`max` fails the child's placement (`Document::check_limits`); limits refuse, never clamp.
+/// A closing joint (`closes_loop`) is not walked: the loop solver (`Document::solve_joints`) sets the free joints' values so that its frames meet.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Joint {
     pub id: JointId,
@@ -79,6 +80,26 @@ pub struct Joint {
     /// Highest allowed value, like `min`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max: Option<String>,
+    /// Closes a loop: not part of the joint tree (its child keeps its tree parent joint or its own placement); the
+    /// loop solver makes its frames meet as its kind allows. Its value and limits are not used.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub closes_loop: bool,
+    /// The loop solver sets this joint's value; `value` is only the start guess. Fixed and closing joints ignore it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub free: bool,
+}
+
+impl Joint {
+    /// `v` (radians for a revolute joint, mm otherwise) as an expression in the joint's unit: "62.72 deg", "12.5 mm"
+    /// (three decimals at most).
+    pub fn value_text(&self, v: f64) -> String {
+        if self.kind == JointKind::Revolute { format!("{} deg", cad_mech::num(v.to_degrees())) } else { mm(v) }
+    }
+
+    /// Set by the loop solver: marked free, revolute or slider, and not closing a loop.
+    pub fn is_free(&self) -> bool {
+        self.free && self.kind != JointKind::Fixed && !self.closes_loop
+    }
 }
 
 /// One exploded-view step: `component` is drawn `distance` further along `direction` (display only).
@@ -110,9 +131,9 @@ impl Document {
         id
     }
 
-    /// The joint whose child is `child`.
+    /// The tree joint whose child is `child` (closing joints are not in the tree).
     pub fn parent_joint(&self, child: ComponentId) -> Option<&Joint> {
-        self.joints.values().find(|j| j.child == child)
+        self.joints.values().find(|j| j.child == child && !j.closes_loop)
     }
 
     pub fn explode_steps(&self) -> &[ExplodeStep] {
@@ -135,7 +156,7 @@ impl Document {
         };
         let bound = |s: &Option<String>| s.as_deref().map(|s| eval(self, s, angle)).transpose();
         let (lo, hi) = (bound(&j.min)?, bound(&j.max)?);
-        let show = |v: f64| if angle { format!("{} deg", cad_mech::num(v.to_degrees())) } else { mm(v) };
+        let show = |v: f64| j.value_text(v);
         if let (Some(lo), Some(hi)) = (lo, hi)
             && lo > hi
         {
@@ -154,25 +175,30 @@ impl Document {
         Ok(())
     }
 
-    /// The motion of `j`'s child relative to its parent (`cad_mech::mate`). `drive` replaces the value of the joint with
-    /// that id (radians or mm). The value must lie within the joint's limits.
-    fn mate(&self, j: &Joint, bodies: &[(FeatureId, Arc<Body>)], drive: Option<(JointId, f64)>) -> Result<DAffine3, String> {
-        let frame = |f: &Frame, comp: ComponentId| -> Result<DAffine3, String> {
-            let (origin, axis) = match &f.face {
-                Some(r) => {
-                    let body = self.component(comp).and_then(|c| bodies.iter().find(|(id, _)| *id == c.body)).map(|(_, b)| b).ok_or("body not built")?;
-                    find_face(body, r).and_then(|i| cad_mech::face_frame(body, i)).ok_or(FACE_ERROR)?
-                }
-                None => (self.vec3(&f.origin)?, self.vec3(&f.axis)?),
-            };
-            cad_mech::frame(origin, axis).ok_or_else(|| "zero-length axis".to_string())
+    /// Frame `f` of component `comp` as a rigid motion (`cad_mech::frame`); a frame on a face is found in `bodies`.
+    pub(crate) fn frame(&self, f: &Frame, comp: ComponentId, bodies: &[(FeatureId, Arc<Body>)]) -> Result<DAffine3, String> {
+        let (origin, axis) = match &f.face {
+            Some(r) => {
+                let body = self.component(comp).and_then(|c| bodies.iter().find(|(id, _)| *id == c.body)).map(|(_, b)| b).ok_or("body not built")?;
+                find_face(body, r).and_then(|i| cad_mech::face_frame(body, i)).ok_or(FACE_ERROR)?
+            }
+            None => (self.vec3(&f.origin)?, self.vec3(&f.axis)?),
         };
+        cad_mech::frame(origin, axis).ok_or_else(|| "zero-length axis".to_string())
+    }
+
+    /// The motion of `j`'s child relative to its parent (`cad_mech::mate`). A value in `set` (radians or mm) replaces
+    /// the joint's expression. With `limits`, the value must lie within the joint's limits (the loop solver walks
+    /// without them and checks afterwards).
+    fn mate(&self, j: &Joint, bodies: &[(FeatureId, Arc<Body>)], set: &BTreeMap<JointId, f64>, limits: bool) -> Result<DAffine3, String> {
         let value = |angle: bool| -> Result<f64, String> {
-            let v = match drive {
-                Some((id, v)) if id == j.id => v,
-                _ => eval(self, &j.value, angle)?,
+            let v = match set.get(&j.id) {
+                Some(v) => *v,
+                None => eval(self, &j.value, angle)?,
             };
-            self.check_limits(j, v)?;
+            if limits {
+                self.check_limits(j, v)?;
+            }
             Ok(v)
         };
         let motion = match j.kind {
@@ -180,34 +206,36 @@ impl Document {
             JointKind::Revolute => DAffine3::from_rotation_z(value(true)?),
             JointKind::Slider => DAffine3::from_translation(DVec3::Z * value(false)?),
         };
-        Ok(cad_mech::mate(frame(&j.parent_frame, j.parent)?, motion, frame(&j.child_frame, j.child)?))
+        Ok(cad_mech::mate(self.frame(&j.parent_frame, j.parent, bodies)?, motion, self.frame(&j.child_frame, j.child, bodies)?))
     }
 
     /// The rigid motion of every component: its own `at`/`angles` (`placement`) when no joint has it as child, else
     /// its parent's placement times the joint's mate. A joint error fails the child and its whole subtree with
     /// "joint N: ..."; an error of a root is passed down unchanged. `bodies` are the rebuilt bodies, for frames on faces.
+    /// Closed loops are solved first (`solve_joints`), from the free joints' expressions.
     pub fn placements(&self, bodies: &[(FeatureId, Arc<Body>)]) -> BTreeMap<ComponentId, Result<DAffine3, String>> {
-        self.placements_driven(bodies, None)
+        self.placements_driven(bodies, None, &mut BTreeMap::new())
     }
 
-    /// `placements` with joint `drive.0` at the value `drive.1` (radians or mm) instead of its expression.
-    pub(crate) fn placements_driven(&self, bodies: &[(FeatureId, Arc<Body>)], drive: Option<(JointId, f64)>) -> BTreeMap<ComponentId, Result<DAffine3, String>> {
+    /// The joint walk alone (closing joints are not walked): every component's placement with the values in `set`
+    /// replacing those joints' expressions.
+    pub(crate) fn walk(&self, bodies: &[(FeatureId, Arc<Body>)], set: &BTreeMap<JointId, f64>, limits: bool) -> BTreeMap<ComponentId, Result<DAffine3, String>> {
         let mut out = BTreeMap::new();
         for id in self.components.keys() {
             // Fills `out` for `id` and its ancestors; the result is read from `out`.
-            let _ = self.place_in(*id, &mut out, 0, bodies, drive);
+            let _ = self.place_in(*id, &mut out, 0, bodies, set, limits);
         }
         out
     }
 
-    fn place_in(&self, id: ComponentId, out: &mut BTreeMap<ComponentId, Result<DAffine3, String>>, depth: usize, bodies: &[(FeatureId, Arc<Body>)], drive: Option<(JointId, f64)>) -> Result<DAffine3, String> {
+    fn place_in(&self, id: ComponentId, out: &mut BTreeMap<ComponentId, Result<DAffine3, String>>, depth: usize, bodies: &[(FeatureId, Arc<Body>)], set: &BTreeMap<JointId, f64>, limits: bool) -> Result<DAffine3, String> {
         if let Some(r) = out.get(&id) {
             return r.clone();
         }
         let r = match self.parent_joint(id) {
             // Only a file that skipped `load`'s checks can hold a loop; stop instead of recursing forever.
             Some(_) if depth > self.joints.len() => Err("joints form a loop".to_string()),
-            Some(j) => self.place_in(j.parent, out, depth + 1, bodies, drive).and_then(|p| Ok(p * self.mate(j, bodies, drive).map_err(|e| format!("joint {}: {e}", j.id))?)),
+            Some(j) => self.place_in(j.parent, out, depth + 1, bodies, set, limits).and_then(|p| Ok(p * self.mate(j, bodies, set, limits).map_err(|e| format!("joint {}: {e}", j.id))?)),
             None => self.component(id).ok_or_else(|| format!("component {id} not found")).and_then(|c| self.placement(c)),
         };
         out.insert(id, r.clone());
@@ -237,30 +265,38 @@ impl Document {
         out
     }
 
-    /// Both components exist, the child is not grounded, has no other parent joint and is not an ancestor of the
-    /// parent; every expression parses. Joints with the id of `j` are ignored (so `SetJoint` and `load` can use it).
+    /// Both components exist. A tree joint's child is not grounded, has no other tree parent joint and is not an
+    /// ancestor of the parent; a closing joint (`closes_loop`) only needs two different components. Every expression
+    /// parses. Joints with the id of `j` are ignored (so `SetJoint` and `load` can use it), and closing joints take no
+    /// part in the tree checks.
     pub(crate) fn check_joint(&self, j: &Joint) -> Result<(), DocError> {
         for id in [j.parent, j.child] {
             if self.component(id).is_none() {
                 return Err(DocError::ComponentNotFound(id));
             }
         }
-        if self.component(j.child).is_some_and(|c| c.grounded) {
-            return Err(DocError::BadJoint("the child is grounded"));
-        }
-        let others = || self.joints.values().filter(|o| o.id != j.id);
-        if others().any(|o| o.child == j.child) {
-            return Err(DocError::JointLoop(j.child));
-        }
-        // Walk up from the parent; meeting the child closes a loop. The step bound stops on a loop already in a file.
-        let (mut at, mut steps) = (j.parent, 0);
-        loop {
-            if at == j.child || steps > self.joints.len() {
+        if j.closes_loop {
+            if j.parent == j.child {
                 return Err(DocError::JointLoop(j.child));
             }
-            let Some(up) = others().find(|o| o.child == at) else { break };
-            at = up.parent;
-            steps += 1;
+        } else {
+            if self.component(j.child).is_some_and(|c| c.grounded) {
+                return Err(DocError::BadJoint("the child is grounded"));
+            }
+            let others = || self.joints.values().filter(|o| o.id != j.id && !o.closes_loop);
+            if others().any(|o| o.child == j.child) {
+                return Err(DocError::JointLoop(j.child));
+            }
+            // Walk up from the parent; meeting the child closes a loop. The step bound stops on a loop already in a file.
+            let (mut at, mut steps) = (j.parent, 0);
+            loop {
+                if at == j.child || steps > self.joints.len() {
+                    return Err(DocError::JointLoop(j.child));
+                }
+                let Some(up) = others().find(|o| o.child == at) else { break };
+                at = up.parent;
+                steps += 1;
+            }
         }
         let frames = [&j.parent_frame, &j.child_frame];
         frames.iter().flat_map(|f| f.origin.iter().chain(&f.axis)).chain(std::iter::once(&j.value)).chain(j.min.iter()).chain(j.max.iter()).try_for_each(|src| parse(src).map(drop))?;

@@ -363,7 +363,18 @@ fn insert_model(app: &CadApp, m: &mut serde_json::Map<String, Value>) {
     m.insert("mass".into(), json!(mass));
     let joints: Vec<Value> = app.doc.joints().map(|j| {
         let error = model.and_then(|r| r.components.iter().find(|(i, _)| *i == j.child)).and_then(|(_, r)| r.as_ref().err().cloned());
-        json!({ "id": j.id, "kind": format!("{:?}", j.kind), "parent": j.parent, "child": j.child, "value": j.value, "min": j.min, "max": j.max, "error": error })
+        let mut row = json!({ "id": j.id, "kind": format!("{:?}", j.kind), "parent": j.parent, "child": j.child, "value": j.value, "min": j.min, "max": j.max, "error": error });
+        // Only on loop joints, so rows of plain joints stay as before.
+        if j.closes_loop {
+            row["closes_loop"] = json!(true);
+        }
+        if j.free {
+            row["free"] = json!(true);
+        }
+        if let Some(v) = model.and_then(|r| r.joint_values.get(&j.id)) {
+            row["solved"] = json!(if j.kind == cad_document::JointKind::Revolute { v.to_degrees() } else { *v });
+        }
+        row
     }).collect();
     m.insert("joints".into(), json!(joints));
     m.insert("grounded".into(), json!(app.doc.components().filter(|c| c.grounded).map(|c| c.id).collect::<Vec<_>>()));
@@ -399,7 +410,7 @@ fn insert_model(app: &CadApp, m: &mut serde_json::Map<String, Value>) {
         };
         let p = mo.trace[k];
         json!({
-            "accuracy": cad_document::Accuracy::Exact.to_string(),
+            "accuracy": mo.accuracy.to_string(),
             "collision_accuracy": cad_document::Accuracy::Approximate(cad_document::SAMPLED).to_string(),
             "check_ms": run.check_ms, "checked": run.collision.is_some(), "collision": collision, "error": error,
             "drive_ms": run.drive_ms, "joint": mo.joint, "playing": app.motion_play, "point": [p.x, p.y, p.z],

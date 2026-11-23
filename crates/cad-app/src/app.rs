@@ -244,6 +244,8 @@ pub struct CadApp {
     /// Selected joint in the Assembly tab and its uncommitted edit.
     pub joint_sel: Option<JointId>,
     pub joint_edit: Option<Joint>,
+    /// The joint value being dragged in the joint editor (display only until released).
+    pub joint_drag: Option<crate::assembly_joints::JointDrag>,
     /// Exploded view: shown when on, at `explode` (0 assembled .. 1 fully exploded), with trail lines when asked.
     pub explode_on: bool,
     pub explode: f64,
@@ -383,6 +385,7 @@ impl CadApp {
             joint_parent: 0,
             joint_sel: None,
             joint_edit: None,
+            joint_drag: None,
             explode_on: false,
             explode: 1.0,
             explode_trails: false,

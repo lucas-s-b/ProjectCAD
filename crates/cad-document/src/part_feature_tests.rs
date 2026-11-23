@@ -152,7 +152,7 @@ fn every_default_part_builds_and_saves() {
     let loaded = Document::load(&p).unwrap();
     std::fs::remove_file(&p).ok();
     assert_eq!(loaded.features(), d.features());
-    assert_eq!(FORMAT_VERSION, 24);
+    assert_eq!(FORMAT_VERSION, 25);
 }
 
 #[test]

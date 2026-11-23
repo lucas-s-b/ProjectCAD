@@ -24,3 +24,9 @@ fn accuracy_texts() {
     assert_eq!(Accuracy::Approximate(SAMPLED).to_string(), "approximate (sampled at the steps)");
     assert_eq!(Accuracy::Validated("cantilever beam").to_string(), "validated against cantilever beam");
 }
+
+#[test]
+fn solved_and_validated_labels() {
+    assert_eq!(Accuracy::Approximate(SOLVED).to_string(), "approximate (loop closed to 1e-9 mm)");
+    assert_eq!(Accuracy::Validated(crate::FOUR_BAR).to_string(), "validated against four-bar position analysis");
+}

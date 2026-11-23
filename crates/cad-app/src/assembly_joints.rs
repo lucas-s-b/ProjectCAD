@@ -1,9 +1,10 @@
 //! The Assembly tab's joints and exploded-view sections.
 use crate::app::CadApp;
 use crate::widgets as w;
-use cad_document::{Command, ComponentId, ExplodeStep, Frame, Joint, JointId, JointKind};
-use cad_geometry::DVec3;
+use cad_document::{Accuracy, Command, ComponentId, ExplodeStep, Frame, Joint, JointId, JointKind, SOLVED};
+use cad_geometry::{DAffine3, DVec3};
 use eframe::egui::{self, Color32, RichText, TextEdit};
+use std::collections::BTreeMap;
 
 const KINDS: [(JointKind, &str); 3] = [(JointKind::Fixed, "Type: Fixed"), (JointKind::Revolute, "Type: Revolute"), (JointKind::Slider, "Type: Slider")];
 
@@ -17,6 +18,7 @@ pub fn joints(app: &mut CadApp, ui: &mut egui::Ui) {
     add_controls(app, ui);
     list(app, ui);
     editor(app, ui);
+    drag(app, ui);
 }
 
 /// Parent choice and "Add joint", which makes the selected component a child of that parent. The parent defaults to
@@ -46,7 +48,7 @@ fn add_controls(app: &mut CadApp, ui: &mut egui::Ui) {
 }
 
 /// A fixed joint with both frames at the component origins (parent axis +Z, child axis -Z: the child sits exactly on
-/// the parent). It becomes the selected joint.
+/// the parent). It becomes the selected joint. It closes a loop when the child already has a parent joint (a grounded child is still refused, as before; tick "Closes loop" to close a loop onto it).
 fn add(app: &mut CadApp, child: ComponentId) {
     let id = app.doc.alloc_joint_id();
     let j = Joint {
@@ -59,6 +61,8 @@ fn add(app: &mut CadApp, child: ComponentId) {
         value: "0".into(),
         min: None,
         max: None,
+        closes_loop: app.doc.parent_joint(child).is_some(),
+        free: false,
     };
     app.exec(vec![Command::AddJoint(j)]);
     if app.doc.joint(id).is_some() {
@@ -72,9 +76,16 @@ fn list(app: &mut CadApp, ui: &mut egui::Ui) {
     let error = |child: ComponentId| {
         app.model_result().and_then(|r| r.components.iter().find(|(i, _)| *i == child)).and_then(|(_, r)| r.as_ref().err().cloned())
     };
-    let rows: Vec<(JointId, String, Option<String>)> =
-        app.doc.joints().map(|j| (j.id, format!("{:?}: {} > {}", j.kind, name(app, j.parent), name(app, j.child)), error(j.child))).collect();
-    for (id, text, err) in rows {
+    let solved = |j: &Joint| app.model_result().and_then(|r| r.joint_values.get(&j.id)).map(|v| j.value_text(*v));
+    let rows: Vec<(JointId, String, Option<String>, Option<String>)> = app
+        .doc
+        .joints()
+        .map(|j| {
+            let flag = if j.closes_loop { " (closes loop)" } else if j.is_free() { " (free)" } else { "" };
+            (j.id, format!("{:?}: {} > {}{flag}", j.kind, name(app, j.parent), name(app, j.child)), error(j.child), solved(j))
+        })
+        .collect();
+    for (id, text, err, solved) in rows {
         if w::selectable(ui, app.joint_sel == Some(id), &format!("Joint {id}")).clicked() {
             app.joint_sel = Some(id);
             app.joint_edit = None;
@@ -82,6 +93,10 @@ fn list(app: &mut CadApp, ui: &mut egui::Ui) {
         ui.small(text);
         if let Some(e) = err {
             ui.small(RichText::new(e).color(Color32::RED));
+        }
+        if let Some(v) = solved {
+            ui.small(format!("Solved: {v}"));
+            crate::motion_panel::accuracy(ui, Accuracy::Approximate(SOLVED));
         }
     }
 }
@@ -105,19 +120,26 @@ fn editor(app: &mut CadApp, ui: &mut egui::Ui) {
                 commit |= w::selectable_value(ui, &mut buffer.kind, k, text).clicked();
             }
         });
+        // A closing joint has no value of its own; a free joint's value is only the solver's start guess.
+        commit |= w::checkbox(ui, &mut buffer.closes_loop, "Closes loop").changed();
+        if buffer.kind != JointKind::Fixed && !buffer.closes_loop {
+            commit |= w::checkbox(ui, &mut buffer.free, "Free joint").changed();
+        }
         let mut field = |ui: &mut egui::Ui, label: &str, text: &mut String| {
             commit |= w::add(ui, label, TextEdit::singleline(text).id_salt(("joint", id, label)).desired_width(70.0)).lost_focus();
         };
-        let unit = match buffer.kind {
-            JointKind::Revolute => "Angle",
-            JointKind::Slider => "Distance",
-            JointKind::Fixed => "Value (unused)",
+        let unit = match (buffer.kind, buffer.closes_loop, buffer.free) {
+            (JointKind::Fixed, ..) | (_, true, _) => "Value (unused)",
+            (JointKind::Revolute, _, true) => "Start angle",
+            (JointKind::Slider, _, true) => "Start distance",
+            (JointKind::Revolute, ..) => "Angle",
+            (JointKind::Slider, ..) => "Distance",
         };
         ui.horizontal(|ui| {
             ui.label(unit);
             field(ui, "Joint value", &mut buffer.value);
         });
-        if buffer.kind != JointKind::Fixed {
+        if buffer.kind != JointKind::Fixed && !buffer.closes_loop {
             // An empty field means no limit.
             let (mut min, mut max) = (buffer.min.clone().unwrap_or_default(), buffer.max.clone().unwrap_or_default());
             ui.horizontal_wrapped(|ui| {
@@ -183,6 +205,70 @@ fn editor(app: &mut CadApp, ui: &mut egui::Ui) {
         if let Some(j) = app.joint_edit.take().filter(|j| Some(j) != stored.as_ref()) {
             app.exec(vec![Command::SetJoint(j)]);
         }
+    }
+}
+
+/// A joint value being dragged with the editor's slider: shown in 3D (`Document::pose`, display only) until released.
+pub struct JointDrag {
+    pub joint: JointId,
+    /// The document revision it was computed on.
+    pub rev: u64,
+    /// Radians or mm.
+    pub value: f64,
+    /// The loops' solved values, where the next solve starts (keeps a linkage on its branch while dragging).
+    pub guess: BTreeMap<JointId, f64>,
+    pub moves: Result<BTreeMap<ComponentId, DAffine3>, String>,
+}
+
+/// "Drag" slider and value of the selected revolute or slider joint (not a closing one). Dragging the slider shows
+/// the pose in 3D, loops solved per frame; releasing it, clicking it or typing a value writes the value and the free
+/// joints' solved values (as their new start values) in one undo step. A pose that fails is shown in red, not written.
+fn drag(app: &mut CadApp, ui: &mut egui::Ui) {
+    let Some(j) = app.joint_sel.and_then(|id| app.doc.joint(id)).filter(|j| j.kind != JointKind::Fixed && !j.closes_loop).cloned() else { return };
+    if !app.model_current() {
+        return;
+    }
+    let (rev, angle) = (app.doc.revision(), j.kind == JointKind::Revolute);
+    let held = app.joint_drag.as_ref().filter(|d| d.joint == j.id && d.rev == rev).map(|d| (d.value, d.guess.clone(), d.moves.as_ref().err().cloned()));
+    let Some(result) = app.model_result() else { return };
+    // Without a value (an expression error) there is nothing to drag; the joint list shows the error.
+    let Ok(v) = held.as_ref().map_or_else(|| app.doc.joint_value(result, &j), |(v, ..)| Ok(*v)) else { return };
+    let mut shown = if angle { v.to_degrees() } else { v };
+    // shortcut: a fixed slider range, not the joint's limits; a typed value may lie outside it.
+    let range = if angle { -180.0..=180.0 } else { -100.0..=100.0 };
+    let (slider, typed) = ui
+        .horizontal_wrapped(|ui| {
+            ui.label("Drag");
+            let s = w::add(ui, "Joint drag", egui::Slider::new(&mut shown, range).show_value(false));
+            let t = w::add(ui, "Joint drag value", egui::DragValue::new(&mut shown).speed(if angle { 1.0 } else { 0.5 }));
+            ui.label(if angle { "deg" } else { "mm" });
+            (s, t)
+        })
+        .inner;
+    if let Some((_, _, Some(err))) = &held {
+        ui.small(RichText::new(err.as_str()).color(Color32::RED));
+    }
+    let changed = slider.changed() || typed.changed();
+    if !changed && !slider.drag_stopped() {
+        return;
+    }
+    let value = if angle { shown.to_radians() } else { shown };
+    let mut guess = held.map_or_else(|| result.joint_values.clone(), |(_, g, _)| g);
+    let moves = app.doc.pose(result, j.id, value, &mut guess);
+    // The scene shows the new pose (see the stamp in `view3d::show`).
+    app.sel_rev += 1;
+    if (slider.drag_stopped() || !slider.dragged()) && moves.is_ok() {
+        let mut cmds = vec![Command::SetJoint(Joint { value: j.value_text(value), ..j.clone() })];
+        for f in app.doc.joints().filter(|f| f.is_free() && f.id != j.id) {
+            if let Some(g) = guess.get(&f.id) {
+                cmds.push(Command::SetJoint(Joint { value: f.value_text(*g), ..f.clone() }));
+            }
+        }
+        app.joint_drag = None;
+        app.joint_edit = None;
+        app.exec(cmds);
+    } else {
+        app.joint_drag = Some(JointDrag { joint: j.id, rev, value, guess, moves });
     }
 }
 

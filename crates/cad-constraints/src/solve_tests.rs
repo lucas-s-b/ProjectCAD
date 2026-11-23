@@ -2,6 +2,7 @@ use crate::residual::{layout, residuals, tangent_modes};
 use crate::residual_tests::{circle, line, map, pt, v};
 use crate::solve::{Solution, Status, solve};
 use crate::types::{Constraint, Id, PointKind, SolveError};
+use crate::{Triplet, least_squares};
 use cad_geometry::{DVec2, Shape};
 use std::collections::BTreeMap;
 use std::f64::consts::{FRAC_PI_2, FRAC_PI_3};
@@ -249,4 +250,38 @@ fn fixed_point_stays_put() {
     assert!(ends(&now[&1]).0.distance(v(1.0, 2.0)) < 1e-9);
     close(ends(&now[&1]).1, v(11.0, 2.0));
     assert_eq!(sol.status(), Status::FullyConstrained);
+}
+
+#[test]
+fn least_squares_meets_two_equations() {
+    let residuals = |x: &[f64], out: &mut Vec<f64>| {
+        out.clear();
+        out.extend([x[0] * x[0] + x[1] * x[1] - 25.0, x[0] - x[1] - 1.0]);
+    };
+    let jacobian = |x: &[f64]| vec![Triplet::new(0, 0, 2.0 * x[0]), Triplet::new(0, 1, 2.0 * x[1]), Triplet::new(1, 0, 1.0), Triplet::new(1, 1, -1.0)];
+    let fit = least_squares(vec![4.5, 3.2], residuals, jacobian).unwrap();
+    assert!((fit.x[0] - 4.0).abs() <= 1e-9 && (fit.x[1] - 3.0).abs() <= 1e-9);
+    assert_eq!(fit.rank, 2);
+    assert!(fit.iterations >= 1);
+}
+
+#[test]
+fn least_squares_rank_and_failure() {
+    let one = |x: &[f64], out: &mut Vec<f64>| {
+        out.clear();
+        out.push(x[0] + x[1] - 2.0);
+    };
+    let fit = least_squares(vec![0.0, 0.0], one, |_| vec![Triplet::new(0, 0, 1.0), Triplet::new(0, 1, 1.0)]).unwrap();
+    assert!((fit.x[0] + fit.x[1] - 2.0).abs() <= 1e-9);
+    assert_eq!(fit.rank, 1);
+    let two = |x: &[f64], out: &mut Vec<f64>| {
+        out.clear();
+        out.extend([x[0] - 1.0, x[0] - 2.0]);
+    };
+    let r = least_squares(vec![0.0], two, |_| vec![Triplet::new(0, 0, 1.0), Triplet::new(1, 0, 1.0)]);
+    assert!(matches!(r, Err(SolveError::NotConverged { residual }) if (residual - 0.5).abs() < 1e-6));
+    let fit = least_squares(vec![1.0], |_, out: &mut Vec<f64>| out.clear(), |_| Vec::new()).unwrap();
+    assert_eq!(fit.x, vec![1.0]);
+    assert_eq!(fit.rank, 0);
+    assert_eq!(fit.iterations, 0);
 }
