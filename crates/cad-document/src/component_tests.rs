@@ -268,3 +268,42 @@ fn failed_components_have_no_placement() {
     assert!(!r.placements.contains_key(&1));
     assert!(r.placements.contains_key(&2));
 }
+
+#[test]
+fn component_turned_about_z_keeps_the_centre() {
+    let d = boxed();
+    let c = comp(1, 1, ["0"; 3], ["0"; 3]);
+    let t = d.component_turned(&c, DVec3::new(5.0, 10.0, 2.5), DVec3::Z, std::f64::consts::FRAC_PI_2).unwrap();
+    assert_eq!(t.angles, ["0 deg", "0 deg", "90 deg"].map(String::from));
+    assert_eq!(t.at, ["15 mm", "5 mm", "0 mm"].map(String::from));
+    let p = d.placement(&t).unwrap();
+    near3(p.transform_point3(DVec3::new(5.0, 10.0, 2.5)), DVec3::new(5.0, 10.0, 2.5), 1e-9);
+    near3(p.transform_point3(DVec3::ZERO), DVec3::new(15.0, 5.0, 0.0), 1e-9);
+}
+
+#[test]
+fn component_turns_compose() {
+    let d = boxed();
+    let c = comp(1, 1, ["0"; 3], ["90", "0", "0"]);
+    let t = d.component_turned(&c, DVec3::ZERO, DVec3::Z, std::f64::consts::FRAC_PI_2).unwrap();
+    let turn = cad_geometry::DAffine3::from_rotation_z(std::f64::consts::FRAC_PI_2) * d.placement(&c).unwrap();
+    for p in [DVec3::new(1.0, 2.0, 3.0), DVec3::new(-4.0, 5.0, 0.5)] {
+        near3(d.placement(&t).unwrap().transform_point3(p), turn.transform_point3(p), 1e-6);
+    }
+}
+
+#[test]
+fn component_turned_through_gimbal_lock() {
+    use cad_geometry::DAffine3;
+    let d = boxed();
+    let half = std::f64::consts::FRAC_PI_2;
+    let c = comp(1, 1, ["0"; 3], ["0"; 3]);
+    let t = d.component_turned(&c, DVec3::ZERO, DVec3::Y, half).unwrap();
+    assert_eq!(t.angles, ["0 deg", "90 deg", "0 deg"].map(String::from));
+    let p = DVec3::new(1.0, 2.0, 3.0);
+    near3(d.placement(&t).unwrap().transform_point3(p), DVec3::new(3.0, 2.0, -1.0), 1e-6);
+    let t2 = d.component_turned(&t, DVec3::ZERO, DVec3::Z, 30f64.to_radians()).unwrap();
+    assert_eq!(t2.angles, ["0 deg", "90 deg", "30 deg"].map(String::from));
+    let expected = DAffine3::from_rotation_z(30f64.to_radians()) * DAffine3::from_rotation_y(half);
+    near3(d.placement(&t2).unwrap().transform_point3(p), expected.transform_point3(p), 1e-6);
+}

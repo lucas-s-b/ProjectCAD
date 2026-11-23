@@ -2,7 +2,7 @@
 use crate::component::{ComponentId, mm};
 use crate::feature::FeatureId;
 use crate::document::{Command, DocError, Document};
-use crate::rebuild::eval;
+use crate::rebuild::{RebuildResult, eval};
 use crate::refs::{FACE_ERROR, FaceRef, find_face};
 use cad_geometry::{DAffine3, DVec3};
 use cad_modeler::Body;
@@ -134,6 +134,15 @@ impl Document {
     /// The tree joint whose child is `child` (closing joints are not in the tree).
     pub fn parent_joint(&self, child: ComponentId) -> Option<&Joint> {
         self.joints.values().find(|j| j.child == child && !j.closes_loop)
+    }
+
+    /// Where joint `j` moves its child in `result`: the origin and unit Z axis of its parent frame under the parent's
+    /// placement (a revolute joint turns the child about this line by its value, a slider moves it along the axis).
+    /// Err when the parent is not placed or the frame does not resolve.
+    pub fn joint_axis(&self, result: &RebuildResult, j: &Joint) -> Result<(DVec3, DVec3), String> {
+        let parent = result.placements.get(&j.parent).ok_or_else(|| format!("component {} is not placed", j.parent))?;
+        let f = *parent * self.frame(&j.parent_frame, j.parent, &result.bodies)?;
+        Ok((f.translation, f.matrix3.z_axis.normalize()))
     }
 
     pub fn explode_steps(&self) -> &[ExplodeStep] {

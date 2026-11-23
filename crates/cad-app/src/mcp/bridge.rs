@@ -1,6 +1,7 @@
 //! Runs MCP jobs on the UI thread by injecting egui events.
 use super::{Job, Reply, Request};
 use crate::app::{CadApp, ViewMode};
+use cad_document::JointKind;
 use cad_geometry::{DVec2, DVec3};
 use eframe::egui::{self, Event, Modifiers, Pos2};
 use serde_json::{Value, json};
@@ -513,7 +514,12 @@ fn state_json(app: &CadApp, ctx: &egui::Context) -> Value {
         app.model.iter().flat_map(|(_, m)| &m.bodies).flat_map(|(_, b)| b.section_cap(axis, d))
             .map(|[a, b, c]| 0.5 * (b - a).cross(c - a).length()).sum()
     });
-    m.insert("gizmo".into(), json!(app.gizmo_screen.map(|g| g.map(|p| [(p.x * ppp).round(), (p.y * ppp).round()]))));
+    let px = |p: egui::Pos2| [(p.x * ppp).round(), (p.y * ppp).round()];
+    m.insert("gizmo".into(), json!(app.gizmo_screen.map(|g| g.map(px))));
+    m.insert("gizmo_rings".into(), json!(app.gizmo_rings.as_ref().map(|rs| rs.iter().map(|r| [px(r[6]), px(r[18])]).collect::<Vec<_>>())));
+    m.insert("gizmo_joint".into(), json!(app.gizmo_joint.as_ref().map(|(kind, start, pts)| match kind { JointKind::Slider => json!({ "kind": "Slider", "points": [px(*start), px(pts[0])] }), _ => json!({ "kind": "Revolute", "points": [px(*start), px(pts[6]), px(pts[18])] }) })));
+    m.insert("settings".into(), serde_json::to_value(&app.settings).unwrap_or_default());
+    m.insert("palette".into(), json!(app.palette.as_ref().map(|p| json!({ "matches": crate::palette::ranked(&p.query, &p.items, crate::palette::SHOWN).iter().map(|(n, _)| n).collect::<Vec<_>>(), "query": p.query }))));
     m.insert("section_cap_area".into(), json!(cap_area));
     let p = app.perf;
     m.insert("perf".into(), json!({ "frame_ms": p.frame_ms, "instances": p.instances, "meshes": p.meshes, "scene_ms": p.scene_ms, "scene_vertices": p.scene_vertices }));

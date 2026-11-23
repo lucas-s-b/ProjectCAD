@@ -1,6 +1,7 @@
 use crate::camera::{Camera2D, OrbitCamera};
 use crate::mcp::{self, bridge::Bridge};
 use crate::rebuild_worker::RebuildWorker;
+use crate::settings::Dock;
 use crate::{panels, view2d, view3d};
 use cad_document::{Check, ExplodeStep, Joint, JointId, Component, ComponentId, Plane3, Command, ConstraintId, Document, Entity, EntityId, History, LayerId, BodyOp, Feature, FeatureId, PointRef, RebuildResult, RevolveAxis, SketchId, BasePlane, Target};
 use cad_geometry::snap::Snap;
@@ -100,6 +101,23 @@ pub enum SideTab {
     Sketch,
     Model,
     Assembly,
+}
+
+impl SideTab {
+    pub const ALL: [SideTab; 3] = [SideTab::Sketch, SideTab::Model, SideTab::Assembly];
+
+    /// Index into `Layout::docks`.
+    pub fn index(self) -> usize {
+        self as usize
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            SideTab::Sketch => "Sketch",
+            SideTab::Model => "Model",
+            SideTab::Assembly => "Assembly",
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -331,6 +349,10 @@ pub struct CadApp {
     pub gizmo: Option<crate::gizmo::GizmoDrag>,
     /// Gizmo screen points of the last frame; used for hit tests.
     pub gizmo_screen: Option<[egui::Pos2; 4]>,
+    /// Screen points of the rotate rings of the last frame (X, Y, Z); used for hit tests.
+    pub gizmo_rings: Option<[Vec<egui::Pos2>; 3]>,
+    /// Screen points of a jointed component's gizmo handle of the last frame: (joint kind, start, points); see `gizmo::joint_screen`.
+    pub gizmo_joint: Option<(cad_document::JointKind, egui::Pos2, Vec<egui::Pos2>)>,
     /// Section plane of the 3D view.
     pub section: SectionView,
     pub bvhs: Vec<(std::sync::Arc<cad_document::Body>, std::sync::Arc<cad_document::Bvh>)>,
@@ -340,6 +362,20 @@ pub struct CadApp {
     pub mesh_key: u64,
     /// Named widgets of the last complete frame.
     pub widgets: Vec<crate::widgets::WidgetHit>,
+    /// Theme, accent and panel layout (`settings.rs`); not part of the document or its undo history.
+    pub settings: crate::settings::Settings,
+    /// The settings as last written or read, so only changes are written.
+    pub settings_saved: crate::settings::Settings,
+    /// The settings file; None in MCP mode without `CAD_SETTINGS`.
+    pub settings_path: Option<std::path::PathBuf>,
+    /// The theme and accent the egui visuals were last set from.
+    pub theme_applied: Option<(crate::settings::Theme, [u8; 3])>,
+    /// Bumped by "Reset layout" so egui forgets the slots' dragged sizes (part of the panel ids).
+    pub layout_gen: u32,
+    /// The open command search (Ctrl+K), see `palette.rs`.
+    pub palette: Option<crate::palette::Palette>,
+    /// The chosen search result being clicked, one step per frame.
+    pub palette_click: Option<crate::palette::PaletteClick>,
     /// Present only with --mcp.
     pub mcp: Option<Bridge>,
 }
@@ -347,6 +383,12 @@ pub struct CadApp {
 impl CadApp {
     pub fn new(cc: &eframe::CreationContext<'_>, mcp: bool) -> Self {
         view3d::init_renderer(cc);
+        let settings_path = crate::settings::path(mcp);
+        let (settings, warning) = match settings_path.as_deref().map(crate::settings::load) {
+            Some(Ok(s)) => (s, None),
+            Some(Err(err)) => (crate::settings::Settings::default(), Some(err)),
+            None => (crate::settings::Settings::default(), None),
+        };
         Self {
             doc: Document::new("Untitled"),
             history: History::default(),
@@ -361,7 +403,7 @@ impl CadApp {
             points: Vec::new(),
             drag: None,
             inspector: None,
-            status: String::new(),
+            status: warning.unwrap_or_default(),
             cursor_world: DVec2::ZERO,
             confirm: None,
             gpu_stamp: None,
@@ -480,7 +522,16 @@ impl CadApp {
             edge_sel: None,
             gizmo: None,
             gizmo_screen: None,
+            gizmo_rings: None,
+            gizmo_joint: None,
             widgets: Vec::new(),
+            settings_saved: settings.clone(),
+            settings,
+            settings_path,
+            theme_applied: None,
+            layout_gen: 0,
+            palette: None,
+            palette_click: None,
             mcp: mcp.then(|| mcp::spawn(cc.egui_ctx.clone())),
         }
     }
@@ -521,7 +572,7 @@ impl CadApp {
 
     /// No rebuild pending and no analysis running: MCP replies and held requests wait for this.
     pub fn idle(&self) -> bool {
-        self.model_current() && self.jobs.running().is_none()
+        self.model_current() && self.jobs.running().is_none() && self.palette_click.is_none()
     }
 
     /// Cancels a job whose document has changed, then hands a finished job's output to its panel, which stores it
@@ -743,16 +794,18 @@ impl CadApp {
 }
 
 impl eframe::App for CadApp {
-    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
         if let Some(b) = &mut self.mcp {
             b.feed(raw);
         }
+        crate::palette::feed(self, ctx, raw);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let frame_start = std::time::Instant::now();
         let ctx = ui.ctx().clone();
         self.widgets = crate::widgets::begin_frame(&ctx);
+        crate::settings::sync(self, &ctx);
         if let Some(mut b) = self.mcp.take() {
             b.poll(self, &ctx);
             self.mcp = Some(b);
@@ -766,9 +819,11 @@ impl eframe::App for CadApp {
         panels::shortcuts(self, &ctx);
         panels::menu_bar(self, ui);
         crate::toolbar::toolbar(self, ui);
-        panels::right_panel(self, ui);
+        panels::side_panels(self, ui, &Dock::ALL[..2]);
         panels::status_bar(self, ui);
+        panels::side_panels(self, ui, &Dock::ALL[2..]);
         panels::confirm_dialog(self, &ctx);
+        crate::palette::show(self, &ctx);
         panels::update_title(self, &ctx);
         egui::CentralPanel::default().show(ui, |ui| match self.view {
             ViewMode::TwoD => view2d::show(self, ui),

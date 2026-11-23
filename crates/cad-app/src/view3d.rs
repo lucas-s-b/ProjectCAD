@@ -1,4 +1,5 @@
 use crate::app::{CadApp, PickFace};
+use crate::gizmo::GizmoKind;
 use cad_document::{ComponentId, EntityId, Overlap, TET_FACES};
 use cad_geometry::{DAffine3, DVec2, DVec3, distance_2d, outline, ray_hit, tessellate};
 use cad_renderer::{Draw, Instance, MeshData, SceneRenderer, Vertex};
@@ -149,8 +150,8 @@ fn build_scene(app: &CadApp) -> Scene {
             }
         }
     }
-    // The selected component follows a gizmo drag in progress (the gizmo moves it when no entity is selected).
-    let moving = app.gizmo.as_ref().filter(|_| app.selection.is_empty()).map_or(DVec3::ZERO, crate::gizmo::GizmoDrag::delta);
+    // The selected component follows a gizmo drag in progress (moved or turned about its centre; no entity selected).
+    let gizmo_motion = app.gizmo.as_ref().filter(|_| app.selection.is_empty()).and_then(|g| Some(g.motion(crate::gizmo::center(app)?))).unwrap_or(DAffine3::IDENTITY);
     let offsets = app.doc.explode_offsets(app.explode_factor());
     // The motion study's shown sample; display only (picking stays on the assembled pose).
     let moves = crate::motion_panel::shown_moves(app);
@@ -179,16 +180,17 @@ fn build_scene(app: &CadApp) -> Scene {
     for (id, comp, body, source, base) in shown.chain(placed) {
         let meshed = id.is_some() && (mesh.is_some_and(|m| Some(m.body) == id) || study.is_some_and(|s| Some(s.body) == id));
         let selected = comp.is_some() && comp == app.component_sel;
-        let shift = if selected { moving } else { DVec3::ZERO } + comp.and_then(|c| offsets.get(&c)).copied().unwrap_or(DVec3::ZERO);
+        let shift = comp.and_then(|c| offsets.get(&c)).copied().unwrap_or(DVec3::ZERO);
+        let held = if selected { gizmo_motion } else { DAffine3::IDENTITY };
         let turn = comp.and_then(|c| moves.and_then(|m| m.get(&c))).copied().unwrap_or(DAffine3::IDENTITY);
-        let at = |p: DVec3| turn.transform_point3(p) + shift;
+        let at = |p: DVec3| (DAffine3::from_translation(shift) * held * turn).transform_point3(p);
         let mesh = &body.mesh;
         let faces = !comp.is_some_and(|c| wire.contains(&c)) && !meshed;
         // A body with a highlighted face is drawn per triangle as before (instances colour whole meshes).
         let highlight = id.is_some_and(|id| app.face_sel.is_some_and(|(b, _)| b == id)) || (selected && app.component_face.is_some_and(|(c, _)| Some(c) == comp));
         match crate::scene_mesh::key(app, source).filter(|_| !highlight) {
             Some(key) => {
-                let world = DAffine3::from_translation(shift) * turn * base;
+                let world = DAffine3::from_translation(shift) * held * turn * base;
                 let tint = if selected { SELECTED } else { GREY };
                 let instance = Instance { model: glam::DMat4::from(world).as_mat4().to_cols_array_2d(), color: [tint[0], tint[1], tint[2], 1.0] };
                 draws.push(Draw { mesh: key, instance, faces });
@@ -199,7 +201,7 @@ fn build_scene(app: &CadApp) -> Scene {
                         let face = id.is_some_and(|id| app.face_sel == Some((id, body.tri_face[corner / 3])));
                         let picked = selected && app.component_face.is_some_and(|(c, f)| Some(c) == comp && f == body.tri_face[corner / 3]);
                         let color = if picked { PICKED_FACE } else if selected || face { SELECTED } else { GREY };
-                        tris.push(vertex(at(mesh.positions[i as usize]), turn.transform_vector3(*n).as_vec3().to_array(), color));
+                        tris.push(vertex(at(mesh.positions[i as usize]), (held * turn).transform_vector3(*n).as_vec3().to_array(), color));
                     }
                 }
                 for [a, b] in body.feature_edges() {
@@ -211,6 +213,7 @@ fn build_scene(app: &CadApp) -> Scene {
         // A cap of a moved solid would sit on the wrong plane.
         if shift == DVec3::ZERO
             && turn == DAffine3::IDENTITY
+            && held == DAffine3::IDENTITY
             && let Some((axis, d)) = app.section.plane()
         {
             let mut n = [0.0f32; 3];
@@ -357,7 +360,9 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
         app.pick_face = PickFace::Off;
         app.pick_edges = None;
-        app.gizmo = None;
+        if app.gizmo.take().is_some_and(|g| matches!(g.kind, GizmoKind::Joint { .. })) {
+            app.joint_drag = None;
+        }
     }
     if app.pick_edges.is_some() && !ui.ctx().egui_wants_keyboard_input() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
         crate::edge_pick::finish(app);
@@ -438,7 +443,15 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     ui.painter().add(egui_wgpu::Callback::new_paint_callback(rect, SceneCallback { view_proj, clip: app.section.clip(), geometry }));
     app.gizmo_screen = crate::gizmo::screen(app, rect);
     if let Some(p) = app.gizmo_screen {
-        crate::gizmo::paint(&ui.painter_at(rect), p, app.gizmo.as_ref().map(|g| g.axis));
+        crate::gizmo::paint(&ui.painter_at(rect), p, app.gizmo.as_ref().filter(|g| g.kind == GizmoKind::Move).map(|g| g.axis));
+    }
+    app.gizmo_rings = crate::gizmo::rings(app, rect);
+    if let Some(rings) = &app.gizmo_rings {
+        crate::gizmo::paint_rings(&ui.painter_at(rect), rings, app.gizmo.as_ref().filter(|g| g.kind == GizmoKind::Turn).map(|g| g.axis));
+    }
+    app.gizmo_joint = crate::gizmo::joint_screen(app, rect);
+    if let Some((kind, start, pts)) = &app.gizmo_joint {
+        crate::gizmo::paint_joint(&ui.painter_at(rect), *kind, *start, pts, app.gizmo.as_ref().is_some_and(|g| matches!(g.kind, GizmoKind::Joint { .. })));
     }
     if app.show_com
         && let Some(p) = crate::mass_panel::marker_point(app).and_then(|q| project(app, rect, q))
