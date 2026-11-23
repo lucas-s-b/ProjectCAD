@@ -24,7 +24,7 @@ mod trimmed;
 pub use blend::{chamfer_edge, fillet_edge};
 pub use draft::draft_face;
 pub use body::{Body, BodyFace, union_all};
-pub use bvh::{Bvh, ray_triangle};
+pub use bvh::{Bvh, closest_on_triangle, ray_triangle};
 pub use boolean::{BoolOp, boolean};
 pub use edges::{BodyEdge, Convexity, EdgeGeom};
 pub use cad_geometry::shape::GeomError;

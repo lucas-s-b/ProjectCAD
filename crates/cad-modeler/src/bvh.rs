@@ -18,6 +18,43 @@ pub fn ray_triangle(origin: DVec3, dir: DVec3, [a, b, c]: [DVec3; 3]) -> Option<
     (u >= 0.0 && v >= 0.0 && u + v <= 1.0 && t > 0.0).then_some(t)
 }
 
+/// The point of triangle [a, b, c] nearest to `p` (Ericson, Real-Time Collision Detection, 5.1.5: vertex, edge or
+/// face region). A degenerate triangle gives its nearest corner.
+pub fn closest_on_triangle(p: DVec3, [a, b, c]: [DVec3; 3]) -> DVec3 {
+    let (ab, ac, ap) = (b - a, c - a, p - a);
+    let (d1, d2) = (ab.dot(ap), ac.dot(ap));
+    if d1 <= 0.0 && d2 <= 0.0 {
+        return a;
+    }
+    let bp = p - b;
+    let (d3, d4) = (ab.dot(bp), ac.dot(bp));
+    if d3 >= 0.0 && d4 <= d3 {
+        return b;
+    }
+    let vc = d1 * d4 - d3 * d2;
+    if vc <= 0.0 && d1 >= 0.0 && d3 <= 0.0 {
+        return a + ab * (d1 / (d1 - d3));
+    }
+    let cp = p - c;
+    let (d5, d6) = (ab.dot(cp), ac.dot(cp));
+    if d6 >= 0.0 && d5 <= d6 {
+        return c;
+    }
+    let vb = d5 * d2 - d1 * d6;
+    if vb <= 0.0 && d2 >= 0.0 && d6 <= 0.0 {
+        return a + ac * (d2 / (d2 - d6));
+    }
+    let va = d3 * d6 - d5 * d4;
+    if va <= 0.0 && d4 - d3 >= 0.0 && d5 - d6 >= 0.0 {
+        return b + (c - b) * ((d4 - d3) / ((d4 - d3) + (d5 - d6)));
+    }
+    let sum = va + vb + vc;
+    if sum <= 0.0 {
+        return [a, b, c].into_iter().min_by(|x, y| x.distance_squared(p).total_cmp(&y.distance_squared(p))).unwrap_or(a);
+    }
+    a + ab * (vb / sum) + ac * (vc / sum)
+}
+
 struct Node {
     lo: DVec3,
     hi: DVec3,
@@ -107,6 +144,62 @@ impl Bvh {
             }
         }
         best
+    }
+
+    /// Every hit of the ray: (distance along `dir`, triangle index), unordered. A ray through an edge or a vertex hits
+    /// every triangle there (`ray_triangle` includes the triangle's border); the caller merges such hits.
+    pub fn hits(&self, mesh: &TriMesh, origin: DVec3, dir: DVec3) -> Vec<(f64, usize)> {
+        let mut out = Vec::new();
+        if self.nodes.is_empty() {
+            return out;
+        }
+        let inv = DVec3::ONE / dir;
+        let mut stack = vec![0usize];
+        while let Some(i) = stack.pop() {
+            let node = &self.nodes[i];
+            let (t0, t1) = ((node.lo - origin) * inv, (node.hi - origin) * inv);
+            let (a, b) = (t0.min(t1), t0.max(t1));
+            // f64::max and f64::min skip a NaN (0 * inf on a slab boundary), as in `ray`.
+            if b.x.min(b.y).min(b.z) < a.x.max(a.y).max(a.z).max(0.0) {
+                continue;
+            }
+            if node.count == 0 {
+                stack.extend([node.first as usize, i + 1]);
+                continue;
+            }
+            for &tri in &self.order[node.first as usize..(node.first + node.count) as usize] {
+                if let Some(t) = ray_triangle(origin, dir, corners(mesh, tri as usize)) {
+                    out.push((t, tri as usize));
+                }
+            }
+        }
+        out
+    }
+
+    /// The point of the mesh nearest to `p` and its triangle; None for an empty mesh. Branch and bound on the boxes.
+    pub fn nearest(&self, mesh: &TriMesh, p: DVec3) -> Option<(DVec3, usize)> {
+        // (squared distance, point, triangle)
+        let mut best: Option<(f64, DVec3, usize)> = None;
+        let mut stack = if self.nodes.is_empty() { Vec::new() } else { vec![0usize] };
+        while let Some(i) = stack.pop() {
+            let node = &self.nodes[i];
+            let gap = (node.lo - p).max(p - node.hi).max(DVec3::ZERO);
+            if best.is_some_and(|(d, ..)| gap.length_squared() > d) {
+                continue;
+            }
+            if node.count == 0 {
+                stack.extend([node.first as usize, i + 1]);
+                continue;
+            }
+            for &tri in &self.order[node.first as usize..(node.first + node.count) as usize] {
+                let q = closest_on_triangle(p, corners(mesh, tri as usize));
+                let d = q.distance_squared(p);
+                if best.is_none_or(|(b, ..)| d < b) {
+                    best = Some((d, q, tri as usize));
+                }
+            }
+        }
+        best.map(|(_, q, tri)| (q, tri))
     }
 }
 

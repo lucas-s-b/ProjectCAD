@@ -128,4 +128,4 @@ fn eigen_sym(m: DMat3) -> ([f64; 3], [DVec3; 3]) {
 
 #[cfg(test)]
 #[path = "mass_tests.rs"]
-mod tests;
+pub(crate) mod tests;

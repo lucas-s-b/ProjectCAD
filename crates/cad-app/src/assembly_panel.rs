@@ -55,14 +55,18 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     bom(app, ui);
 }
 
+/// "Body 2: Shaft 2" for every body of the latest rebuild.
+pub(crate) fn body_labels(app: &CadApp) -> Vec<(u64, String)> {
+    app.body_ids().into_iter().map(|id| (id, format!("Body {id}: {}", app.doc.feature(id).map_or("", |f| f.name.as_str())))).collect()
+}
+
 /// Body choice and "Add component". The choice defaults to the body of the selected face, else the last body.
 fn add_controls(app: &mut CadApp, ui: &mut egui::Ui) {
     let bodies = app.body_ids();
     if !bodies.contains(&app.component_body) {
         app.component_body = app.face_sel.map(|(b, _)| b).filter(|b| bodies.contains(b)).or(bodies.last().copied()).unwrap_or(0);
     }
-    let labels: Vec<(u64, String)> =
-        bodies.iter().map(|&id| (id, format!("Body {id}: {}", app.doc.feature(id).map_or("", |f| f.name.as_str())))).collect();
+    let labels = body_labels(app);
     let current = labels.iter().find(|(id, _)| *id == app.component_body).map_or_else(|| "No body".to_string(), |(_, t)| t.clone());
     ui.horizontal_wrapped(|ui| {
         w::combo(ui, "Component body", egui::ComboBox::from_id_salt("component_body").selected_text(current).width(140.0), |ui| {

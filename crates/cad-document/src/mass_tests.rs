@@ -12,7 +12,7 @@ fn near3(a: DVec3, b: DVec3, tol: f64) {
 }
 
 /// Body 1: the box 40 x 20 x 10 at the origin.
-fn boxed() -> Document {
+pub(crate) fn boxed() -> Document {
     let mut d = Document::new("mass");
     put(&mut d, 1, 0, rect(0.0, 0.0, 40.0, 20.0));
     push(&mut d, extrude(1, 1, "10 mm", BodyOp::New));
@@ -20,7 +20,7 @@ fn boxed() -> Document {
 }
 
 /// Body 2: the default shaft (a turned, curved part) at x 100.
-fn with_shaft(d: &mut Document) {
+pub(crate) fn with_shaft(d: &mut Document) {
     let kind = FeatureKind::Part { def: PartDef::defaults()[1].clone(), sketch: 0, x: "100 mm".into(), y: "0".into(), op: BodyOp::New, target: Target::Auto };
     push(d, Feature { id: 2, name: "shaft".into(), suppressed: false, kind });
 }
