@@ -23,6 +23,7 @@ mod rebuild_shell;
 mod rebuild_sweep;
 mod rebuild_walls;
 mod refs;
+pub mod samples;
 pub mod sketch;
 pub mod study;
 pub mod units;

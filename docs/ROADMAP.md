@@ -137,7 +137,7 @@ Deferred to later phases:
 - Loft sections with holes; self-intersection checks for sweep and loft: Phase 7
 - Trimmed faces and analytic curves beyond plane and cylinder (cones, spheres, tori, cylinder-cylinder); booleans on exact geometry instead of the mesh: Phase 7
 - NURBS curves and surfaces: Phase 7
-- STEP export of cones, spheres, tori and free-form faces (planes and cylinders done): Phase 7. Phase 5 parts are mesh-boolean solids checked with parry on meshes, so they do not need it first.
+- STEP export of cones, spheres, tori and free-form faces (planes and cylinders done): Phase 7 (cones and spheres done in Phase 7 batch C). Phase 5 parts are mesh-boolean solids checked with parry on meshes, so they do not need it first.
 
 ## Phase 4: Architectural CAD (done; IFC export and other deferred items listed below)
 Walls with automatic joins, doors, windows, floors, roofs, stairs, room detection and areas,
@@ -172,7 +172,7 @@ Limits of this slice:
 - Level views are 2D only and not exported; other levels are neither pickable nor snappable.
 
 Deferred to later phases:
-- IFC export: storeys, walls, openings, spaces, slabs, roofs, stairs, property sets from entity metadata (the design above: classes from `cad_arch::ifc_class`, quantities from the solids, GlobalIds derived at export): Phase 7 (export formats)
+- IFC export: storeys, walls, openings, spaces, slabs, roofs, stairs, property sets from entity metadata (the design above: classes from `cad_arch::ifc_class`, quantities from the solids, GlobalIds derived at export): Phase 7 (export formats) (done in Phase 7 batch C)
 - Roofs on concave outlines (straight skeleton), dormers, roof openings, walls trimmed to the roof: Phase 7
 - Stairs with landings, turns or spirals, railings, the stair opening in the slab above: Phase 7
 - Plan cut height, walls attached to the level above, openings in slabs, dragging openings along their wall: Phase 7
@@ -269,8 +269,20 @@ Done (batch B; numbers in docs/BENCHMARKS.md; checked in the running app through
 - [x] Measured first: `cad-bench` analysis, pick, BOM and cold-open cases, the in-app longest-frame timer (`perf.frame_ms`), gates at 100 ms per click, 16 ms per frame, 1 s per cold open
 - [x] Static studies, motion studies, interference checks and the validation benchmarks run on a worker thread: one job at a time, a progress line with "Cancel job", any edit drops the job; MCP replies wait for it (`jobs` in the state). The analysis mesh (3.7 ms), the one-BVH-per-body picking (74 ms for 200 components) and rayon in the FEA element loops (16 ms of a 413 ms study) failed their gates and stay as they were
 
+Done (batch C; unit-tested, every exporter reads its output back; checked in the running app through MCP):
+- [x] glTF 2.0 binary export (.glb): each solid once, components as nodes with their placements, metres, Y up, normals, one grey material
+- [x] 3MF export: one object per solid, one build item per body or component with its transform, millimetres (own stored zip writer with CRC-32)
+- [x] IFC4 export of the architectural model: project, site, building, a storey per level; walls, doors, windows (with the openings that void their walls), floors and rooms as extrusions, roofs and stairs as faceted B-Reps; property sets from `Pset_X.Prop` metadata, net volumes, room areas and perimeters, GlobalIds derived from the ids
+- [x] STL and OBJ import as a mesh body in the feature list (closed meshes only; welded, inside-out meshes turned, sharp at creases over 30 degrees); file format version 28
+- [x] STEP export of cones and spheres as exact surfaces (shafts with chamfers, revolved parts)
+
+Limits of batch C:
+- glTF and 3MF write the shown bodies and components only (no walls, no colours per body, no textures); glTF repeats a vertex per triangle corner.
+- IFC: levels must lie on XY; doors and windows are boxes (no frame or leaf); mechanical bodies and components are not exported; GlobalIds change when the document is renamed.
+- Imported meshes are stored in the project file as JSON arrays (about 1.5 times the binary STL size); open meshes and units other than millimetres are refused or not converted.
+- STEP: tori, whole spheres and free-form faces stay faceted.
+
 Remaining:
-- C: glTF and 3MF export, IFC4 export, STL and OBJ import as mesh bodies (file format 28), STEP with analytic cones and spheres
 - D: docking, themes, command search, rotate gizmo for components, dragging jointed components with the gizmo
 - E: plugin API (out-of-process plugins over the MCP protocol, `cad-plugin-api`)
 - F: user guide, README, release v0.2.0 (the tag push is left to the user)

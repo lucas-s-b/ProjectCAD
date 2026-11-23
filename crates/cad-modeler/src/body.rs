@@ -60,6 +60,79 @@ impl Body {
         Ok(body)
     }
 
+    /// A solid from a closed triangle mesh (mm), such as an imported STL or OBJ: every directed edge must have exactly
+    /// one reverse edge (closed and consistently oriented); an inside-out mesh is turned. Triangles meeting at less
+    /// than `CREASE` form one `Faceted` face, so shading stays sharp at creases. Several closed shells are one body.
+    pub fn from_mesh(positions: Vec<DVec3>, triangles: &[[u32; 3]]) -> Result<Body, ModelError> {
+        // cos 30 deg, the CREASE of the doc comment
+        const CREASE_COS: f64 = 0.866_025_403_784_438_6;
+        let n = positions.len();
+        if triangles.iter().flatten().any(|&i| i as usize >= n) {
+            return Err(ModelError::Invalid("mesh index out of range"));
+        }
+        if triangles.len() < 4 {
+            return Err(ModelError::Invalid("mesh needs at least 4 triangles"));
+        }
+        if positions.iter().any(|p| !p.is_finite()) {
+            return Err(ModelError::Invalid("mesh has a point that is not finite"));
+        }
+        let mut tris: Vec<[u32; 3]> = triangles.iter().copied().filter(|t| t[0] != t[1] && t[1] != t[2] && t[0] != t[2]).collect();
+        let directed = |tris: &[[u32; 3]]| -> Result<HashMap<(u32, u32), usize>, ModelError> {
+            let mut tri_of = HashMap::new();
+            for (k, t) in tris.iter().enumerate() {
+                for j in 0..3 {
+                    if tri_of.insert((t[j], t[(j + 1) % 3]), k).is_some() {
+                        return Err(ModelError::Invalid("mesh is not closed: an edge joins more than two triangles"));
+                    }
+                }
+            }
+            if tri_of.keys().any(|&(a, b)| !tri_of.contains_key(&(b, a))) {
+                return Err(ModelError::Invalid("mesh is not closed: every edge must join exactly two triangles"));
+            }
+            Ok(tri_of)
+        };
+        let mut tri_of = directed(&tris)?;
+        let volume: f64 = tris.iter().map(|t| positions[t[0] as usize].dot(positions[t[1] as usize].cross(positions[t[2] as usize])) / 6.0).sum();
+        if volume.abs() <= 1e-12 {
+            return Err(ModelError::Invalid("mesh encloses no volume"));
+        }
+        if volume < 0.0 {
+            for t in &mut tris {
+                t.swap(1, 2);
+            }
+            tri_of = directed(&tris)?;
+        }
+        let normal = |t: &[u32; 3]| {
+            let [a, b, c] = t.map(|i| positions[i as usize]);
+            (b - a).cross(c - a).normalize_or_zero()
+        };
+        let mut tri_face = vec![u32::MAX; tris.len()];
+        let mut count = 0u32;
+        for start in 0..tris.len() {
+            if tri_face[start] != u32::MAX {
+                continue;
+            }
+            tri_face[start] = count;
+            let mut stack = vec![start];
+            while let Some(k) = stack.pop() {
+                let t = tris[k];
+                for j in 0..3 {
+                    let next = tri_of[&(t[(j + 1) % 3], t[j])];
+                    if tri_face[next] == u32::MAX && normal(&t).dot(normal(&tris[next])) >= CREASE_COS {
+                        tri_face[next] = count;
+                        stack.push(next);
+                    }
+                }
+            }
+            count += 1;
+        }
+        let faces = vec![BodyFace { surface: Surface::Faceted, outward: true }; count as usize];
+        let indices = tris.iter().flatten().copied().collect();
+        let mut body = Body { mesh: TriMesh { positions, indices, normals: Vec::new() }, tri_face, faces };
+        body.recompute_normals();
+        Ok(body)
+    }
+
     /// Rigid motion or mirror: `m` must be an isometry (rotation, translation, reflection).
     pub fn transformed(&self, m: &DAffine3) -> Result<Body, ModelError> {
         let c = [m.matrix3.x_axis, m.matrix3.y_axis, m.matrix3.z_axis];

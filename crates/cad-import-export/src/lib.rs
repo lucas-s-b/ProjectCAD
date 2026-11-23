@@ -1,6 +1,9 @@
-//! Export of a document to SVG, DXF and PDF, and of solid bodies to STL, OBJ and STEP; import of DXF and SVG. Model coordinates are millimetres.
+//! Export of a document to SVG, DXF and PDF, and of solid bodies to STL, OBJ, STEP, glTF, 3MF and IFC4; import of DXF and SVG; import of STL and OBJ meshes. Model coordinates are millimetres.
 mod dxf;
 mod dxf_in;
+mod gltf_out;
+mod ifc_out;
+mod mesh_in;
 mod mesh_out;
 mod pdf_out;
 mod step_out;
@@ -9,14 +12,20 @@ mod svg_curve;
 mod svg_in;
 mod svg_path;
 mod svg_xform;
+mod threemf_out;
+mod zip_out;
 
 pub use dxf::to_dxf;
 pub use dxf_in::{ImportError, ImportReport, from_dxf};
+pub use gltf_out::{Scene, to_glb};
+pub use ifc_out::to_ifc;
+pub use mesh_in::{from_obj, from_stl};
 pub use mesh_out::{to_obj, to_stl};
 pub use pdf_out::to_pdf;
 pub use step_out::to_step;
 pub use svg::to_svg;
 pub use svg_in::from_svg;
+pub use threemf_out::to_3mf;
 
 use cad_document::{Document, Entity, Layer, SketchId};
 

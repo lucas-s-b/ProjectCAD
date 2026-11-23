@@ -7,7 +7,7 @@ use std::fmt::Write;
 
 const MARGIN: f64 = 5.0;
 
-fn escape(s: &str) -> String {
+pub(crate) fn escape(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }
 

@@ -160,6 +160,27 @@ fn plane_cylinder_geom(plane: (DVec3, DVec3), cyl: (DVec3, DVec3, f64), pts: &[D
     }
 }
 
+/// The circle through the polyline of an edge on a cone or sphere: centre of the circle through three of its points,
+/// in their plane; Other unless every point lies on that circle within `LINE_TOL`.
+pub(crate) fn circle_geom(pts: &[DVec3], closed: bool) -> EdgeGeom {
+    if pts.len() < 3 {
+        return EdgeGeom::Other;
+    }
+    let (a, b, c) = (pts[0], pts[pts.len() / 3], pts[2 * pts.len() / 3]);
+    let (u, v) = (b - a, c - a);
+    let w = u.cross(v);
+    if w.length() <= 1e-12 {
+        return EdgeGeom::Other;
+    }
+    let center = a + (v.length_squared() * w.cross(u) + u.length_squared() * v.cross(w)) / (2.0 * w.length_squared());
+    let (n, r) = (w.normalize(), a.distance(center));
+    if pts.iter().any(|p| (p.distance(center) - r).abs() > LINE_TOL || (*p - center).dot(n).abs() > LINE_TOL) {
+        return EdgeGeom::Other;
+    }
+    // A cylinder along the circle's normal meets its plane in exactly this circle, with direction and sweep.
+    plane_cylinder_geom((center, n), (center, n, r), pts, closed)
+}
+
 fn edge_geom(surfaces: [&Surface; 2], pts: &[DVec3], closed: bool) -> EdgeGeom {
     match surfaces {
         [Surface::Plane { .. }, Surface::Plane { .. }] => line_geom(pts, closed),

@@ -10,7 +10,7 @@ use crate::rebuild_sweep::resolve_sweep;
 use crate::refs::face_plane;
 use crate::sketch::{PlaneDef, Sketch, SketchPlanes};
 use cad_geometry::profile::Profile;
-use cad_geometry::{DAffine3, DVec2, Shape};
+use cad_geometry::{DAffine3, DVec2, DVec3, Shape};
 use cad_modeler::{Body, BoolOp, ModelError, PathPiece, Plane3, Section, boolean, extrude, extrude_tapered, loft, revolve, sweep};
 use rayon::prelude::*;
 use std::collections::hash_map::DefaultHasher;
@@ -128,6 +128,8 @@ pub(crate) enum Tool {
     Loft { sections: Vec<(Profile, Plane3)>, smooth: bool },
     /// A generated part; the plane is its placement.
     Part(cad_mech::Part),
+    /// An imported mesh (`FeatureKind::Mesh`); the plane is unused.
+    Mesh { positions: Vec<[f32; 3]>, triangles: Vec<[u32; 3]> },
 }
 
 /// For a loft the profile and plane are those of the first section.
@@ -184,6 +186,18 @@ fn resolve(doc: &Document, f: &Feature, states: &BTreeMap<FeatureId, FeatureStat
 }
 
 pub(crate) fn resolve_solid(doc: &Document, f: &Feature, planes: &SketchPlanes) -> Result<Inputs, String> {
+    if let FeatureKind::Mesh { positions, triangles } = &f.kind {
+        let bits: Vec<[u32; 3]> = positions.iter().map(|p| p.map(f32::to_bits)).collect();
+        return Ok(Inputs {
+            profile: Profile { outer: Vec::new(), holes: Vec::new() },
+            // The mesh is the whole input: its hash keys the cache.
+            shapes_json: format!("mesh {:016x}", hash_of((bits, triangles))),
+            plane: Plane3::XY,
+            tool: Tool::Mesh { positions: positions.clone(), triangles: triangles.clone() },
+            op: BodyOp::New,
+            target: Target::Auto,
+        });
+    }
     if matches!(f.kind, FeatureKind::Part { .. }) {
         return crate::part::resolve_part(doc, f, planes);
     }
@@ -258,6 +272,7 @@ impl Inputs {
             Tool::Sweep { closed, .. } => ("sweep", vec![u64::from(*closed)]),
             Tool::Loft { smooth, .. } => ("loft", vec![u64::from(*smooth)]),
             Tool::Part(_) => ("part", Vec::new()),
+            Tool::Mesh { .. } => ("mesh", Vec::new()),
         };
         let Plane3 { origin, x, y } = self.plane;
         numbers.extend([origin, x, y].iter().flat_map(|v| v.to_array()).map(f64::to_bits));
@@ -283,6 +298,7 @@ impl Inputs {
                 loft(&sections, *smooth, BODY_TOLERANCE)
             }
             Tool::Part(part) => part.body(&self.plane, BODY_TOLERANCE),
+            Tool::Mesh { positions, triangles } => Body::from_mesh(positions.iter().map(|p| DVec3::from(p.map(f64::from))).collect(), triangles),
         };
         body.map_err(|e| e.to_string())
     }

@@ -115,3 +115,68 @@ fn other_surfaces_and_curves_are_refused() {
     let u = boolean(&cylinder_body(0.0, 0.0, 5.0, -10.0, 10.0), &beam, BoolOp::Union).unwrap();
     assert_eq!(TrimmedBody::from_body(&u), Err(OTHER_EDGE));
 }
+
+fn shaft() -> Body {
+    crate::lathe(&[v2(0.0, 0.0), v2(10.0, 0.0), v2(10.0, 40.0), v2(8.0, 42.0), v2(0.0, 42.0)], &Plane3::XY, 48).unwrap()
+}
+
+/// The annular sector between radii 5 and 10 from 20 to 70 degrees, turned about the Y axis: two spheres, two cones.
+fn sector() -> Body {
+    use cad_geometry::shape::Shape;
+    let (a0, a1) = (20.0_f64.to_radians(), 70.0_f64.to_radians());
+    let at = |r: f64, a: f64| v2(r * a.cos(), r * a.sin());
+    let shapes = [
+        Shape::Arc { center: glam::DVec2::ZERO, radius: 5.0, start: a0, sweep: a1 - a0 },
+        Shape::Arc { center: glam::DVec2::ZERO, radius: 10.0, start: a0, sweep: a1 - a0 },
+        Shape::Line { a: at(5.0, a0), b: at(10.0, a0) },
+        Shape::Line { a: at(5.0, a1), b: at(10.0, a1) },
+    ];
+    let brep = crate::revolve(&make(&shapes), &Plane3::XY, glam::DVec2::ZERO, glam::DVec2::Y, std::f64::consts::TAU).unwrap();
+    Body::from_brep(&brep, 0.01).unwrap()
+}
+
+#[test]
+fn chamfered_shaft_has_a_cone_and_three_circles() {
+    let t = TrimmedBody::from_body(&shaft()).unwrap();
+    assert_eq!(counts(&t), (4, 3, 3));
+    let mut radii: Vec<f64> = t
+        .edges
+        .iter()
+        .map(|e| {
+            assert_eq!(e.vertices[0], e.vertices[1]);
+            let EdgeGeom::Circle { radius, .. } = e.geom else { panic!("{:?}", e.geom) };
+            radius
+        })
+        .collect();
+    radii.sort_by(f64::total_cmp);
+    for (r, want) in radii.iter().zip([8.0, 10.0, 10.0]) {
+        assert!((r - want).abs() < 1e-9, "{radii:?}");
+    }
+    let cones: Vec<_> = t.faces.iter().filter(|f| matches!(f.surface, Surface::Cone { .. })).collect();
+    assert_eq!(cones.len(), 1);
+    assert!(cones[0].outer.is_none());
+    assert_eq!(euler(&t), 2);
+}
+
+#[test]
+fn revolved_sector_has_spheres_and_cones() {
+    let t = TrimmedBody::from_body(&sector()).unwrap();
+    assert_eq!(counts(&t), (4, 4, 4));
+    let n = |f: fn(&Surface) -> bool| t.faces.iter().filter(|face| f(&face.surface)).count();
+    assert_eq!((n(|s| matches!(s, Surface::Sphere { .. })), n(|s| matches!(s, Surface::Cone { .. }))), (2, 2));
+    assert_eq!(euler(&t), 0);
+}
+
+#[test]
+fn whole_sphere_stays_refused() {
+    let mut outline = vec![v2(0.0, -5.0)];
+    outline.extend((1..16).map(|i| {
+        let a = std::f64::consts::PI * f64::from(i) / 16.0;
+        v2(5.0 * a.sin(), -5.0 * a.cos())
+    }));
+    outline.push(v2(0.0, 5.0));
+    let mut ball = crate::lathe(&outline, &Plane3::XY, 32).unwrap();
+    ball.faces = vec![crate::BodyFace { surface: Surface::Sphere { center: DVec3::ZERO, radius: 5.0 }, outward: true }];
+    ball.tri_face.fill(0);
+    assert_eq!(TrimmedBody::from_body(&ball), Err(BAD_LOOP));
+}

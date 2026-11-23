@@ -255,6 +255,9 @@ fn editor(app: &mut CadApp, ui: &mut egui::Ui) {
             field(ui, "Draft angle", angle);
             ui.label(format!("{} faces, neutral plane: sketch {sketch}", faces.len()));
         }
+        FeatureKind::Mesh { positions, triangles } => {
+            ui.label(format!("Imported mesh: {} points, {} triangles", positions.len(), triangles.len()));
+        }
         kind => {
             let changed = crate::model_pattern::fields(ui, &app.doc, kind, &mut field);
             commit |= changed;
