@@ -12,6 +12,7 @@ mod dim_link;
 mod constraints_panel;
 mod layers_panel;
 mod mass_panel;
+mod motion_panel;
 mod edge_pick;
 mod face_pick;
 mod gizmo;

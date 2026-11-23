@@ -130,14 +130,14 @@ near "$(cmin 20 2 1)" 32 0.05 || bad "component 2 min x is $(cmin 20 2 1), expec
 near "$(cmin 20 3 1)" 53.5 0.001 || bad "bolt component min x is $(cmin 20 3 1), expected 53.5"
 # 3. joint 1
 [ "$(njoints 25)" -eq 1 ] || bad "expected 1 joint, got $(njoints 25)"
-flat 25 | grep -qF '{"child":2,"error":null,"id":1,"kind":"Fixed","parent":1,"value":"0"}' || bad "joint 1 of state 25"
+flat 25 | grep -qF '{"child":2,"error":null,"id":1,"kind":"Fixed","max":null,"min":null,"parent":1,"value":"0"}' || bad "joint 1 of state 25"
 near "$(cmin 25 2 1)" -22 0.05 || bad "gear #2 min x on gear #1 is $(cmin 25 2 1), expected -22"
-flat 30 | grep -qF '"id":1,"kind":"Revolute","parent":1,"value":"0deg"}' || bad "joint 1 of state 30"
+flat 30 | grep -qF '"id":1,"kind":"Revolute","max":null,"min":null,"parent":1,"value":"0deg"}' || bad "joint 1 of state 30"
 near "$(cmin 30 2 1)" 18 0.05 || bad "gear #2 min x at 40 is $(cmin 30 2 1), expected 18"
 near "$(cmin 30 2 3)" 0 0.001 || bad "gear #2 min z is $(cmin 30 2 3), expected 0"
 # 4. joint 2
 [ "$(njoints 38)" -eq 2 ] || bad "expected 2 joints, got $(njoints 38)"
-flat 38 | grep -qF '{"child":3,"error":null,"id":2,"kind":"Fixed","parent":2,"value":"0"}' || bad "joint 2 of state 38"
+flat 38 | grep -qF '{"child":3,"error":null,"id":2,"kind":"Fixed","max":null,"min":null,"parent":2,"value":"0"}' || bad "joint 2 of state 38"
 near "$(cmin 38 3 1)" 43.5 0.001 || bad "bolt min x on gear #2 is $(cmin 38 3 1), expected 43.5"
 near "$(cmin 38 3 2)" -7.505553 0.001 || bad "bolt min y on gear #2 is $(cmin 38 3 2), expected -7.505553"
 near "$(cmin 38 3 3)" -20 0.001 || bad "bolt min z on gear #2 is $(cmin 38 3 3), expected -20"

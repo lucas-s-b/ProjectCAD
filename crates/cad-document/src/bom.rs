@@ -51,15 +51,19 @@ impl Document {
     }
 }
 
+/// `s` as one CSV cell: quoted (inner quotes doubled) when it holds a comma, quote or line break.
+pub(crate) fn csv_field(s: &str) -> String {
+    if s.contains([',', '"', '\n', '\r']) { format!("\"{}\"", s.replace('"', "\"\"")) } else { s.to_string() }
+}
+
 /// CSV of `rows`: a UTF-8 byte order mark (spreadsheets need it for "Ø"), the header line
 /// `Item,Part,Designation,Material,Part number,Quantity,Mass (g)`, then one line per row, each ending in "\n". Fields
 /// with a comma, quote or line break are quoted, quotes doubled; the mass has one decimal and is empty when unknown.
 pub fn bom_csv(rows: &[BomRow]) -> String {
-    let field = |s: &str| if s.contains([',', '"', '\n', '\r']) { format!("\"{}\"", s.replace('"', "\"\"")) } else { s.to_string() };
     let mut out = String::from("\u{feff}Item,Part,Designation,Material,Part number,Quantity,Mass (g)\n");
     for r in rows {
         let mass = r.mass.map_or_else(String::new, |m| format!("{m:.1}"));
-        let cells = [r.item.to_string(), field(&r.name), field(&r.designation), field(&r.material), field(&r.part_number), r.quantity.to_string(), mass];
+        let cells = [r.item.to_string(), csv_field(&r.name), csv_field(&r.designation), csv_field(&r.material), csv_field(&r.part_number), r.quantity.to_string(), mass];
         out.push_str(&cells.join(","));
         out.push('\n');
     }

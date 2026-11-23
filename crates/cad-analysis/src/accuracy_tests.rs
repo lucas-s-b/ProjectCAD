@@ -21,5 +21,6 @@ fn accuracy_of_body() {
 fn accuracy_texts() {
     assert_eq!(Accuracy::Exact.to_string(), "exact");
     assert_eq!(Accuracy::Approximate(TESSELLATION).to_string(), "approximate (tessellation)");
+    assert_eq!(Accuracy::Approximate(SAMPLED).to_string(), "approximate (sampled at the steps)");
     assert_eq!(Accuracy::Validated("cantilever beam").to_string(), "validated against cantilever beam");
 }

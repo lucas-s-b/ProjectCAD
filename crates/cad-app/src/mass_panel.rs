@@ -6,7 +6,7 @@ use cad_geometry::DVec3;
 use eframe::egui::{self, Color32, Pos2, Stroke};
 
 /// "(20.00, 10.00, 5.00) mm".
-fn point(s: &Settings, p: DVec3) -> String {
+pub(crate) fn point(s: &Settings, p: DVec3) -> String {
     format!("({}, {}, {}) {}", s.format_length(p.x), s.format_length(p.y), s.format_length(p.z), s.units.suffix())
 }
 

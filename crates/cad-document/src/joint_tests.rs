@@ -6,25 +6,25 @@ const O: [&str; 3] = ["0", "0", "0"];
 const Z: [&str; 3] = ["0", "0", "1"];
 
 /// Body 1: the box (0,0,0)-(10,20,5), an extruded rectangle.
-fn boxed() -> Document {
+pub(crate) fn boxed() -> Document {
     let mut d = Document::new("asm");
     put(&mut d, 1, 0, rect(0.0, 0.0, 10.0, 20.0));
     push(&mut d, extrude(1, 1, "5 mm", BodyOp::New));
     d
 }
 
-fn comp(id: ComponentId, at: [&str; 3], grounded: bool) -> Component {
+pub(crate) fn comp(id: ComponentId, at: [&str; 3], grounded: bool) -> Component {
     let zero = || "0".to_string();
     Component { id, name: format!("c{id}"), body: 1, at: at.map(String::from), angles: [zero(), zero(), zero()], meta: Default::default(), grounded }
 }
 
 /// Parent frame at `parent_origin` along `parent_axis`; child frame at the child's origin along -Z.
-fn joint(id: JointId, kind: JointKind, parent: ComponentId, child: ComponentId, parent_origin: [&str; 3], parent_axis: [&str; 3], value: &str) -> Joint {
+pub(crate) fn joint(id: JointId, kind: JointKind, parent: ComponentId, child: ComponentId, parent_origin: [&str; 3], parent_axis: [&str; 3], value: &str) -> Joint {
     let parent_frame = Frame { origin: parent_origin.map(String::from), axis: parent_axis.map(String::from), face: None };
-    Joint { id, kind, parent, child, parent_frame, child_frame: Frame::from_vectors(DVec3::ZERO, -DVec3::Z), value: value.into() }
+    Joint { id, kind, parent, child, parent_frame, child_frame: Frame::from_vectors(DVec3::ZERO, -DVec3::Z), value: value.into(), min: None, max: None }
 }
 
-fn ok(d: &mut Document, cmd: Command) -> Command {
+pub(crate) fn ok(d: &mut Document, cmd: Command) -> Command {
     d.apply(cmd).unwrap()
 }
 
@@ -125,7 +125,7 @@ fn joints_save_and_load() {
     assert_eq!(loaded.explode_steps(), d.explode_steps());
     assert!(loaded.component(1).unwrap().grounded);
     assert_eq!(loaded.alloc_joint_id(), 3);
-    assert_eq!(FORMAT_VERSION, 23);
+    assert_eq!(FORMAT_VERSION, 24);
 }
 
 #[test]
@@ -164,7 +164,7 @@ fn old_and_broken_joint_files() {
     assert!(matches!(load(&v), Err(DocError::BadJoint("the child is grounded"))));
 }
 
-fn rebuilt(d: &Document) -> RebuildResult {
+pub(crate) fn rebuilt(d: &Document) -> RebuildResult {
     Rebuilder::default().rebuild(d)
 }
 
@@ -293,4 +293,83 @@ fn frame_face_serialisation() {
     let f = Frame { face: Some(FaceRef { key: FaceKey::Cylinder(DVec3::Z), at: DVec3::new(1.0, 2.0, 3.0) }), ..old };
     let back: Frame = serde_json::from_str(&serde_json::to_string(&f).unwrap()).unwrap();
     assert_eq!(back, f);
+}
+
+fn lim(j: Joint, min: Option<&str>, max: Option<&str>) -> Joint {
+    Joint { min: min.map(String::from), max: max.map(String::from), ..j }
+}
+
+fn err(d: &Document, id: ComponentId) -> Option<String> {
+    rebuilt(d).components.iter().find(|(i, _)| *i == id).unwrap().1.clone().err()
+}
+
+#[test]
+fn revolute_limits_refuse_values_outside() {
+    let mut d = boxed();
+    ok(&mut d, Command::AddComponent(comp(1, O, true)));
+    ok(&mut d, Command::AddComponent(comp(2, O, false)));
+    let base = joint(1, JointKind::Revolute, 1, 2, ["10 mm", "0", "0"], Z, "60 deg");
+    ok(&mut d, Command::AddJoint(lim(base.clone(), Some("-45 deg"), Some("45 deg"))));
+    assert_eq!(err(&d, 2), Some("joint 1: 60 deg is above the maximum 45 deg".to_string()));
+    let set = |d: &mut Document, value: &str, min: Option<&str>, max: Option<&str>| {
+        ok(d, Command::SetJoint(lim(Joint { value: value.into(), ..base.clone() }, min, max)));
+    };
+    set(&mut d, "-60 deg", Some("-45 deg"), Some("45 deg"));
+    assert_eq!(err(&d, 2), Some("joint 1: -60 deg is below the minimum -45 deg".to_string()));
+    set(&mut d, "45 deg", Some("-45 deg"), Some("45 deg"));
+    assert_eq!(err(&d, 2), None);
+    bbox_is(&rebuilt(&d), 2, [-4.142135623730951, 0.0, 0.0], [17.071067811865476, 21.213203435596427, 5.0]);
+    set(&mut d, "0 deg", Some("50 deg"), Some("45 deg"));
+    assert_eq!(err(&d, 2), Some("joint 1: the minimum is above the maximum".to_string()));
+    set(&mut d, "0 deg", Some("-45 deg"), Some("5 mm"));
+    assert_eq!(err(&d, 2), Some("joint 1: expected an angle".to_string()));
+    set(&mut d, "40 deg", None, Some("30"));
+    assert_eq!(err(&d, 2), Some("joint 1: 40 deg is above the maximum 30 deg".to_string()));
+}
+
+#[test]
+fn slider_limits_and_fixed_joints() {
+    let mut d = boxed();
+    for c in [comp(1, O, true), comp(2, O, false), comp(3, O, false)] {
+        ok(&mut d, Command::AddComponent(c));
+    }
+    let s = Joint { child_frame: Frame::from_vectors(DVec3::ZERO, -DVec3::X), ..joint(1, JointKind::Slider, 1, 2, ["10 mm", "0", "0"], ["1", "0", "0"], "25 mm") };
+    let s = lim(s, Some("0 mm"), Some("20 mm"));
+    ok(&mut d, Command::AddJoint(s.clone()));
+    assert_eq!(err(&d, 2), Some("joint 1: 25 mm is above the maximum 20 mm".to_string()));
+    ok(&mut d, Command::SetJoint(Joint { value: "-1 mm".into(), ..s.clone() }));
+    assert_eq!(err(&d, 2), Some("joint 1: -1 mm is below the minimum 0 mm".to_string()));
+    ok(&mut d, Command::SetJoint(Joint { value: "20 mm".into(), ..s }));
+    assert_eq!(err(&d, 2), None);
+    // A fixed joint ignores its limits.
+    let f = lim(joint(2, JointKind::Fixed, 2, 3, O, Z, "0"), Some("10 mm"), Some("5 mm"));
+    ok(&mut d, Command::AddJoint(f));
+    assert_eq!(err(&d, 3), None);
+    assert!(d.apply(Command::SetJoint(lim(joint(2, JointKind::Fixed, 2, 3, O, Z, "0"), Some("1 +"), None))).is_err());
+}
+
+#[test]
+fn joint_limits_save_and_load() {
+    let mut d = jointed();
+    let j1 = lim(d.joint(1).unwrap().clone(), Some("-90 deg"), Some("90 deg"));
+    ok(&mut d, Command::SetJoint(j1));
+    let p = std::env::temp_dir().join(format!("cadtest_{}_joint_limits.cadproj", std::process::id()));
+    let load = |d: &Document, version: Option<u32>| {
+        let mut v = serde_json::to_value(d).unwrap();
+        if let Some(n) = version {
+            v["version"] = n.into();
+        }
+        std::fs::write(&p, serde_json::to_vec(&v).unwrap()).unwrap();
+        let r = Document::load(&p);
+        std::fs::remove_file(&p).ok();
+        r.unwrap()
+    };
+    d.save(&p).unwrap();
+    let loaded = Document::load(&p).unwrap();
+    std::fs::remove_file(&p).ok();
+    assert_eq!(loaded.joint(1), d.joint(1));
+    assert_eq!(loaded.joint(2).unwrap().min, None);
+    assert!(!serde_json::to_string(d.joint(2).unwrap()).unwrap().contains("\"min\""));
+    let old = load(&jointed(), Some(23));
+    assert_eq!(old.joint(1).unwrap().max, None);
 }

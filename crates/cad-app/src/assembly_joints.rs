@@ -57,6 +57,8 @@ fn add(app: &mut CadApp, child: ComponentId) {
         parent_frame: Frame::from_vectors(DVec3::ZERO, DVec3::Z),
         child_frame: Frame::from_vectors(DVec3::ZERO, -DVec3::Z),
         value: "0".into(),
+        min: None,
+        max: None,
     };
     app.exec(vec![Command::AddJoint(j)]);
     if app.doc.joint(id).is_some() {
@@ -115,6 +117,18 @@ fn editor(app: &mut CadApp, ui: &mut egui::Ui) {
             ui.label(unit);
             field(ui, "Joint value", &mut buffer.value);
         });
+        if buffer.kind != JointKind::Fixed {
+            // An empty field means no limit.
+            let (mut min, mut max) = (buffer.min.clone().unwrap_or_default(), buffer.max.clone().unwrap_or_default());
+            ui.horizontal_wrapped(|ui| {
+                ui.label("Limits");
+                field(ui, "Joint min", &mut min);
+                ui.label("to");
+                field(ui, "Joint max", &mut max);
+            });
+            let some = |s: String| (!s.trim().is_empty()).then_some(s);
+            (buffer.min, buffer.max) = (some(min), some(max));
+        }
         for (side, frame) in [("Parent", &mut buffer.parent_frame), ("Child", &mut buffer.child_frame)] {
             ui.horizontal_wrapped(|ui| {
                 ui.label(format!("{side} origin"));

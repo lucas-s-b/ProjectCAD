@@ -5,6 +5,10 @@ use std::fmt;
 /// Reason of `Accuracy::Approximate` for results computed on the facets of curved faces.
 pub const TESSELLATION: &str = "tessellation";
 
+/// Reason of `Accuracy::Approximate` for checks made only at the samples of a motion study (a collision between two
+/// samples is not seen).
+pub const SAMPLED: &str = "sampled at the steps";
+
 /// The label of an analysis result. Nothing is ever presented as certified: results are exact (the computation is
 /// exact for the geometry, e.g. mass properties of a body with only planar faces), approximate (with the reason), or
 /// validated against a named analytic benchmark case.

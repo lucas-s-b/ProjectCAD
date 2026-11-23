@@ -1,7 +1,7 @@
 use crate::app::{CadApp, Pending, PickFace};
 use cad_document::Document;
 use eframe::egui;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 const MCP_NO_DIALOGS: &str = "File dialogs are off in MCP mode; use open_project / save_project";
 
@@ -18,6 +18,8 @@ impl CadApp {
         self.joint_edit = None;
         self.explode_edit = None;
         self.check = None;
+        self.motion = None;
+        self.motion_play = false;
         self.reset_model();
         self.constraint_cache = None;
         self.drag = None;
@@ -182,17 +184,44 @@ impl CadApp {
             }
             _ => return Err("unknown export format; use .svg, .dxf, .pdf, .stl, .obj, .step or .csv".into()),
         };
+        self.write_export(&p, bytes)
+    }
+
+    /// Writes `bytes` to `p` through a temporary file beside it, then sets the "Exported <name>" status.
+    fn write_export(&mut self, p: &Path, bytes: Vec<u8>) -> Result<(), String> {
         // Write beside the target, then rename, like the project save.
-        let mut tmp = p.clone().into_os_string();
+        let mut tmp = p.to_path_buf().into_os_string();
         tmp.push(".tmp");
         let tmp = PathBuf::from(tmp);
-        let result = std::fs::write(&tmp, bytes).and_then(|()| std::fs::rename(&tmp, &p));
+        let result = std::fs::write(&tmp, bytes).and_then(|()| std::fs::rename(&tmp, p));
         if let Err(e) = result {
             let _ = std::fs::remove_file(&tmp);
             return Err(format!("Export failed: {e}"));
         }
         self.status = format!("Exported {}", p.file_name().map_or_else(String::new, |n| n.to_string_lossy().into_owned()));
         Ok(())
+    }
+
+    /// Writes the last motion study as CSV (`Document::motion_csv`).
+    pub fn export_motion(&mut self, p: PathBuf) -> Result<(), String> {
+        let run = self.motion_result().ok_or("no motion study; run one first")?;
+        let collision = run.collision.as_ref().and_then(|c| c.as_ref().ok()).and_then(Option::as_ref);
+        let bytes = self.doc.motion_csv(&run.motion, collision).into_bytes();
+        self.write_export(&p, bytes)
+    }
+
+    /// "Export motion CSV": asks for a path and exports.
+    pub fn export_motion_dialog(&mut self) {
+        if self.mcp.is_some() {
+            self.status = "File dialogs are off in MCP mode; use export_motion".into();
+            return;
+        }
+        let picked = rfd::FileDialog::new().add_filter("CSV", &["csv"]).set_file_name(format!("{}_motion.csv", self.doc.name)).save_file();
+        if let Some(p) = picked
+            && let Err(err) = self.export_motion(p)
+        {
+            self.status = err;
+        }
     }
 
     /// STL, OBJ or STEP (by extension) of the shown bodies and the placed components of the current rebuild (joints

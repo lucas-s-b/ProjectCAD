@@ -98,7 +98,7 @@ impl Bridge {
             return;
         }
         let Some((req, tx)) = self.held.take().or_else(|| self.rx.try_recv().ok()) else { return };
-        if matches!(req, Request::State | Request::Screenshot | Request::Export(_)) && !app.model_current() {
+        if matches!(req, Request::State | Request::Screenshot | Request::Export(_) | Request::ExportMotion(_)) && !app.model_current() {
             self.held = Some((req, tx));
             ctx.request_repaint();
             return;
@@ -146,6 +146,10 @@ impl Bridge {
             }
             Request::Export(p) => {
                 let r = app.export_path(p).map(|()| Reply { text: summary(app).to_string(), png: None });
+                let _ = tx.send(r);
+            }
+            Request::ExportMotion(p) => {
+                let r = app.export_motion(p).map(|()| Reply { text: summary(app).to_string(), png: None });
                 let _ = tx.send(r);
             }
             input => match self.queue(input, app, ctx) {
@@ -359,7 +363,7 @@ fn insert_model(app: &CadApp, m: &mut serde_json::Map<String, Value>) {
     m.insert("mass".into(), json!(mass));
     let joints: Vec<Value> = app.doc.joints().map(|j| {
         let error = model.and_then(|r| r.components.iter().find(|(i, _)| *i == j.child)).and_then(|(_, r)| r.as_ref().err().cloned());
-        json!({ "id": j.id, "kind": format!("{:?}", j.kind), "parent": j.parent, "child": j.child, "value": j.value, "error": error })
+        json!({ "id": j.id, "kind": format!("{:?}", j.kind), "parent": j.parent, "child": j.child, "value": j.value, "min": j.min, "max": j.max, "error": error })
     }).collect();
     m.insert("joints".into(), json!(joints));
     m.insert("grounded".into(), json!(app.doc.components().filter(|c| c.grounded).map(|c| c.id).collect::<Vec<_>>()));
@@ -383,6 +387,28 @@ fn insert_model(app: &CadApp, m: &mut serde_json::Map<String, Value>) {
         json!({ "meetings": meetings, "clearances": clearances })
     });
     m.insert("check".into(), json!(check));
+    // Values in degrees (revolute) or mm; `point` and `value` belong to the shown sample `step`.
+    let motion = app.motion_result().map(|run| {
+        let mo = &run.motion;
+        let k = app.motion_step.min(mo.values.len() - 1);
+        let shown = |v: f64| if mo.angle { v.to_degrees() } else { v };
+        let (collision, error) = match &run.collision {
+            Some(Ok(Some(c))) => (json!({ "moving": c.moving, "other": c.other, "sample": c.sample, "volume": c.volume }), Value::Null),
+            Some(Err(err)) => (Value::Null, json!(err)),
+            _ => (Value::Null, Value::Null),
+        };
+        let p = mo.trace[k];
+        json!({
+            "accuracy": cad_document::Accuracy::Exact.to_string(),
+            "collision_accuracy": cad_document::Accuracy::Approximate(cad_document::SAMPLED).to_string(),
+            "check_ms": run.check_ms, "checked": run.collision.is_some(), "collision": collision, "error": error,
+            "drive_ms": run.drive_ms, "joint": mo.joint, "playing": app.motion_play, "point": [p.x, p.y, p.z],
+            "step": k, "steps": mo.values.len() - 1, "trace": mo.trace.iter().map(|p| [p.x, p.y, p.z]).collect::<Vec<_>>(),
+            "unit": if mo.angle { "deg" } else { "mm" }, "value": shown(mo.values[k]),
+            "values": mo.values.iter().map(|v| shown(*v)).collect::<Vec<_>>(),
+        })
+    });
+    m.insert("motion".into(), json!(motion));
     let rooms: Vec<Value> =
         model.into_iter().flat_map(|r| &r.rooms).map(|(id, g)| json!({ "id": id, "area": g.area, "perimeter": g.perimeter })).collect();
     m.insert("rooms".into(), json!(rooms));
