@@ -26,6 +26,7 @@ pub enum Request {
     Import(std::path::PathBuf),
     Save(Option<std::path::PathBuf>),
     Export(std::path::PathBuf),
+    ExportMotion(std::path::PathBuf),
 }
 
 pub struct Reply {
@@ -147,7 +148,7 @@ mod tests {
         assert_eq!(handle_local(&json!({"id": 3, "method": "ping"})).unwrap()["result"], json!({}));
         let r = handle_local(&json!({"id": 4, "method": "tools/list"})).unwrap();
         let list = r["result"]["tools"].as_array().unwrap();
-        assert_eq!(list.len(), 15);
+        assert_eq!(list.len(), 16);
         for t in list {
             assert!(t["name"].is_string() && t["description"].is_string() && t["inputSchema"].is_object());
         }

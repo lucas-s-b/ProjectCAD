@@ -39,7 +39,7 @@ pub struct Frame {
 }
 
 /// Values closer to zero than half the last written decimal become 0, so no "-0" is written.
-fn snap(v: f64) -> f64 {
+pub(crate) fn snap(v: f64) -> f64 {
     if v.abs() < 5e-7 { 0.0 } else { v }
 }
 
@@ -62,6 +62,7 @@ impl Frame {
 }
 
 /// Places `child` relative to `parent`: child placement = parent placement x `cad_mech::mate(parent frame, motion, child frame)`.
+/// A value outside `min`..`max` fails the child's placement (`Document::check_limits`); limits refuse, never clamp.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Joint {
     pub id: JointId,
@@ -72,6 +73,12 @@ pub struct Joint {
     pub child_frame: Frame,
     /// Angle (revolute) or length (slider) expression; parsed but not evaluated for a fixed joint.
     pub value: String,
+    /// Lowest allowed value, an expression in the joint's unit (angle or length); None: no limit. Fixed joints ignore it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min: Option<String>,
+    /// Highest allowed value, like `min`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max: Option<String>,
 }
 
 /// One exploded-view step: `component` is drawn `distance` further along `direction` (display only).
@@ -83,6 +90,9 @@ pub struct ExplodeStep {
     /// Length expression.
     pub distance: String,
 }
+
+/// Slack of the limit comparison (radians or mm), so a value typed equal to a limit passes.
+const LIMIT_SLACK: f64 = 1e-9;
 
 impl Document {
     /// In id order.
@@ -110,12 +120,43 @@ impl Document {
     }
 
     /// The vector of three expressions evaluated as lengths (a bare number counts as itself).
-    fn vec3(&self, v: &[String; 3]) -> Result<DVec3, String> {
+    pub(crate) fn vec3(&self, v: &[String; 3]) -> Result<DVec3, String> {
         Ok(DVec3::new(eval(self, &v[0], false)?, eval(self, &v[1], false)?, eval(self, &v[2], false)?))
     }
 
-    /// The motion of `j`'s child relative to its parent (`cad_mech::mate`).
-    fn mate(&self, j: &Joint, bodies: &[(FeatureId, Arc<Body>)]) -> Result<DAffine3, String> {
+    /// Ok when `v` (radians for a revolute joint, mm for a slider) lies within `j`'s limits, with `LIMIT_SLACK`; fixed
+    /// joints have none. Errors: "the minimum is above the maximum", "120 deg is above the maximum 90 deg",
+    /// "-1 mm is below the minimum 0 mm", or a limit's expression error ("expected an angle").
+    pub fn check_limits(&self, j: &Joint, v: f64) -> Result<(), String> {
+        let angle = match j.kind {
+            JointKind::Fixed => return Ok(()),
+            JointKind::Revolute => true,
+            JointKind::Slider => false,
+        };
+        let bound = |s: &Option<String>| s.as_deref().map(|s| eval(self, s, angle)).transpose();
+        let (lo, hi) = (bound(&j.min)?, bound(&j.max)?);
+        let show = |v: f64| if angle { format!("{} deg", cad_mech::num(v.to_degrees())) } else { mm(v) };
+        if let (Some(lo), Some(hi)) = (lo, hi)
+            && lo > hi
+        {
+            return Err("the minimum is above the maximum".into());
+        }
+        if let Some(lo) = lo
+            && v < lo - LIMIT_SLACK
+        {
+            return Err(format!("{} is below the minimum {}", show(v), show(lo)));
+        }
+        if let Some(hi) = hi
+            && v > hi + LIMIT_SLACK
+        {
+            return Err(format!("{} is above the maximum {}", show(v), show(hi)));
+        }
+        Ok(())
+    }
+
+    /// The motion of `j`'s child relative to its parent (`cad_mech::mate`). `drive` replaces the value of the joint with
+    /// that id (radians or mm). The value must lie within the joint's limits.
+    fn mate(&self, j: &Joint, bodies: &[(FeatureId, Arc<Body>)], drive: Option<(JointId, f64)>) -> Result<DAffine3, String> {
         let frame = |f: &Frame, comp: ComponentId| -> Result<DAffine3, String> {
             let (origin, axis) = match &f.face {
                 Some(r) => {
@@ -126,10 +167,18 @@ impl Document {
             };
             cad_mech::frame(origin, axis).ok_or_else(|| "zero-length axis".to_string())
         };
+        let value = |angle: bool| -> Result<f64, String> {
+            let v = match drive {
+                Some((id, v)) if id == j.id => v,
+                _ => eval(self, &j.value, angle)?,
+            };
+            self.check_limits(j, v)?;
+            Ok(v)
+        };
         let motion = match j.kind {
             JointKind::Fixed => DAffine3::IDENTITY,
-            JointKind::Revolute => DAffine3::from_rotation_z(eval(self, &j.value, true)?),
-            JointKind::Slider => DAffine3::from_translation(DVec3::Z * eval(self, &j.value, false)?),
+            JointKind::Revolute => DAffine3::from_rotation_z(value(true)?),
+            JointKind::Slider => DAffine3::from_translation(DVec3::Z * value(false)?),
         };
         Ok(cad_mech::mate(frame(&j.parent_frame, j.parent)?, motion, frame(&j.child_frame, j.child)?))
     }
@@ -137,23 +186,28 @@ impl Document {
     /// The rigid motion of every component: its own `at`/`angles` (`placement`) when no joint has it as child, else
     /// its parent's placement times the joint's mate. A joint error fails the child and its whole subtree with
     /// "joint N: ..."; an error of a root is passed down unchanged. `bodies` are the rebuilt bodies, for frames on faces.
-    pub fn placements(&self, bodies: &[(FeatureId, Arc<Body>)]) ->BTreeMap<ComponentId, Result<DAffine3, String>> {
+    pub fn placements(&self, bodies: &[(FeatureId, Arc<Body>)]) -> BTreeMap<ComponentId, Result<DAffine3, String>> {
+        self.placements_driven(bodies, None)
+    }
+
+    /// `placements` with joint `drive.0` at the value `drive.1` (radians or mm) instead of its expression.
+    pub(crate) fn placements_driven(&self, bodies: &[(FeatureId, Arc<Body>)], drive: Option<(JointId, f64)>) -> BTreeMap<ComponentId, Result<DAffine3, String>> {
         let mut out = BTreeMap::new();
         for id in self.components.keys() {
             // Fills `out` for `id` and its ancestors; the result is read from `out`.
-            let _ = self.place_in(*id, &mut out, 0, bodies);
+            let _ = self.place_in(*id, &mut out, 0, bodies, drive);
         }
         out
     }
 
-    fn place_in(&self, id: ComponentId, out: &mut BTreeMap<ComponentId, Result<DAffine3, String>>, depth: usize, bodies: &[(FeatureId, Arc<Body>)]) -> Result<DAffine3, String> {
+    fn place_in(&self, id: ComponentId, out: &mut BTreeMap<ComponentId, Result<DAffine3, String>>, depth: usize, bodies: &[(FeatureId, Arc<Body>)], drive: Option<(JointId, f64)>) -> Result<DAffine3, String> {
         if let Some(r) = out.get(&id) {
             return r.clone();
         }
         let r = match self.parent_joint(id) {
             // Only a file that skipped `load`'s checks can hold a loop; stop instead of recursing forever.
             Some(_) if depth > self.joints.len() => Err("joints form a loop".to_string()),
-            Some(j) => self.place_in(j.parent, out, depth + 1, bodies).and_then(|p| Ok(p * self.mate(j, bodies).map_err(|e| format!("joint {}: {e}", j.id))?)),
+            Some(j) => self.place_in(j.parent, out, depth + 1, bodies, drive).and_then(|p| Ok(p * self.mate(j, bodies, drive).map_err(|e| format!("joint {}: {e}", j.id))?)),
             None => self.component(id).ok_or_else(|| format!("component {id} not found")).and_then(|c| self.placement(c)),
         };
         out.insert(id, r.clone());
@@ -209,7 +263,7 @@ impl Document {
             steps += 1;
         }
         let frames = [&j.parent_frame, &j.child_frame];
-        frames.iter().flat_map(|f| f.origin.iter().chain(&f.axis)).chain(std::iter::once(&j.value)).try_for_each(|src| parse(src).map(drop))?;
+        frames.iter().flat_map(|f| f.origin.iter().chain(&f.axis)).chain(std::iter::once(&j.value)).chain(j.min.iter()).chain(j.max.iter()).try_for_each(|src| parse(src).map(drop))?;
         Ok(())
     }
 
@@ -250,4 +304,4 @@ impl Document {
 
 #[cfg(test)]
 #[path = "joint_tests.rs"]
-mod tests;
+pub(crate) mod tests;

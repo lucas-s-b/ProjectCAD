@@ -3,5 +3,5 @@
 mod accuracy;
 mod mass;
 
-pub use accuracy::{Accuracy, TESSELLATION};
+pub use accuracy::{Accuracy, SAMPLED, TESSELLATION};
 pub use mass::MassProps;

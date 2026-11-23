@@ -15,7 +15,7 @@ pub fn definitions() -> Value {
     let (shift, ctrl) = (json!({"type": "boolean", "default": false}), json!({"type": "boolean", "default": false}));
     json!([
         tool("screenshot", "PNG of the application window. Pixel coordinates of this image are the coordinates used by click, drag and scroll.", json!({}), &[]),
-        tool("state", "JSON: active tool, view, status text, dirty flag, selection, current layer, 2D camera and viewport rectangle (pixels), window size, and the whole document (entities, layers), components, the bill of materials, mass properties of the bodies, components and assembly (mm, g, g·mm², with accuracy labels), joints, the exploded view, the last interference check, the feature dependency graph and recompute count of the last rebuild.", json!({}), &[]),
+        tool("state", "JSON: active tool, view, status text, dirty flag, selection, current layer, 2D camera and viewport rectangle (pixels), window size, and the whole document (entities, layers), components, the bill of materials, mass properties of the bodies, components and assembly (mm, g, g·mm², with accuracy labels), the last motion study (joint values, traced point, first collision, with accuracy labels), joints, the exploded view, the last interference check, the feature dependency graph and recompute count of the last rebuild.", json!({}), &[]),
         tool("click", "Click. With world=true, x and y are millimetres in the 2D view instead of pixels.",
             json!({"x": num, "y": num, "button": button, "world": world, "shift": shift, "ctrl": ctrl}), &["x", "y"]),
         tool("drag", "Press at the first point, move, release at the second.",
@@ -31,6 +31,7 @@ pub fn definitions() -> Value {
         tool("import_project", "Replace the document with the contents of a .dxf or .svg file (chosen by the extension). Unsaved changes are discarded.", json!({"path": {"type": "string"}}), &["path"]),
         tool("save_project", "Save to the path, or to the current file when omitted.", json!({"path": {"type": "string"}}), &[]),
         tool("export_project", "Export to .svg, .dxf or .pdf (visible 2D entities) or to .stl, .obj or .step (shown solid bodies and placed components), or .csv (bill of materials), chosen by the file extension.", json!({"path": {"type": "string"}}), &["path"]),
+        tool("export_motion", "Write the last motion study as .csv: per step the joint value (deg or mm), the traced point (mm) and the first collision.", json!({"path": {"type": "string"}}), &["path"]),
         tool("widgets", "JSON array of the named widgets of the last frame: name, index (occurrence among equal names, draw order), x and y (centre) and w and h in screenshot pixels, visible.", json!({}), &[]),
         tool("click_widget", "Click the centre of the widget with this name and occurrence index (default 0). Scrolls it into view when needed.",
             json!({"name": {"type": "string"}, "index": {"type": "integer", "minimum": 0, "default": 0}, "shift": shift, "ctrl": ctrl}), &["name"]),
@@ -121,6 +122,7 @@ pub fn parse(name: &str, args: &Value) -> Result<Request, String> {
             Some(_) => Some(string(args, "path")?.into()),
         }),
         "export_project" => Request::Export(string(args, "path")?.into()),
+        "export_motion" => Request::ExportMotion(string(args, "path")?.into()),
         _ => return Err(format!("unknown tool '{name}'")),
     })
 }
@@ -166,5 +168,6 @@ mod tests {
     fn save_with_and_without_path() {
         assert!(matches!(parse("save_project", &json!({})), Ok(Request::Save(None))));
         assert!(matches!(parse("save_project", &json!({"path": "a.cadproj"})), Ok(Request::Save(Some(_)))));
+        assert!(matches!(parse("export_motion", &json!({"path": "m.csv"})), Ok(Request::ExportMotion(_))));
     }
 }

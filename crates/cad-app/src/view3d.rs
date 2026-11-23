@@ -1,6 +1,6 @@
 use crate::app::{CadApp, PickFace};
 use cad_document::{ComponentId, EntityId, Overlap};
-use cad_geometry::{DVec2, DVec3, distance_2d, outline, ray_hit, tessellate};
+use cad_geometry::{DAffine3, DVec2, DVec3, distance_2d, outline, ray_hit, tessellate};
 use cad_renderer::{SceneRenderer, Vertex};
 use eframe::egui::{self, PointerButton};
 use eframe::{egui_wgpu, wgpu};
@@ -143,35 +143,42 @@ fn build_scene(app: &CadApp) -> Geometry {
     // The selected component follows a gizmo drag in progress (the gizmo moves it when no entity is selected).
     let moving = app.gizmo.as_ref().filter(|_| app.selection.is_empty()).map_or(DVec3::ZERO, crate::gizmo::GizmoDrag::delta);
     let offsets = app.doc.explode_offsets(app.explode_factor());
-    // The last check, drawn with the assembled placements, so only while not exploded.
-    let check = app.check_result().filter(|_| app.explode_factor() == 0.0);
+    // The motion study's shown sample; display only (picking stays on the assembled pose).
+    let moves = crate::motion_panel::shown_moves(app);
+    let collision = crate::motion_panel::shown_collision(app);
+    // The last check, drawn with the assembled placements, so only while not exploded and no motion study is shown.
+    let check = app.check_result().filter(|_| app.explode_factor() == 0.0 && moves.is_none());
     // Components that interfere are drawn as edges only, so the red common solid inside them shows (no x-ray pass).
     let wire: BTreeSet<ComponentId> = check
         .iter()
         .flat_map(|c| &c.meetings)
         .filter(|m| matches!(m.kind, Ok(Overlap::Interference { .. })))
         .flat_map(|m| [m.a, m.b])
+        .chain(collision.iter().flat_map(|c| [c.moving, c.other]))
         .collect();
     let shown = app.shown_bodies().map(|(id, b)| (Some(*id), None, b));
     let placed = app.placed_components().map(|(c, b)| (None, Some(c), b));
     for (id, comp, body) in shown.chain(placed) {
         let selected = comp.is_some() && comp == app.component_sel;
         let shift = if selected { moving } else { DVec3::ZERO } + comp.and_then(|c| offsets.get(&c)).copied().unwrap_or(DVec3::ZERO);
+        let turn = comp.and_then(|c| moves.and_then(|m| m.get(&c))).copied().unwrap_or(DAffine3::IDENTITY);
+        let at = |p: DVec3| turn.transform_point3(p) + shift;
         let (mesh, grey) = (&body.mesh, [0.72, 0.75, 0.80]);
         if !comp.is_some_and(|c| wire.contains(&c)) {
             for (corner, (&i, n)) in mesh.indices.iter().zip(&mesh.normals).enumerate() {
                 let face = id.is_some_and(|id| app.face_sel == Some((id, body.tri_face[corner / 3])));
                 let picked = selected && app.component_face.is_some_and(|(c, f)| Some(c) == comp && f == body.tri_face[corner / 3]);
                 let color = if picked { PICKED_FACE } else if selected || face { SELECTED } else { grey };
-                tris.push(vertex(mesh.positions[i as usize] + shift, n.as_vec3().to_array(), color));
+                tris.push(vertex(at(mesh.positions[i as usize]), turn.transform_vector3(*n).as_vec3().to_array(), color));
             }
         }
         for [a, b] in body.feature_edges() {
-            lines.push(vertex(a + shift, [0.0; 3], [0.12, 0.12, 0.14]));
-            lines.push(vertex(b + shift, [0.0; 3], [0.12, 0.12, 0.14]));
+            lines.push(vertex(at(a), [0.0; 3], [0.12, 0.12, 0.14]));
+            lines.push(vertex(at(b), [0.0; 3], [0.12, 0.12, 0.14]));
         }
         // A cap of a moved solid would sit on the wrong plane.
         if shift == DVec3::ZERO
+            && turn == DAffine3::IDENTITY
             && let Some((axis, d)) = app.section.plane()
         {
             let mut n = [0.0f32; 3];
@@ -203,6 +210,11 @@ fn build_scene(app: &CadApp) -> Geometry {
             for (&i, n) in region.mesh.indices.iter().zip(&region.mesh.normals) {
                 tris.push(vertex(region.mesh.positions[i as usize], n.as_vec3().to_array(), INTERFERENCE));
             }
+        }
+    }
+    if let Some(c) = collision {
+        for (&i, n) in c.region.mesh.indices.iter().zip(&c.region.mesh.normals) {
+            tris.push(vertex(c.region.mesh.positions[i as usize], n.as_vec3().to_array(), INTERFERENCE));
         }
     }
     for (_, _, k) in check.iter().flat_map(|c| &c.clearances) {
@@ -258,6 +270,7 @@ pub(crate) fn project(app: &CadApp, rect: egui::Rect, q: DVec3) -> Option<egui::
 pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     let (rect, resp) = ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
     app.view_rect = rect;
+    crate::motion_panel::tick(app, ui.ctx());
     let aspect = rect.width() / rect.height().max(1.0);
 
     if ui.input(|i| i.key_pressed(egui::Key::Escape)) {

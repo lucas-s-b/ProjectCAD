@@ -226,15 +226,17 @@ Deferred to later phases:
 Mass properties, kinematics, static structural analysis, FEA infrastructure. Every result is labelled
 approximate or validated; unvalidated results are never presented as certified.
 
-Done (unit-tested; mass properties checked in the running app through MCP):
+Done (unit-tested; mass properties and motion studies checked in the running app through MCP):
 - [x] Accuracy labels on analysis results: "exact" (the computation is exact for the geometry), "approximate (<reason>)", "validated against <case>"; shown beside every result and in the MCP `state`; nothing is presented as certified
 - [x] Mass properties of bodies and placed components: volume, mass, centre of mass, inertia tensor about the centre of mass, principal moments and axes, from the closed triangle mesh by the divergence theorem (exact for bodies with planar faces, approximate (tessellation) for curved ones); components use their BOM material, bodies and unknown materials an assumed 1 g/cm³ (flagged); assembly total about the assembly centre of mass with the parallel axis theorem; Model and Assembly tab "Mass properties" sections, centre of mass marker in 3D, `mass` in the MCP `state`
+- [x] Joint limits: optional min/max expressions on revolute and slider joints; a value outside fails the child's placement ("joint 1: 120 deg is above the maximum 90 deg"), never clamped; file format 24 (older files load unchanged)
+- [x] Motion studies: drive one revolute or slider joint from a start to an end value in up to 360 steps (exact joint walk per step), trace a point of a component, play back in 3D (step slider, play/pause; display only); optional collision check per step on the pairs where one side moves, reporting the first colliding step and pair with the interference region in red and the time taken; CSV export (`export_motion` in MCP); `motion` in the MCP `state`; positions "exact", collisions "approximate (sampled at the steps)"
 
 Limits:
 - Mass properties: bodies have no material (1 g/cm³ assumed); curved faces are integrated on their facets (a 64-gon cylinder is 0.16 % light); no inertia about a chosen point or axis in the UI; principal axes are listed, not drawn.
+- Motion: a collision between two steps is not seen; curved faces are checked on their facets; the study runs on the UI thread (the app waits; times shown); picking, the centre of mass marker and the Interference section stay on the assembled pose; one joint per study; studies are not saved.
 
 Remaining:
-- B: motion studies (drive a joint over a range in steps, animate), joint limits, collision during motion with the interference check; file format 24
 - C: closed-loop joints (four-bar linkages) and dragging joints, solved with the Levenberg-Marquardt solver
 - D: tetrahedral mesher (Kuhn grid with boundary snapping, quadratic tets) and mesh preview
 - E: static linear-elastic FEA studies (fixed faces, forces and pressures on face references, material E and ν), faer sparse Cholesky, von Mises and displacement colour maps; file format 25

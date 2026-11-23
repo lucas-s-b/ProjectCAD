@@ -46,6 +46,7 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     list(app, ui);
     editor(app, ui);
     crate::assembly_joints::joints(app, ui);
+    crate::motion_panel::show(app, ui);
     crate::assembly_joints::explode(app, ui);
     crate::assembly_check::show(app, ui);
     crate::mass_panel::assembly(app, ui);

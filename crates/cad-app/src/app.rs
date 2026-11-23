@@ -258,6 +258,15 @@ pub struct CadApp {
     pub show_com: bool,
     /// The last interference check and the document revision it ran on (see `check_result`).
     pub check: Option<(u64, Check)>,
+    /// Motion study inputs (Assembly tab) and whether "Run study" also checks collisions.
+    pub motion_study: cad_document::MotionStudy,
+    pub motion_check: bool,
+    /// The last motion study and the document revision it ran on (see `motion_result`).
+    pub motion: Option<(u64, crate::motion_panel::StudyRun)>,
+    /// Playback: the shown sample, whether it advances by itself, and the time (s) of the last advance.
+    pub motion_step: usize,
+    pub motion_play: bool,
+    pub motion_clock: f64,
     pub worker: RebuildWorker,
     /// Document revision last sent to the worker.
     pub requested: Option<u64>,
@@ -382,6 +391,12 @@ impl CadApp {
             mass: None,
             show_com: false,
             check: None,
+            motion_study: Default::default(),
+            motion_check: false,
+            motion: None,
+            motion_step: 0,
+            motion_play: false,
+            motion_clock: 0.0,
             worker: RebuildWorker::spawn(cc.egui_ctx.clone()),
             requested: None,
             model: None,
@@ -458,6 +473,11 @@ impl CadApp {
     /// The last interference check while the document is unchanged since it ran; any edit, undo or redo drops it.
     pub fn check_result(&self) -> Option<&Check> {
         self.check.as_ref().filter(|(rev, _)| *rev == self.doc.revision()).map(|(_, c)| c)
+    }
+
+    /// The last motion study while the document is unchanged since it ran; any edit, undo or redo drops it.
+    pub fn motion_result(&self) -> Option<&crate::motion_panel::StudyRun> {
+        self.motion.as_ref().filter(|(rev, _)| *rev == self.doc.revision()).map(|(_, m)| m)
     }
 
     /// The explode factor in effect: 0 while the exploded view is off.
