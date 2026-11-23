@@ -97,3 +97,45 @@ fn find_edge_needs_matching_faces() {
     let keys = [FaceKey::Plane(DVec3::Z), FaceKey::Plane(-DVec3::Z)];
     assert!(find_edge(&b, &keys, DVec3::new(20.0, 20.0, 10.0)).is_none());
 }
+
+/// Cylinder of radius r about the Z axis, z 0..h.
+fn cyl(r: f64, h: f64) -> Body {
+    let c = Shape::Circle { center: DVec2::ZERO, radius: r };
+    Body::from_brep(&extrude(&Profile::from_shapes(&[&c]).unwrap(), &Plane3::XY, h).unwrap(), BODY_TOLERANCE).unwrap()
+}
+
+/// z of the plane of face i (its `origin` lies on the plane).
+fn plane_z(b: &Body, i: usize) -> f64 {
+    let Surface::Plane { origin, .. } = b.faces[i].surface else { panic!("face {i} is not a plane") };
+    origin.z
+}
+
+#[test]
+fn face_refs_name_faces_again() {
+    let b = block(0.0, 0.0, 40.0, 20.0, 10.0);
+    let top = (0..b.faces.len()).find(|&i| FaceKey::of(&b.faces[i]).matches(&FaceKey::Plane(DVec3::Z))).unwrap();
+    let r = FaceRef::of(&b, top).unwrap();
+    assert!(r.key.matches(&FaceKey::Plane(DVec3::Z)));
+    close(r.at.z, 10.0);
+    assert!((0.0..=40.0).contains(&r.at.x) && (0.0..=20.0).contains(&r.at.y));
+    assert_eq!(FaceRef::of(&b, 99), None);
+    let taller = block(0.0, 0.0, 40.0, 20.0, 15.0);
+    close(plane_z(&taller, find_face(&taller, &r).unwrap()), 15.0);
+    let s = step();
+    let up = |x: f64| FaceRef { key: FaceKey::Plane(DVec3::Z), at: DVec3::new(x, 10.0, 10.0) };
+    close(plane_z(&s, find_face(&s, &up(30.0)).unwrap()), 10.0);
+    close(plane_z(&s, find_face(&s, &up(10.0)).unwrap()), 15.0);
+    assert_eq!(find_face(&b, &FaceRef { key: FaceKey::Plane(-DVec3::Z), at: DVec3::new(100.0, 100.0, 0.0) }), None);
+    assert_eq!(find_face(&b, &FaceRef { key: FaceKey::Other, at: DVec3::ZERO }), None);
+}
+
+#[test]
+fn cylinder_refs_follow_a_new_radius() {
+    let r = FaceRef { key: FaceKey::Cylinder(DVec3::Z), at: DVec3::new(5.0, 0.0, 5.0) };
+    let c = cyl(6.0, 12.0);
+    let i = find_face(&c, &r).unwrap();
+    assert!(matches!(c.faces[i].surface, Surface::Cylinder { radius, .. } if (radius - 6.0).abs() <= 1e-9));
+    assert!(FaceRef::of(&c, i).unwrap().key.matches(&FaceKey::Cylinder(-DVec3::Z)));
+    let top = FaceRef { key: FaceKey::Plane(DVec3::Z), at: DVec3::new(1.0, 1.0, 10.0) };
+    close(plane_z(&c, find_face(&c, &top).unwrap()), 12.0);
+}

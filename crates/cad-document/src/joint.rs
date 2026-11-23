@@ -1,12 +1,15 @@
 //! Joints between components (placements by a walk up the joint tree) and exploded-view steps.
 use crate::component::{ComponentId, mm};
+use crate::feature::FeatureId;
 use crate::document::{Command, DocError, Document};
 use crate::rebuild::eval;
+use crate::refs::{FACE_ERROR, FaceRef, find_face};
 use cad_geometry::{DAffine3, DVec3};
 use cad_modeler::Body;
 use cad_params::parse;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 pub type JointId = u64;
 
@@ -21,12 +24,18 @@ pub enum JointKind {
 }
 
 /// A frame in a component's own coordinates (those of its body). Its X direction is derived from the axis (`cad_mech::frame`).
+/// A frame taken from a face follows that face (`face`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Frame {
     /// Length expressions; a bare number is millimetres.
     pub origin: [String; 3],
     /// Direction, plain numbers (normalised; it must not be zero).
     pub axis: [String; 3],
+    /// The face the frame was taken from; when set, the rebuild takes origin and axis from that face as it is now
+    /// (`cad_mech::face_frame` of the face `find_face` finds in the component's body) and `origin`/`axis` are only
+    /// the values at pick time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub face: Option<FaceRef>,
 }
 
 /// Values closer to zero than half the last written decimal become 0, so no "-0" is written.
@@ -42,12 +51,13 @@ impl Frame {
             let s = format!("{:.6}", snap(v));
             s.trim_end_matches('0').trim_end_matches('.').to_string()
         };
-        Frame { origin: origin.to_array().map(|v| mm(snap(v))), axis: axis.to_array().map(unit) }
+        Frame { origin: origin.to_array().map(|v| mm(snap(v))), axis: axis.to_array().map(unit), face: None }
     }
 
-    /// The frame of face `face` of `body` (`cad_mech::face_frame`); None unless the face is a plane or a cylinder.
+    /// The frame of face `face` of `body` (`cad_mech::face_frame`), remembering the face so the frame follows it;
+    /// None unless the face is a plane or a cylinder.
     pub fn from_face(body: &Body, face: usize) -> Option<Frame> {
-        cad_mech::face_frame(body, face).map(|(o, a)| Frame::from_vectors(o, a))
+        cad_mech::face_frame(body, face).map(|(o, a)| Frame { face: FaceRef::of(body, face), ..Frame::from_vectors(o, a) })
     }
 }
 
@@ -105,38 +115,45 @@ impl Document {
     }
 
     /// The motion of `j`'s child relative to its parent (`cad_mech::mate`).
-    fn mate(&self, j: &Joint) -> Result<DAffine3, String> {
-        let frame = |f: &Frame| -> Result<DAffine3, String> {
-            cad_mech::frame(self.vec3(&f.origin)?, self.vec3(&f.axis)?).ok_or_else(|| "zero-length axis".to_string())
+    fn mate(&self, j: &Joint, bodies: &[(FeatureId, Arc<Body>)]) -> Result<DAffine3, String> {
+        let frame = |f: &Frame, comp: ComponentId| -> Result<DAffine3, String> {
+            let (origin, axis) = match &f.face {
+                Some(r) => {
+                    let body = self.component(comp).and_then(|c| bodies.iter().find(|(id, _)| *id == c.body)).map(|(_, b)| b).ok_or("body not built")?;
+                    find_face(body, r).and_then(|i| cad_mech::face_frame(body, i)).ok_or(FACE_ERROR)?
+                }
+                None => (self.vec3(&f.origin)?, self.vec3(&f.axis)?),
+            };
+            cad_mech::frame(origin, axis).ok_or_else(|| "zero-length axis".to_string())
         };
         let motion = match j.kind {
             JointKind::Fixed => DAffine3::IDENTITY,
             JointKind::Revolute => DAffine3::from_rotation_z(eval(self, &j.value, true)?),
             JointKind::Slider => DAffine3::from_translation(DVec3::Z * eval(self, &j.value, false)?),
         };
-        Ok(cad_mech::mate(frame(&j.parent_frame)?, motion, frame(&j.child_frame)?))
+        Ok(cad_mech::mate(frame(&j.parent_frame, j.parent)?, motion, frame(&j.child_frame, j.child)?))
     }
 
     /// The rigid motion of every component: its own `at`/`angles` (`placement`) when no joint has it as child, else
     /// its parent's placement times the joint's mate. A joint error fails the child and its whole subtree with
-    /// "joint N: ..."; an error of a root is passed down unchanged.
-    pub fn placements(&self) -> BTreeMap<ComponentId, Result<DAffine3, String>> {
+    /// "joint N: ..."; an error of a root is passed down unchanged. `bodies` are the rebuilt bodies, for frames on faces.
+    pub fn placements(&self, bodies: &[(FeatureId, Arc<Body>)]) ->BTreeMap<ComponentId, Result<DAffine3, String>> {
         let mut out = BTreeMap::new();
         for id in self.components.keys() {
             // Fills `out` for `id` and its ancestors; the result is read from `out`.
-            let _ = self.place_in(*id, &mut out, 0);
+            let _ = self.place_in(*id, &mut out, 0, bodies);
         }
         out
     }
 
-    fn place_in(&self, id: ComponentId, out: &mut BTreeMap<ComponentId, Result<DAffine3, String>>, depth: usize) -> Result<DAffine3, String> {
+    fn place_in(&self, id: ComponentId, out: &mut BTreeMap<ComponentId, Result<DAffine3, String>>, depth: usize, bodies: &[(FeatureId, Arc<Body>)]) -> Result<DAffine3, String> {
         if let Some(r) = out.get(&id) {
             return r.clone();
         }
         let r = match self.parent_joint(id) {
             // Only a file that skipped `load`'s checks can hold a loop; stop instead of recursing forever.
             Some(_) if depth > self.joints.len() => Err("joints form a loop".to_string()),
-            Some(j) => self.place_in(j.parent, out, depth + 1).and_then(|p| Ok(p * self.mate(j).map_err(|e| format!("joint {}: {e}", j.id))?)),
+            Some(j) => self.place_in(j.parent, out, depth + 1, bodies).and_then(|p| Ok(p * self.mate(j, bodies).map_err(|e| format!("joint {}: {e}", j.id))?)),
             None => self.component(id).ok_or_else(|| format!("component {id} not found")).and_then(|c| self.placement(c)),
         };
         out.insert(id, r.clone());

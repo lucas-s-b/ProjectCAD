@@ -3,6 +3,7 @@ mod body;
 mod bvh;
 mod boolean;
 mod cap;
+mod draft;
 mod edges;
 mod extrude;
 #[cfg(test)]
@@ -21,6 +22,7 @@ mod tess;
 mod trimmed;
 
 pub use blend::{chamfer_edge, fillet_edge};
+pub use draft::draft_face;
 pub use body::{Body, BodyFace, union_all};
 pub use bvh::{Bvh, ray_triangle};
 pub use boolean::{BoolOp, boolean};

@@ -44,6 +44,68 @@ impl FaceKey {
     }
 }
 
+/// A face named by which way it points and a point that lay on it when it was picked. Found again on every rebuild
+/// (`find_face`), so it follows when earlier features move or resize the face.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct FaceRef {
+    pub key: FaceKey,
+    pub at: DVec3,
+}
+
+impl FaceRef {
+    /// The reference of face `face` of `body`: its key and the centroid of its largest triangle (a point on the face
+    /// even when the face is not convex). None for an index out of range or a face without triangles.
+    pub fn of(body: &Body, face: usize) -> Option<FaceRef> {
+        let f = body.faces.get(face)?;
+        let largest = body
+            .mesh
+            .indices
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .zip(&body.tri_face)
+            .filter(|(_, g)| **g as usize == face)
+            .map(|(t, _)| t.map(|i| body.mesh.positions[i as usize]))
+            .max_by(|a, b| twice_area(a).total_cmp(&twice_area(b)))?;
+        Some(FaceRef { key: FaceKey::of(f), at: (largest[0] + largest[1] + largest[2]) / 3.0 })
+    }
+}
+
+fn twice_area([a, b, c]: &[DVec3; 3]) -> f64 {
+    (*b - *a).cross(*c - *a).length()
+}
+
+/// Area centroid of the triangles of face `face`; None when it has none.
+fn face_centroid(body: &Body, face: usize) -> Option<DVec3> {
+    let (mut area, mut sum) = (0.0, DVec3::ZERO);
+    for (t, &g) in body.mesh.indices.as_chunks::<3>().0.iter().zip(&body.tri_face) {
+        if g as usize == face {
+            let p = t.map(|i| body.mesh.positions[i as usize]);
+            let w = twice_area(&p);
+            area += w;
+            sum += (p[0] + p[1] + p[2]) * (w / 3.0);
+        }
+    }
+    (area > 0.0).then(|| sum / area)
+}
+
+/// The face of `body` that `r` names. A plane: the planar face pointing the same way on which `r.at`, moved along
+/// the normal, falls (the nearest to `at` along the normal when several do), as for sketches on faces. A cylinder:
+/// the cylindrical face with the same axis whose area centroid is nearest to `at`. None when nothing matches and
+/// for `FaceKey::Other`.
+// shortcut: cylinders are matched by the nearest centroid; track coaxial cylinders of one body by more than that if they get mixed up
+pub(crate) fn find_face(body: &Body, r: &FaceRef) -> Option<usize> {
+    match r.key {
+        FaceKey::Plane(n) => plane_face(body, n, r.at).map(|(i, _)| i),
+        FaceKey::Cylinder(_) => (0..body.faces.len())
+            .filter(|&i| r.key.matches(&FaceKey::of(&body.faces[i])))
+            .filter_map(|i| face_centroid(body, i).map(|c| (i, c.distance(r.at))))
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(i, _)| i),
+        FaceKey::Other => None,
+    }
+}
+
 /// The keys of the two faces of `edge`, an edge of `body`, in the order of `edge.faces`.
 pub fn edge_keys(body: &Body, edge: &BodyEdge) -> [FaceKey; 2] {
     edge.faces.map(|f| FaceKey::of(&body.faces[f as usize]))
@@ -74,18 +136,18 @@ pub(crate) fn face_plane(plane: Plane3, at: DVec3, body: FeatureId, bodies: &Bod
     let search = if own.is_empty() { bodies.iter().map(|(_, b)| b).collect() } else { own };
     let d = search
         .iter()
-        .filter_map(|b| plane_face_offset(b, n, at))
+        .filter_map(|b| plane_face(b, n, at).map(|(_, d)| d))
         .min_by(|x, y| (x - n.dot(at)).abs().total_cmp(&(y - n.dot(at)).abs()))
         .ok_or(FACE_ERROR)?;
     Ok(Plane3 { origin: plane.origin + n * (d - n.dot(at)), ..plane })
 }
 
-/// Offset `n · p` of the planar face of `body` with outward normal `n` that contains `at` moved along `n`;
+/// Index and offset `n · p` of the planar face of `body` with outward normal `n` that contains `at` moved along `n`;
 /// the nearest to `at` when several do.
-fn plane_face_offset(body: &Body, n: DVec3, at: DVec3) -> Option<f64> {
+fn plane_face(body: &Body, n: DVec3, at: DVec3) -> Option<(usize, f64)> {
     let key = FaceKey::Plane(n);
     let tris = body.mesh.indices.as_chunks::<3>().0;
-    let mut best: Option<f64> = None;
+    let mut best: Option<(usize, f64)> = None;
     for (fi, face) in body.faces.iter().enumerate() {
         let Surface::Plane { origin, .. } = &face.surface else { continue };
         if !key.matches(&FaceKey::of(face)) {
@@ -97,8 +159,8 @@ fn plane_face_offset(body: &Body, n: DVec3, at: DVec3) -> Option<f64> {
             .iter()
             .zip(&body.tri_face)
             .any(|(t, &f)| f as usize == fi && in_triangle(q, t.map(|i| body.mesh.positions[i as usize]), n));
-        if inside && best.is_none_or(|b| (d - n.dot(at)).abs() < (b - n.dot(at)).abs()) {
-            best = Some(d);
+        if inside && best.is_none_or(|b| (d - n.dot(at)).abs() < (b.1 - n.dot(at)).abs()) {
+            best = Some((fi, d));
         }
     }
     best

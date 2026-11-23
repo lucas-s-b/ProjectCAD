@@ -131,6 +131,9 @@ fn editor(app: &mut CadApp, ui: &mut egui::Ui) {
                     from_face = Some(side == "Parent");
                 }
             });
+            if frame.face.is_some() {
+                ui.small(format!("{side} frame follows its face"));
+            }
         }
         delete = w::button(ui, "Delete joint").clicked();
     }
@@ -152,6 +155,16 @@ fn editor(app: &mut CadApp, ui: &mut egui::Ui) {
         }
     }
     if commit {
+        // Typed origin or axis numbers replace a frame taken from a face.
+        if from_face.is_none()
+            && let (Some(b), Some(s)) = (app.joint_edit.as_mut(), app.doc.joint(id))
+        {
+            for (f, old) in [(&mut b.parent_frame, &s.parent_frame), (&mut b.child_frame, &s.child_frame)] {
+                if f.origin != old.origin || f.axis != old.axis {
+                    f.face = None;
+                }
+            }
+        }
         let stored = app.doc.joint(id).cloned();
         if let Some(j) = app.joint_edit.take().filter(|j| Some(j) != stored.as_ref()) {
             app.exec(vec![Command::SetJoint(j)]);

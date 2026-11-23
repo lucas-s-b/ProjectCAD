@@ -91,7 +91,7 @@ fn components_save_and_load() {
     let mut loaded = loaded.unwrap();
     assert_eq!(loaded.components().cloned().collect::<Vec<_>>(), d.components().cloned().collect::<Vec<_>>());
     assert_eq!(loaded.alloc_component_id(), 3);
-    assert_eq!(FORMAT_VERSION, 22);
+    assert_eq!(FORMAT_VERSION, 23);
 }
 
 #[test]

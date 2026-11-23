@@ -15,7 +15,7 @@ pub fn definitions() -> Value {
     let (shift, ctrl) = (json!({"type": "boolean", "default": false}), json!({"type": "boolean", "default": false}));
     json!([
         tool("screenshot", "PNG of the application window. Pixel coordinates of this image are the coordinates used by click, drag and scroll.", json!({}), &[]),
-        tool("state", "JSON: active tool, view, status text, dirty flag, selection, current layer, 2D camera and viewport rectangle (pixels), window size, and the whole document (entities, layers), components, the bill of materials, joints, the exploded view and the last interference check.", json!({}), &[]),
+        tool("state", "JSON: active tool, view, status text, dirty flag, selection, current layer, 2D camera and viewport rectangle (pixels), window size, and the whole document (entities, layers), components, the bill of materials, joints, the exploded view, the last interference check, the feature dependency graph and recompute count of the last rebuild.", json!({}), &[]),
         tool("click", "Click. With world=true, x and y are millimetres in the 2D view instead of pixels.",
             json!({"x": num, "y": num, "button": button, "world": world, "shift": shift, "ctrl": ctrl}), &["x", "y"]),
         tool("drag", "Press at the first point, move, release at the second.",

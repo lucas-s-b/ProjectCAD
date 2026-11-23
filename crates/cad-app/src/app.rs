@@ -101,6 +101,8 @@ pub enum PickFace {
     Sketch,
     /// Open the face of a new shell feature.
     Shell,
+    /// Add faces to a draft: the first click makes the draft feature (its id is kept here), later clicks add faces of the same body.
+    Draft(Option<FeatureId>),
 }
 
 /// Action waiting for the unsaved-changes dialog.
@@ -218,6 +220,8 @@ pub struct CadApp {
     pub pick_face: PickFace,
     /// Thickness field of the Shell controls.
     pub shell_thickness: String,
+    /// Angle of new drafts.
+    pub draft_angle: String,
     pub pick_edges: Option<crate::edge_pick::EdgePick>,
     pub blend_size: String,
     /// Which part "Add part" makes: an index into `PartDef::defaults()`.
@@ -351,6 +355,7 @@ impl CadApp {
             loft_smooth: false,
             pick_face: PickFace::Off,
             shell_thickness: "2 mm".into(),
+            draft_angle: "3 deg".into(),
             pick_edges: None,
             blend_size: "2 mm".into(),
             part_choice: 0,

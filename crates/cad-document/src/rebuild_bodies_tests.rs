@@ -360,3 +360,64 @@ fn unused_face_sketch_follows_the_last_bodies() {
     close(r.planes[&1].clone().unwrap().origin.z, 15.0, 1e-9);
     close(d.resolve_plane(1).unwrap().origin.z, 10.0, 1e-9);
 }
+
+fn set_distance(d: &mut Document, id: FeatureId, distance: &str) {
+    let mut f = d.feature(id).unwrap().clone();
+    if let FeatureKind::Extrude { distance: dist, .. } = &mut f.kind {
+        *dist = distance.into();
+    }
+    d.apply(Command::SetFeature(f)).unwrap();
+}
+
+#[test]
+fn independent_bodies_rebuild_alone() {
+    let mut d = two_blocks();
+    put(&mut d, 103, 0, rect(34.0, 4.0, 36.0, 6.0));
+    push(&mut d, 3, 103, Ex { offset: "-5 mm", target: Target::Body(2), ..ex("20 mm", BodyOp::Cut) });
+    put(&mut d, 104, 0, rect(2.0, 2.0, 8.0, 8.0));
+    push(&mut d, 4, 104, Ex { offset: "10 mm", target: Target::Body(1), ..ex("5 mm", BodyOp::Add) });
+    let mut rb = Rebuilder::default();
+    let r = rb.rebuild(&d);
+    assert_eq!(r.recomputed, 4);
+    assert_eq!(ids(&r), [1, 2]);
+    for (v, w) in volumes(&r).into_iter().zip([1180.0, 960.0]) {
+        close(v, w, 1e-9);
+    }
+    let want = std::collections::BTreeMap::from([(1, vec![]), (2, vec![]), (3, vec![2]), (4, vec![1])]);
+    assert_eq!(r.depends, want);
+
+    set_distance(&mut d, 2, "20 mm");
+    let r = rb.rebuild(&d);
+    assert_eq!(r.recomputed, 2);
+    for (v, w) in volumes(&r).into_iter().zip([1180.0, 1940.0]) {
+        close(v, w, 1e-9);
+    }
+
+    set_distance(&mut d, 1, "12 mm");
+    let r = rb.rebuild(&d);
+    assert_eq!(r.recomputed, 2);
+    assert_eq!(ids(&r), [1, 2]);
+    for (v, w) in volumes(&r).into_iter().zip([1308.0, 1940.0]) {
+        close(v, w, 1e-9);
+    }
+
+    through(&mut d, 5, BodyOp::Cut, Target::Auto);
+    let r = rb.rebuild(&d);
+    assert_eq!(r.recomputed, 1);
+    for (v, w) in volumes(&r).into_iter().zip([1032.0, 1700.0]) {
+        close(v, w, 1e-9);
+    }
+    assert_eq!(r.depends[&5], vec![3, 4]);
+}
+
+#[test]
+fn moved_new_feature_stays_cached() {
+    let mut d = two_blocks();
+    let mut rb = Rebuilder::default();
+    rb.rebuild(&d);
+    d.apply(Command::MoveFeature { id: 2, index: 0 }).unwrap();
+    let r = rb.rebuild(&d);
+    assert_eq!(r.recomputed, 0);
+    assert_eq!(ids(&r), [2, 1]);
+    close(r.total_volume(), 2000.0, 1e-9);
+}

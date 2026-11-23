@@ -69,7 +69,11 @@ fn forms(doc: &Document, f: &Feature, states: &BTreeMap<FeatureId, FeatureState>
         FeatureKind::Mirror { source: MirrorSource::Feature(source), plane, offset } => {
             (*source, vec![mirror_matrix(*plane, len(offset)?)], 0)
         }
-        FeatureKind::Fillet { .. } | FeatureKind::Chamfer { .. } | FeatureKind::Shell { .. } | FeatureKind::Mirror { source: MirrorSource::Bodies, .. } => {
+        FeatureKind::Fillet { .. }
+        | FeatureKind::Chamfer { .. }
+        | FeatureKind::Shell { .. }
+        | FeatureKind::Draft { .. }
+        | FeatureKind::Mirror { source: MirrorSource::Bodies, .. } => {
             return Err(NOT_SOURCE.to_string());
         }
     };
