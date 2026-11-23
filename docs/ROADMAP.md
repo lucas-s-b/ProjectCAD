@@ -240,14 +240,14 @@ Done (unit-tested; mass properties, motion studies, closed loops, the analysis m
 
 Limits:
 - Mass properties: bodies have no material (1 g/cm³ assumed); curved faces are integrated on their facets (a 64-gon cylinder is 0.16 % light); no inertia about a chosen point or axis in the UI; principal axes are listed, not drawn.
-- Motion: a collision between two steps is not seen; curved faces are checked on their facets; the study runs on the UI thread (the app waits; times shown); picking, the centre of mass marker and the Interference section stay on the assembled pose; one joint per study; studies are not saved.
+- Motion: a collision between two steps is not seen; curved faces are checked on their facets; the study runs on a worker thread since Phase 7 batch B (times shown); picking, the centre of mass marker and the Interference section stay on the assembled pose; one joint per study; studies are not saved.
 - Loops: one solve for all loops (an error fails every component that depends on a free joint); the solver can land on the other assembly branch when start values are far off; limits are checked after the solve, not used by it; closing joints have no value or limits; the drag slider has a fixed range (±180 deg, ±100 mm); dragging a jointed component with the 3D gizmo is not available (Phase 7).
 - Mesh: a regular grid, so sharp edges that do not lie on grid lines are rounded off (a box turned 30° loses 4 % of its volume at 2.5 mm; a cylinder 10 mm in radius 0.9 %); boundary nodes whose move would spoil an element stay off the surface (counted); straight-sided elements; meshing runs on the UI thread with at most 50 000 grid cells; one body at a time, not components; the mesh is not saved; face node sets have no picker yet (E).
-- Static studies: linear elastic, small displacements, isotropic material; supports hold every displacement of a face (no rollers or prescribed displacements); loads are uniform over a face; straight-sided elements on the mesher's grid (sharp edges off the grid are rounded off); at most 30 000 unknowns, run on the UI thread; the safety factor compares the yield strength with the largest nodal von Mises stress only (no fatigue, buckling or notch judgement; peaks at sharp re-entrant edges grow with refinement); supports and loads are listed, not drawn.
+- Static studies: linear elastic, small displacements, isotropic material; supports hold every displacement of a face (no rollers or prescribed displacements); loads are uniform over a face; straight-sided elements on the mesher's grid (sharp edges off the grid are rounded off); at most 30 000 unknowns, run on a worker thread; the safety factor compares the yield strength with the largest nodal von Mises stress only (no fatigue, buckling or notch judgement; peaks at sharp re-entrant edges grow with refinement); supports and loads are listed, not drawn.
 - Validation: 15 fixed cases on a box, a cylinder and the four-bar; a user study is never labelled validated, however close to a case; against Timoshenko the fully clamped 3D cantilever keeps about −0.8 % at h = 2.5 mm; no Lamé cylinder, gravity or stress-concentration case yet.
 
 Deferred to later phases:
-- Running static studies and motion studies on a worker thread (both run on the UI thread, capped at 30 000 unknowns and 360 steps): Phase 7 (profiling-driven work)
+- (done in Phase 7 batch B) Running static studies, motion studies, the interference check and the validation benchmarks on a worker thread
 - Mass properties, interference and collisions during motion on exact geometry instead of facets: Phase 7 (exact kernel)
 - Dragging a jointed component with the 3D gizmo along its free motion: Phase 7
 - Modal, thermal, buckling and fatigue analysis; contact; nonlinear materials and large displacements: later
@@ -265,8 +265,11 @@ Done (batch A; numbers in docs/BENCHMARKS.md; checked in the running app through
 - [x] Components are placed in parallel (rayon) and reused while their body and placement are unchanged; `RebuildResult::placements`
 - [x] Instanced 3D drawing: each body's triangles and edges go to the GPU once; shown bodies and components are instances, so a selection, gizmo, explode, motion or drag frame no longer rebuilds triangles
 
+Done (batch B; numbers in docs/BENCHMARKS.md; checked in the running app through MCP):
+- [x] Measured first: `cad-bench` analysis, pick, BOM and cold-open cases, the in-app longest-frame timer (`perf.frame_ms`), gates at 100 ms per click, 16 ms per frame, 1 s per cold open
+- [x] Static studies, motion studies, interference checks and the validation benchmarks run on a worker thread: one job at a time, a progress line with "Cancel job", any edit drops the job; MCP replies wait for it (`jobs` in the state). The analysis mesh (3.7 ms), the one-BVH-per-body picking (74 ms for 200 components) and rayon in the FEA element loops (16 ms of a 413 ms study) failed their gates and stay as they were
+
 Remaining:
-- B: worker threads and caches where measured: static and motion studies on a worker thread, mass and BOM of large assemblies off the UI thread, frustum culling, rayon in patterns, mirrors, the mesher and FEA assembly, a binary rebuild cache if cold opens exceed 1 s
 - C: glTF and 3MF export, IFC4 export, STL and OBJ import as mesh bodies (file format 28), STEP with analytic cones and spheres
 - D: docking, themes, command search, rotate gizmo for components, dragging jointed components with the gizmo
 - E: plugin API (out-of-process plugins over the MCP protocol, `cad-plugin-api`)
@@ -276,5 +279,6 @@ Won't do in this project:
 - A NURBS kernel, exact booleans and everything that needs them: topological naming of faces that tilt, split or merge; corner blending and fillets on other edges; drafts next to curved faces; loft holes and sweep/loft self-intersection checks; mass, interference and collisions on exact geometry (facet errors are measured and labelled)
 - STEP and IGES import, STEP of tori and free-form faces, IGES export (need NURBS; STEP is read everywhere IGES was), 3D PDF
 - LOD and hidden-line rendering, unless batch B measures GPU-bound frames after culling
+- Mass properties, BOM, frustum culling, a binary rebuild cache, rayon in patterns, mirrors, the mesher, tessellation, feature edges and the FEA element loops, a worker for the analysis mesh and a BVH per source body for picking: measured or read unnecessary in batch B (docs/BENCHMARKS.md)
 - The feature-catalogue items deferred in Phases 2, 4, 5 and 6 (2D blocks and drafting extras, roof, stair and opening extras, gear, spring, thread and bearing variants, further analysis types): modelling features, not optimisation or production
 - Components referencing other project files; a 2D spatial index (measured unnecessary)

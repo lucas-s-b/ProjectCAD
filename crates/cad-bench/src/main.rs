@@ -1,6 +1,7 @@
-//! Benchmark baseline: `cargo run --release -p cad-bench` prints a Markdown table of timings; `cargo run --release -p cad-bench -- validate` runs the analytic validation cases and writes docs/VALIDATION.md; `cargo run -p cad-bench -- assembly <path> [n]` writes the benchmark assembly (n components of one gear, default 200) as a project file.
+//! Benchmark baseline: `cargo run --release -p cad-bench` prints a Markdown table of timings; `cargo run --release -p cad-bench -- validate` runs the analytic validation cases and writes docs/VALIDATION.md; `cargo run -p cad-bench -- assembly <path> [n] [pitch]` writes the benchmark assembly (n components of one gear, default 200, `pitch` mm apart, default 100) as a project file; `-- pin <path>` and `-- beam <path>` write the motion and static-study models of the analysis cases.
+use cad_analysis::{Elastic, element_stiffness, internal_forces, nodal_von_mises};
 use cad_constraints::{Constraint, PointKind, PointRef, solve};
-use cad_document::{BodyOp, Command, Component, Document, Entity, Feature, FeatureKind, History, PartDef, Rebuilder, Target};
+use cad_document::{BodyOp, Bvh, Command, Component, Document, Entity, Feature, FeatureKind, Frame, History, Joint, JointKind, MotionStudy, PartDef, Rebuilder, Target};
 use cad_geometry::snap::{intersections, object_snap};
 use cad_geometry::{DVec2, DVec3, Shape, distance_2d, tessellate};
 use std::collections::BTreeMap;
@@ -158,11 +159,14 @@ fn pattern_case(t: &mut Table) {
     assert!(cold.bodies.len() == 1 && cold.recomputed == 4, "the plate must build, otherwise the timing means nothing");
     let triangles = cold.bodies[0].1.mesh.triangle_count();
     t.add("rebuild plate with a 10 x 10 hole pattern (cold)", format!("4 features, {triangles} triangles"), || Rebuilder::default().rebuild(&doc).recomputed);
+    let path = std::env::temp_dir().join("cad-bench-pattern.cadproj");
+    doc.save(&path).expect("save the pattern plate");
+    t.add("cold open: load + rebuild of the 10 x 10 pattern plate", "4 features", || Rebuilder::default().rebuild(&Document::load(&path).expect("load")).recomputed);
 }
 
-/// Body 1: an involute spur gear (module 2 mm, 40 teeth, 10 mm wide, 8 mm bore) on the XY plane; `n` components of
-/// it, ten per row, 100 mm apart, named "Gear #<id>".
-fn assembly(n: usize) -> Document {
+/// `n` components of one gear (body 1: module 2 mm, 40 teeth, 10 mm wide, 8 mm bore) on the XY plane, ten per row,
+/// `pitch` mm apart, named "Gear #<id>". The tip diameter is 84 mm, so neighbours closer than that interfere.
+fn assembly_at(n: usize, pitch: f64) -> Document {
     let mut doc = Document::new("assembly");
     let def = PartDef::Gear { module: "2 mm".into(), teeth: "40".into(), pressure: "20 deg".into(), width: "10 mm".into(), bore: "8 mm".into() };
     let kind = FeatureKind::Part { def, sketch: 0, x: "0".into(), y: "0".into(), op: BodyOp::New, target: Target::Auto };
@@ -170,11 +174,96 @@ fn assembly(n: usize) -> Document {
     doc.apply(Command::AddFeature { index: 0, feature: Feature { id: body, name: "Gear".into(), suppressed: false, kind } }).expect("valid gear");
     for i in 0..n {
         let id = doc.alloc_component_id();
-        let at = [format!("{} mm", (i % 10) * 100), format!("{} mm", (i / 10) * 100), "0".into()];
+        let at = [format!("{} mm", (i % 10) as f64 * pitch), format!("{} mm", (i / 10) as f64 * pitch), "0".into()];
         let c = Component { id, name: format!("Gear #{id}"), body, at, angles: ["0".into(), "0".into(), "0".into()], meta: Default::default(), grounded: false };
         doc.apply(Command::AddComponent(c)).expect("valid component");
     }
     doc
+}
+
+/// `assembly_at(n, 100.0)`: neighbours 16 mm apart.
+fn assembly(n: usize) -> Document {
+    assembly_at(n, 100.0)
+}
+
+/// Body 1: a 40 x 40 x 5 mm plate with a hole of 10 mm diameter at (20, 20); body 3: a pin of 8 mm diameter, 20 mm
+/// long. Component 1 (the plate, grounded) and component 2 (the pin) are joined by revolute joint 1 on the hole's
+/// axis, 2.5 mm up, so the pin passes through the hole with 1 mm clearance and never touches the plate.
+fn pin() -> Document {
+    let mut doc = Document::new("pin");
+    let add = |doc: &mut Document, shape: Shape| {
+        let id = doc.alloc_id();
+        doc.apply(Command::Add(Entity { id, name: String::new(), shape, layer: 0, sketch: 0, construction: false, group: None, meta: Default::default() })).expect("valid shape");
+        id
+    };
+    let plate = add(&mut doc, Shape::rect(DVec2::ZERO, DVec2::splat(40.0)));
+    let hole = add(&mut doc, Shape::Circle { center: DVec2::splat(20.0), radius: 5.0 });
+    let pin = add(&mut doc, Shape::Circle { center: DVec2::ZERO, radius: 4.0 });
+    let extrude = |profile, distance: &str, op| FeatureKind::Extrude { profile: vec![profile], distance: distance.into(), offset: "0".into(), taper: "0 deg".into(), op, flip: false, target: Target::Auto };
+    let kinds = [extrude(plate, "5", BodyOp::New), extrude(hole, "5", BodyOp::Cut), extrude(pin, "20", BodyOp::New)];
+    for (i, kind) in kinds.into_iter().enumerate() {
+        let feature = Feature { id: doc.alloc_feature_id(), name: format!("f{i}"), suppressed: false, kind };
+        doc.apply(Command::AddFeature { index: i, feature }).expect("valid feature");
+    }
+    let s = |v: [&str; 3]| v.map(String::from);
+    let comp = |id, body, grounded| Component { id, name: format!("c{id}"), body, at: s(["0", "0", "0"]), angles: s(["0", "0", "0"]), meta: Default::default(), grounded };
+    doc.apply(Command::AddComponent(comp(1, 1, true))).expect("valid component");
+    doc.apply(Command::AddComponent(comp(2, 3, false))).expect("valid component");
+    let joint = Joint {
+        id: 1,
+        kind: JointKind::Revolute,
+        parent: 1,
+        child: 2,
+        parent_frame: Frame { origin: s(["20 mm", "20 mm", "2.5 mm"]), axis: s(["0", "0", "1"]), face: None },
+        child_frame: Frame::from_vectors(DVec3::ZERO, -DVec3::Z),
+        value: "0 deg".into(),
+        min: None,
+        max: None,
+        closes_loop: false,
+        free: false,
+    };
+    doc.apply(Command::AddJoint(joint)).expect("valid joint");
+    doc
+}
+
+/// One turn of the pin of `pin()` in `steps` steps, tracing a point on its rim.
+fn pin_turn(steps: usize) -> MotionStudy {
+    let s = |v: [&str; 3]| v.map(String::from);
+    MotionStudy { joint: 1, start: "0".into(), end: "360 deg".into(), steps, trace: 2, point: s(["4 mm", "0", "0"]) }
+}
+
+/// The analyses that run on the UI thread when their button is clicked: a static study near `MAX_DOFS`, its mesh and
+/// its element loops, the validation benchmarks, an interference check and a motion study with its collision check.
+fn analysis_cases(t: &mut Table) {
+    let (doc, r) = cad_document::validation::beam(2.45, "0.3", ["0", "0", "-100"]).expect("the beam builds");
+    let rep = doc.run_study(&r, 0).expect("the beam study solves");
+    let dofs = rep.result.dofs;
+    assert!(dofs >= 25_000, "a study near MAX_DOFS, otherwise the timing means nothing: {dofs}");
+    t.add("static study: steel cantilever 100 x 10 x 10 mm, h 2.45 mm", format!("{dofs} unknowns"), || doc.run_study(&r, 0).map(|s| s.result.dofs));
+    t.add("analysis mesh of the same beam (Mesh for analysis)", format!("{} elements", rep.stats.elements), || doc.mesh_body(&r, 1, "2.45 mm").map(|m| m.stats.elements));
+    let mat = Elastic { young: 210_000.0, poisson: 0.3 };
+    let (mesh, u) = (&rep.mesh, &rep.result.displacement);
+    t.add("element loops of that study: stiffness, internal forces, von Mises", rep.stats.elements, || {
+        let mut sum = 0.0;
+        for el in &mesh.elements {
+            sum += black_box(element_stiffness(&el.map(|v| mesh.nodes[v as usize]), mat))[0][0].x_axis.x;
+        }
+        sum + internal_forces(mesh, mat, u)[0].x + nodal_von_mises(mesh, mat, u)[0]
+    });
+    t.add("validation benchmarks (Run benchmarks)", "15 cases", || cad_document::benchmarks().map(|rows| rows.len()));
+    let gears = assembly_at(20, 80.0);
+    let gr = Rebuilder::default().rebuild(&gears);
+    let meetings = gears.check(&gr, "5 mm").expect("a valid limit").meetings.len();
+    assert!(meetings > 0, "neighbours 80 mm apart must meet, otherwise the timing means nothing");
+    t.add("interference check: 20 gears 80 mm apart", format!("{meetings} meetings"), || gears.check(&gr, "5 mm").map(|c| c.meetings.len()));
+    let p = pin();
+    let pr = Rebuilder::default().rebuild(&p);
+    let ((a0, a1), (b0, b1)) = (pr.component(1).expect("plate placed").bbox(), pr.component(2).expect("pin placed").bbox());
+    assert!(a0.cmple(b1).all() && b0.cmple(a1).all(), "the pin must sit in the plate's box, otherwise every sample skips the boolean");
+    let study = pin_turn(360);
+    let motion = p.drive(&pr, &study).expect("the pin turns");
+    assert!(matches!(p.first_collision(&pr, &motion), Ok(None)), "the pin must turn freely, otherwise the check stops at the first sample");
+    t.add("motion study with collision check: a pin turning in a plate hole", "360 steps", || p.drive(&pr, &study).and_then(|m| p.first_collision(&pr, &m)).map(|c| c.is_some()));
 }
 
 /// 200 components of one gear: a cold rebuild, a rebuild after a change that moves nothing (warm), the feature edges
@@ -199,6 +288,11 @@ fn assembly_cases(t: &mut Table) {
     t.0.push(("the same after changing an unused parameter (warm)".to_string(), "200 components, 0 features recomputed".to_string(), ms));
     t.add("feature edges of every component (each 3D scene build)", 200, || cold.components.iter().map(|(_, r)| r.as_ref().map_or(0, |b| b.feature_edges().len())).sum::<usize>());
     t.add("mass properties of the assembly", 200, || doc.mass(&cold).components.len());
+    t.add("BVH of every component (first 3D click in an assembly)", 200, || cold.components.iter().filter_map(|(_, r)| r.as_ref().ok()).map(|b| {
+        black_box(Bvh::build(&b.mesh));
+        1
+    }).sum::<usize>());
+    t.add("bill of materials of the assembly (each frame of the Assembly tab)", 200, || doc.bom(&cold).len());
 }
 
 /// "2026-11-23": the UTC date `secs` seconds after 1970-01-01 (Howard Hinnant's days-to-civil algorithm).
@@ -242,10 +336,21 @@ fn main() {
         validate();
         return;
     }
-    if std::env::args().nth(1).as_deref() == Some("assembly") {
-        let path = std::env::args().nth(2).expect("usage: cad-bench assembly <path> [components]");
-        let n = std::env::args().nth(3).map_or(200, |s| s.parse().expect("a component count"));
-        assembly(n).save(std::path::Path::new(&path)).expect("save the assembly");
+    let arg = |i: usize| std::env::args().nth(i);
+    if arg(1).as_deref() == Some("assembly") {
+        let path = arg(2).expect("usage: cad-bench assembly <path> [components] [pitch mm]");
+        let n = arg(3).map_or(200, |s| s.parse().expect("a component count"));
+        let pitch = arg(4).map_or(100.0, |s| s.parse().expect("a pitch in mm"));
+        assembly_at(n, pitch).save(std::path::Path::new(&path)).expect("save the assembly");
+        return;
+    }
+    if arg(1).as_deref() == Some("pin") {
+        pin().save(std::path::Path::new(&arg(2).expect("usage: cad-bench pin <path>"))).expect("save the pin");
+        return;
+    }
+    if arg(1).as_deref() == Some("beam") {
+        let (beam, _) = cad_document::validation::beam(2.45, "0.3", ["0", "0", "-100"]).expect("the beam builds");
+        beam.save(std::path::Path::new(&arg(2).expect("usage: cad-bench beam <path>"))).expect("save the beam");
         return;
     }
     let mut t = Table(Vec::new());
@@ -301,6 +406,7 @@ fn main() {
     plate_cases(&mut t);
     pattern_case(&mut t);
     assembly_cases(&mut t);
+    analysis_cases(&mut t);
 
     let cpus = std::thread::available_parallelism().map_or(1, usize::from);
     let profile = if cfg!(debug_assertions) { "debug" } else { "release" };

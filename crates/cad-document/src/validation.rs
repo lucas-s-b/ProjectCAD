@@ -93,9 +93,10 @@ fn mesh_text(rep: &StudyReport) -> String {
     format!("h={} mm: {} nodes, {} elements, {} unknowns", rep.h, rep.stats.nodes, rep.stats.elements, rep.result.dofs)
 }
 
-/// Steel study (`Study::new`, ν replaced by `poisson`) of the box 100 x 10 x 10 mm from the origin at element size
-/// `h` mm: the −X end fixed, `force` N spread over the +X end.
-fn beam_study(h: f64, poisson: &str, force: [&str; 3]) -> Result<StudyReport, String> {
+/// The box 100 x 10 x 10 mm from the origin (body 1) with one steel study (`Study::new`, ν replaced by `poisson`) at
+/// element size `h` mm: the −X end fixed, `force` N spread over the +X end; and the rebuild the study reads.
+/// `cad-bench` times it and writes it as a project file.
+pub fn beam(h: f64, poisson: &str, force: [&str; 3]) -> Result<(Document, RebuildResult), String> {
     let mut d = extruded(Shape::rect(DVec2::ZERO, DVec2::new(100.0, 10.0)), "10 mm")?;
     let r = Rebuilder::default().rebuild(&d);
     let study = Study {
@@ -105,6 +106,12 @@ fn beam_study(h: f64, poisson: &str, force: [&str; 3]) -> Result<StudyReport, St
         ..Study::new("benchmark".into(), 1, format!("{h} mm"))
     };
     d.apply(Command::SetStudies(vec![study])).map_err(|err| err.to_string())?;
+    Ok((d, r))
+}
+
+/// Study 0 of `beam(h, poisson, force)`.
+fn beam_study(h: f64, poisson: &str, force: [&str; 3]) -> Result<StudyReport, String> {
+    let (d, r) = beam(h, poisson, force)?;
     d.run_study(&r, 0)
 }
 

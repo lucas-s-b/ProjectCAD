@@ -1,5 +1,6 @@
 //! The Model tab's "Validation report": runs the analytic benchmarks (`cad_document::benchmarks`) on demand and lists
 //! them. Only these fixed cases are ever labelled "validated against <case>"; studies keep their approximate label.
+use crate::analysis_worker::{JobKind, JobOutput};
 use crate::app::CadApp;
 use crate::widgets as w;
 use eframe::egui::{self, Color32, RichText};
@@ -9,13 +10,15 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     ui.separator();
     ui.heading("Validation report");
     ui.small("Studies you run stay approximate. These fixed cases run the same mesher, solver, mass properties and loop solver against analytic results; a case within its tolerance is validated against it.");
-    if w::button(ui, "Run benchmarks").clicked() {
-        let start = Instant::now();
-        let rows = cad_document::benchmarks();
-        app.validation = Some((start.elapsed().as_secs_f64() * 1000.0, rows));
+    if w::add_enabled(ui, app.jobs.running().is_none(), "Run benchmarks", egui::Button::new("Run benchmarks")).clicked() {
+        app.jobs.start(ui.ctx(), JobKind::Validation, None, || {
+            let start = Instant::now();
+            let rows = cad_document::benchmarks();
+            JobOutput::Validation(start.elapsed().as_secs_f64() * 1000.0, rows)
+        });
     }
     let Some((ms, result)) = &app.validation else {
-        ui.small("Runs on the UI thread in about a second; docs/VALIDATION.md is the same report (cargo run --release -p cad-bench -- validate).");
+        ui.small("Runs in the background in about a second; docs/VALIDATION.md is the same report (cargo run --release -p cad-bench -- validate).");
         return;
     };
     let rows = match result {

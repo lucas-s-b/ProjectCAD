@@ -13,6 +13,8 @@ use std::path::PathBuf;
 /// The last 3D scene build (MCP `state` key `perf`), timed in `view3d::show`.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Perf {
+    /// Longest frame (the whole `ui` call) since the last MCP `state` read, ms: work that holds the UI thread shows here.
+    pub frame_ms: f64,
     /// Milliseconds of the last `build_scene`.
     pub scene_ms: f64,
     /// Vertices that build produced on the CPU (triangle corners and line ends) for the per-scene buffers.
@@ -311,6 +313,8 @@ pub struct CadApp {
     pub motion_step: usize,
     pub motion_play: bool,
     pub motion_clock: f64,
+    /// The analysis running off the UI thread (see `analysis_worker`).
+    pub jobs: crate::analysis_worker::Jobs,
     pub worker: RebuildWorker,
     /// Document revision last sent to the worker.
     pub requested: Option<u64>,
@@ -463,6 +467,7 @@ impl CadApp {
             motion_step: 0,
             motion_play: false,
             motion_clock: 0.0,
+            jobs: Default::default(),
             worker: RebuildWorker::spawn(cc.egui_ctx.clone()),
             requested: None,
             model: None,
@@ -512,6 +517,26 @@ impl CadApp {
 
     pub fn model_current(&self) -> bool {
         self.model.as_ref().is_some_and(|(r, _)| *r == self.doc.revision())
+    }
+
+    /// No rebuild pending and no analysis running: MCP replies and held requests wait for this.
+    pub fn idle(&self) -> bool {
+        self.model_current() && self.jobs.running().is_none()
+    }
+
+    /// Cancels a job whose document has changed, then hands a finished job's output to its panel, which stores it
+    /// under the current revision (equal to the job's, since a stale job was just dropped).
+    pub fn poll_jobs(&mut self) {
+        use crate::analysis_worker::JobOutput;
+        self.jobs.drop_stale(self.doc.revision());
+        let Some((kind, out)) = self.jobs.poll() else { return };
+        match out {
+            Err(msg) => self.status = format!("{}: internal error: {msg}", kind.name()),
+            Ok(JobOutput::Study(r)) => crate::study_panel::finish(self, r),
+            Ok(JobOutput::Motion(r)) => crate::motion_panel::finish(self, r),
+            Ok(JobOutput::Check(r)) => crate::assembly_check::finish(self, r),
+            Ok(JobOutput::Validation(ms, rows)) => self.validation = Some((ms, rows)),
+        }
     }
 
     pub fn rebuilding(&self) -> bool {
@@ -725,6 +750,7 @@ impl eframe::App for CadApp {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let frame_start = std::time::Instant::now();
         let ctx = ui.ctx().clone();
         self.widgets = crate::widgets::begin_frame(&ctx);
         if let Some(mut b) = self.mcp.take() {
@@ -736,6 +762,7 @@ impl eframe::App for CadApp {
             self.confirm = Some(Pending::Quit);
         }
         self.sync_model();
+        self.poll_jobs();
         panels::shortcuts(self, &ctx);
         panels::menu_bar(self, ui);
         crate::toolbar::toolbar(self, ui);
@@ -749,6 +776,8 @@ impl eframe::App for CadApp {
         });
         // Edits made during this frame go to the worker now, not a frame later.
         self.sync_model();
+        // Longest frame since the last MCP state read: a job that holds the UI thread shows here.
+        self.perf.frame_ms = self.perf.frame_ms.max(frame_start.elapsed().as_secs_f64() * 1000.0);
     }
 }
 

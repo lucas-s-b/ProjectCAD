@@ -44,3 +44,44 @@ scene rows are debug-build timings from the app itself (`perf.scene_ms` in the M
 | vertices built per scene (count) (debug, in-app) | 100 components | 2019290 | 90 | 22436.56x |
 
 Phase 3 rows re-run after batch A: 59.982 / 6.889 / 545.779 ms (before 59.179 / 6.366 / 543.065; no regression expected: no feature code changed).
+
+## Phase 7 batch B: analyses off the UI thread
+
+Release build, same machine, 7 samples per case; "before" is the code at the start of batch B, "after" its end
+(`target/bench_7b_before.txt`, `target/bench_7b_after.txt`). The app rows are debug-build timings from the app
+itself: `perf.frame_ms` in the MCP `state`, the longest frame since the previous `state` read
+(`tests/mcp_phase7b.sh`), one sample each. Cut-offs: a click that holds the UI thread for 100 ms or more (release)
+moves off it; work done every frame stays under 16 ms; a cold open stays under 1 s.
+
+| Case | N | Before ms | After ms | Speed-up |
+|---|---|---|---|---|
+| static study: steel cantilever 100 x 10 x 10 mm, h 2.45 mm | 29766 unknowns | 413.033 | 416.108 | 0.99x |
+| analysis mesh of the same beam (Mesh for analysis) | 6150 elements | 3.745 | 3.744 | 1.00x |
+| element loops of that study: stiffness, internal forces, von Mises | 6150 | 16.003 | 15.856 | 1.01x |
+| validation benchmarks (Run benchmarks) | 15 cases | 196.341 | 196.536 | 1.00x |
+| interference check: 20 gears 80 mm apart | 28 meetings | 318.841 | 320.770 | 0.99x |
+| motion study with collision check: a pin turning in a plate hole | 360 steps | 260.335 | 255.638 | 1.02x |
+| BVH of every component (first 3D click in an assembly) | 200 | 74.026 | 73.300 | 1.01x |
+| bill of materials of the assembly (each frame of the Assembly tab) | 200 | 0.755 | 0.766 | 0.99x |
+| cold open: load + rebuild of the 10 x 10 pattern plate | 4 features | 533.665 | 541.342 | 0.99x |
+| frame with Run static study (debug, in-app) | beam, 29766 unknowns | 479.621 | 1.436 | 334.04x |
+| frame with Run benchmarks (debug, in-app) | 15 cases | 307.917 | 2.335 | 131.89x |
+| frame with Mesh for analysis (debug, in-app) | beam, h 2.45 mm | 10.452 | 10.457 | 1.00x |
+| frame with Check (debug, in-app) | 20 gears 80 mm apart | 411.580 | 40.395 | 10.19x |
+| frame with Run study, collision check (debug, in-app) | pin, 360 steps | 312.947 | 2.800 | 111.76x |
+| frame with a 3D click on the assembly (debug, in-app) | 100 components | 1079.897 | 1087.083 | 0.99x |
+
+Gates (from the before rows):
+- G1 static study on the worker: "static study ..." >= 100 ms: yes (413.033 ms)
+- G2 analysis mesh on the worker: "analysis mesh ..." >= 100 ms: no (3.745 ms)
+- G3 motion study on the worker: "motion study with collision check ..." >= 100 ms: yes (260.335 ms)
+- G4 interference check on the worker: "interference check ..." >= 100 ms: yes (318.841 ms)
+- G5 validation benchmarks on the worker: "validation benchmarks ..." >= 100 ms: yes (196.341 ms)
+- G6 picking through one BVH per body: "BVH of every component ..." >= 100 ms: no (74.026 ms)
+- G7 parallel FEA element loops: G1 and "element loops ..." >= 0.3 x "static study ...": no (16.003 ms against 0.3 x 413.033 = 123.910 ms)
+- BOM: "bill of materials ..." < 16 ms: yes (0.755 ms)
+- Cold open: "cold open ..." < 1000 ms: yes (533.665 ms)
+
+Phase 3 and batch A rows re-run after batch B: 60.237 / 6.974 / 540.880 ms (plate, incremental, pattern) and 19.143 / 0.881 / 102.870 / 5.733 ms (assembly cold, warm, feature edges, mass) (`target/bench_7b_after.txt`).
+
+Batch B changed no code under the release rows (the analyses only moved to a thread of their own), so those rows match their before values within noise; the gain is the app rows: the frame of a click on Run static study, Run benchmarks, Check and Run study no longer holds the UI thread. Analysis mesh (G2), picking (G6) and the FEA element loops (G7) failed their gates and stay as they were; the BOM and the cold open are inside their cut-offs.
