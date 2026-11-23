@@ -7,8 +7,8 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-cad-analysis = { version = "0.1.0", path = "../cad-analysis" }
-cad-constraints = { version = "0.1.0", path = "../cad-constraints" }
-cad-document = { version = "0.1.0", path = "../cad-document" }
-cad-geometry = { version = "0.1.0", path = "../cad-geometry" }
-cad-import-export = { version = "0.1.0", path = "../cad-import-export" }
+cad-analysis = { version = "0.2.0", path = "../cad-analysis" }
+cad-constraints = { version = "0.2.0", path = "../cad-constraints" }
+cad-document = { version = "0.2.0", path = "../cad-document" }
+cad-geometry = { version = "0.2.0", path = "../cad-geometry" }
+cad-import-export = { version = "0.2.0", path = "../cad-import-export" }

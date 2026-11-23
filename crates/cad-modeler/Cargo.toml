@@ -6,8 +6,8 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-cad-geometry = { version = "0.1.0", path = "../cad-geometry" }
-cad-topology = { version = "0.1.0", path = "../cad-topology" }
+cad-geometry = { version = "0.2.0", path = "../cad-geometry" }
+cad-topology = { version = "0.2.0", path = "../cad-topology" }
 glam = "0.34.3"
 thiserror = "2.0.21"
 earcutr = "0.4.3"
