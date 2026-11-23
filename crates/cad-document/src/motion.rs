@@ -3,8 +3,9 @@ use crate::bom::csv_field;
 use crate::component::ComponentId;
 use crate::document::Document;
 use crate::feature::BODY_TOLERANCE;
-use crate::joint::{JointId, JointKind, snap};
+use crate::joint::{Joint, JointId, JointKind, snap};
 use crate::rebuild::{RebuildResult, eval};
+use cad_analysis::{Accuracy, SOLVED};
 use cad_geometry::{DAffine3, DVec3};
 use cad_mech::Overlap;
 use cad_modeler::Body;
@@ -51,6 +52,8 @@ pub struct Motion {
     pub moves: Vec<BTreeMap<ComponentId, DAffine3>>,
     /// The traced point in world coordinates per sample, mm.
     pub trace: Vec<DVec3>,
+    /// Of the positions: exact for tree joints, `Approximate(SOLVED)` when the document has closed loops.
+    pub accuracy: Accuracy,
 }
 
 /// The first sample at which a moving component shares a volume with a component that does not move.
@@ -67,7 +70,7 @@ pub struct Collision {
 
 impl Document {
     /// `root` and every component placed through it by joints, in id order.
-    fn subtree(&self, root: ComponentId) -> Vec<ComponentId> {
+    pub(crate) fn subtree(&self, root: ComponentId) -> Vec<ComponentId> {
         let reaches = |c: ComponentId| {
             let (mut at, mut steps) = (c, 0);
             while at != root {
@@ -85,10 +88,22 @@ impl Document {
         self.components().map(|c| c.id).filter(|&c| reaches(c)).collect()
     }
 
+    /// The components that move when `j` is driven: its child's subtree and, with loops, every component that depends
+    /// on a free joint (one in a loop the joint does not reach stays put and is only left out of the collision pairs),
+    /// in id order.
+    fn moving(&self, j: &Joint) -> Vec<ComponentId> {
+        let mut out = self.subtree(j.child);
+        out.extend(self.loop_moving());
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+
     /// Drives `study.joint` from `study.start` to `study.end` in `study.steps` equal steps; each sample runs the joint
-    /// walk with the driven joint's value replaced (`placements_driven`). The last sample is exactly the end value.
+    /// walk (loops solved, each sample starting from the previous one's solution so a linkage stays on its branch)
+    /// with the driven joint's value replaced (`placements_driven`). The last sample is exactly the end value.
     /// `result` must be the rebuild of this document revision. Errors: "joint 9 not found", "a fixed joint cannot be
-    /// driven", "steps must be 1 to 360", "start: …" / "end: …" (expression error or outside the limits, e.g.
+    /// driven", "a joint that closes a loop cannot be driven", "steps must be 1 to 360", "start: …" / "end: …" (expression error or outside the limits, e.g.
     /// "end: 120 deg is above the maximum 90 deg"), "trace point: …", a moving component without a rebuilt placement
     /// (its placement error), "step k: …" (a moving or traced component that cannot be placed at sample k).
     pub fn drive(&self, result: &RebuildResult, study: &MotionStudy) -> Result<Motion, String> {
@@ -98,6 +113,9 @@ impl Document {
             JointKind::Revolute => true,
             JointKind::Slider => false,
         };
+        if j.closes_loop {
+            return Err("a joint that closes a loop cannot be driven".into());
+        }
         if !(1..=MAX_STEPS).contains(&study.steps) {
             return Err(format!("steps must be 1 to {MAX_STEPS}"));
         }
@@ -106,18 +124,20 @@ impl Document {
         };
         let (start, end) = (bound(&study.start, "start")?, bound(&study.end, "end")?);
         let point = self.vec3(&study.point).map_err(|err| format!("trace point: {err}"))?;
-        let base = self.placements(&result.bodies);
-        let moving = self.subtree(j.child);
+        let base = self.placements_driven(&result.bodies, None, &mut result.joint_values.clone());
+        let moving = self.moving(j);
         let mut undo = BTreeMap::new();
         for c in &moving {
             let p = base.get(c).cloned().unwrap_or_else(|| Err(format!("component {c} not found")))?;
             undo.insert(*c, p.inverse());
         }
         let n = study.steps;
-        let mut out = Motion { joint: j.id, angle, values: Vec::new(), moving: moving.clone(), moves: Vec::new(), trace: Vec::new() };
+        let accuracy = if self.joints().any(|j| j.closes_loop) { Accuracy::Approximate(SOLVED) } else { Accuracy::Exact };
+        let mut out = Motion { joint: j.id, angle, values: Vec::new(), moving: moving.clone(), moves: Vec::new(), trace: Vec::new(), accuracy };
+        let mut guess = result.joint_values.clone();
         for k in 0..=n {
             let v = if k == n { end } else { start + (end - start) * k as f64 / n as f64 };
-            let placed = self.placements_driven(&result.bodies, Some((j.id, v)));
+            let placed = self.placements_driven(&result.bodies, Some((j.id, v)), &mut guess);
             let at = |c: ComponentId| {
                 placed.get(&c).cloned().unwrap_or_else(|| Err(format!("component {c} not found"))).map_err(|err| format!("step {k}: {err}"))
             };
@@ -130,6 +150,19 @@ impl Document {
             out.moves.push(moves);
         }
         Ok(out)
+    }
+
+    /// The motion of each component that moves with joint `joint` (as in `drive`) from its rebuilt solid, with the
+    /// joint at `value` (radians or mm) and the loops solved from `guess`, which receives the solution: the pose shown
+    /// while a joint value is dragged. Errors: "joint 9 not found", the limits ("90 deg is above the maximum 45 deg"),
+    /// a component that cannot be placed (its error, e.g. the loop's).
+    pub fn pose(&self, result: &RebuildResult, joint: JointId, value: f64, guess: &mut BTreeMap<JointId, f64>) -> Result<BTreeMap<ComponentId, DAffine3>, String> {
+        let j = self.joint(joint).ok_or_else(|| format!("joint {joint} not found"))?;
+        self.check_limits(j, value)?;
+        let base = self.placements_driven(&result.bodies, None, &mut result.joint_values.clone());
+        let placed = self.placements_driven(&result.bodies, Some((joint, value)), guess);
+        let at = |m: &BTreeMap<ComponentId, Result<DAffine3, String>>, c: ComponentId| m.get(&c).cloned().unwrap_or_else(|| Err(format!("component {c} not found")));
+        self.moving(j).into_iter().map(|c| Ok((c, at(&placed, c)? * at(&base, c)?.inverse()))).collect()
     }
 
     /// The first sample of `motion` at which a moving component shares a volume with a component that does not move

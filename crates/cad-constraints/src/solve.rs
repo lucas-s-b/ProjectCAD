@@ -89,11 +89,41 @@ pub fn solve_pinned(shapes: &BTreeMap<Id, Shape>, constraints: &[Constraint], pi
     };
     let jacobian = Jacobian::new(&lay, &modes, constraints, &free, &full);
     let eval = |z: &[f64], out: &mut Vec<f64>| residuals(&lay, &modes, constraints, &expand(z), out);
-    let mut x: Vec<f64> = free.iter().map(|&i| full[i]).collect();
+    let x: Vec<f64> = free.iter().map(|&i| full[i]).collect();
+    let (n, m) = (x.len(), jacobian.rows());
+    let fit = least_squares(x, eval, |z| jacobian.triplets(z))?;
+    let changed = write_back(&lay, &expand(&fit.x), shapes)
+        .into_iter()
+        .filter(|(id, s)| differs(s, &shapes[id]))
+        .collect();
+    Ok(Solution { shapes: changed, dof: n - fit.rank, redundant: m - fit.rank, iterations: fit.iterations })
+}
+
+/// What `least_squares` found.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Fit {
+    /// The unknowns at the solution.
+    pub x: Vec<f64>,
+    pub iterations: usize,
+    /// Rank of the Jacobian at `x` (pivoted QR, pivots above 1e-6 of the largest): unknowns minus rank are degrees of
+    /// freedom the equations leave open, equations minus rank are redundant equations.
+    pub rank: usize,
+}
+
+/// Levenberg-Marquardt from `x` until every residual is within 1e-9 of zero. `residuals(x, out)` clears `out` and
+/// pushes the residuals, the same number at every `x` (a non-finite value marks an infeasible point, never accepted);
+/// `jacobian(x)` gives the nonzero entries of d residual / d unknown (row = residual, column = unknown).
+/// Err(NotConverged) after 200 iterations or when the damping passes 1e10 (no better point nearby: the equations
+/// cannot all be met from here). `solve_pinned` runs on it; so does the joint loop solver of `cad-document`.
+pub fn least_squares(
+    mut x: Vec<f64>,
+    residuals: impl Fn(&[f64], &mut Vec<f64>),
+    jacobian: impl Fn(&[f64]) -> Vec<Triplet<usize, usize, f64>>,
+) -> Result<Fit, SolveError> {
     let n = x.len();
     let mut f = Vec::new();
-    eval(&x, &mut f);
-    let m = jacobian.rows();
+    residuals(&x, &mut f);
+    let m = f.len();
     let (mut lambda, mut iterations) = (1e-3, 0);
     // J, Jᵀ and JᵀJ at the current point; rebuilt only after an accepted step.
     let mut jac: Option<[SparseColMat<usize, f64>; 3]> = None;
@@ -108,7 +138,7 @@ pub fn solve_pinned(shapes: &BTreeMap<Id, Shape>, constraints: &[Constraint], pi
         }
         iterations += 1;
         let [_, jt, jtj] = jac.get_or_insert_with(|| {
-            let j = SparseColMat::try_new_from_triplets(m, n, &jacobian.triplets(&x)).expect("triplets are inside the matrix");
+            let j = SparseColMat::try_new_from_triplets(m, n, &jacobian(&x)).expect("triplets are inside the matrix");
             let jt = j.transpose().to_col_major().expect("transpose fits in memory");
             let jtj = &jt * &j;
             [j, jt, jtj]
@@ -124,7 +154,7 @@ pub fn solve_pinned(shapes: &BTreeMap<Id, Shape>, constraints: &[Constraint], pi
         };
         let delta = llt.solve(&g);
         let x_new: Vec<f64> = x.iter().enumerate().map(|(i, p)| p - delta[(i, 0)]).collect();
-        eval(&x_new, &mut trial);
+        residuals(&x_new, &mut trial);
         if x_new.iter().all(|v| v.is_finite()) && trial.iter().all(|v| v.is_finite()) && sum_sq(&trial) < sum_sq(&f) {
             x = x_new;
             std::mem::swap(&mut f, &mut trial);
@@ -134,12 +164,12 @@ pub fn solve_pinned(shapes: &BTreeMap<Id, Shape>, constraints: &[Constraint], pi
             lambda *= 10.0;
         }
     }
-    let rank = if n == 0 {
+    let rank = if n == 0 || m == 0 {
         0
     } else {
         let j = match jac {
             Some([j, ..]) => j,
-            None => SparseColMat::try_new_from_triplets(m, n, &jacobian.triplets(&x)).expect("triplets are inside the matrix"),
+            None => SparseColMat::try_new_from_triplets(m, n, &jacobian(&x)).expect("triplets are inside the matrix"),
         };
         // shortcut: dense pivoted QR for the rank, about 0.1 s at 1600 unknowns; needs a sparse rank-revealing factorisation beyond a few thousand
         let qr = j.to_dense().col_piv_qr();
@@ -148,9 +178,5 @@ pub fn solve_pinned(shapes: &BTreeMap<Id, Shape>, constraints: &[Constraint], pi
         let limit = 1e-6 * diag.iter().fold(1.0_f64, |a, b| a.max(*b));
         diag.iter().filter(|d| **d > limit).count()
     };
-    let changed = write_back(&lay, &expand(&x), shapes)
-        .into_iter()
-        .filter(|(id, s)| differs(s, &shapes[id]))
-        .collect();
-    Ok(Solution { shapes: changed, dof: n - rank, redundant: m - rank, iterations })
+    Ok(Fit { x, iterations, rank })
 }

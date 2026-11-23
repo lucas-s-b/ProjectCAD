@@ -1,4 +1,5 @@
 use crate::joint::tests::{boxed, comp, joint, ok};
+use crate::joint_loop::tests::four_bar;
 use crate::*;
 use cad_geometry::DVec3;
 use std::f64::consts::{FRAC_PI_2, FRAC_PI_3, FRAC_PI_6};
@@ -132,4 +133,48 @@ fn csv_of_the_arm() {
     let csv = d.motion_csv(&m, Some(&c));
     assert_eq!(csv.lines().nth(2), Some("1,30.000000,18.660254,5.000000,0.000000,\"arm, left / c1 interference 535.898 mm³\""));
     assert!(d.motion_csv(&m, None).lines().nth(2).unwrap().ends_with("0.000000,"));
+}
+
+#[test]
+fn four_bar_motion_matches_the_position_equation() {
+    let d = four_bar();
+    let r = Rebuilder::default().rebuild(&d);
+    let m = d.drive(&r, &study(1, "0", "360 deg", 36, 4, ["40 mm", "0", "0"])).unwrap();
+    assert_eq!(m.moving, vec![2, 3, 4]);
+    assert_eq!(m.accuracy, Accuracy::Approximate(SOLVED));
+    assert_eq!(m.values.len(), 37);
+    for (k, p) in m.trace.iter().enumerate() {
+        let t4 = p.y.atan2(p.x - 50.0).to_degrees();
+        let want = four_bar_rocker(20.0, 60.0, 40.0, 50.0, m.values[k], 1.0).unwrap().to_degrees();
+        near(t4, want, 1e-6);
+        near(p.z, 0.0, 1e-9);
+    }
+    near3(m.trace[9], [56.76922374685579, 39.42305936713947, 0.0], 1e-6);
+    near3(m.trace[18], [29.28571428571429, 34.21868447715281, 0.0], 1e-6);
+    near3(m.trace[36], [68.33333333333333, 35.551215012835904, 0.0], 1e-6);
+    // The case that this label names.
+    assert_eq!(Accuracy::Validated(FOUR_BAR).to_string(), "validated against four-bar position analysis");
+}
+
+#[test]
+fn pose_of_the_four_bar() {
+    let d = four_bar();
+    let r = Rebuilder::default().rebuild(&d);
+    let mut g = r.joint_values.clone();
+    let p = d.pose(&r, 1, 30f64.to_radians(), &mut g).unwrap();
+    assert_eq!(p.keys().copied().collect::<Vec<_>>(), vec![2, 3, 4]);
+    near3(p[&4].transform_point3(DVec3::new(68.33333333333333, 35.551215012835904, 0.0)), [72.789672075354, 32.87295007597934, 0.0], 1e-6);
+    near(g[&3].to_degrees(), 55.26777722321221, 1e-6);
+    near(g[&2].to_degrees(), -7.590985398504978, 1e-6);
+    assert_eq!(d.pose(&r, 9, 0.0, &mut g).err(), Some("joint 9 not found".to_string()));
+}
+
+#[test]
+fn closing_joint_cannot_be_driven() {
+    let d = four_bar();
+    let r = Rebuilder::default().rebuild(&d);
+    assert_eq!(d.drive(&r, &study(4, "0", "10 deg", 2, 4, O)).err(), Some("a joint that closes a loop cannot be driven".to_string()));
+    let a = arm();
+    let r = Rebuilder::default().rebuild(&a);
+    assert_eq!(a.drive(&r, &study(1, "0", "90 deg", 3, 2, O)).unwrap().accuracy, Accuracy::Exact);
 }

@@ -208,7 +208,7 @@ Limits:
 - Fasteners: no head chamfer or washer face; modelled threads have no run-out or end chamfer, are right hand coarse only, shade soft at the crests and make about 120 000 triangles for an M8x30 bolt; a nut finds no thread phase by itself (place it a whole number of pitches from the bearing face or turn it).
 - Bearings: derived internal geometry (not a catalogue ball set), no cage, seals or ring chamfers; deep groove ball bearings of series 60 and 62 only.
 - Components: the gizmo only translates and writes plain millimetres over position expressions; no rotate gizmo; material and part number are set per component.
-- Joints: tree only (closed loops such as four-bar linkages need the solver, Phase 6); no joint limits; a frame picked from a face follows it, a typed frame stays where it is put; no dragging of joints with the mouse.
+- Joints: tree only in Phase 5 (closed loops, joint limits and slider dragging added in Phase 6); a frame picked from a face follows it, a typed frame stays where it is put; no dragging of joints with the mouse.
 - Interference: on demand only, not while a joint is driven or a component dragged; common solids thinner than 0.04 mm (twice the facet tolerance) count as contact; booleans and distances run on the tessellation, so curved faces are measured as facets; only components are checked, not shown bodies; clearance is listed for all pairs up to a limit (no pick of two components).
 
 - Dependency graph: features still rebuild one after another in list order; fillets, chamfers, shells and mirrors of all bodies read every body before them; features on one body form a chain, so editing the first recomputes the rest.
@@ -216,7 +216,7 @@ Limits:
 - Face references: a planar face is found under its picked point along its normal, a cylinder by the nearest centroid; faces that tilt, split or merge are not tracked.
 
 Deferred to later phases:
-- Closed kinematic loops (four-bar linkages), joint limits, dragging joints with the mouse, interference while a joint moves: Phase 6 (kinematics and the solver)
+- (done in Phase 6, except dragging a jointed component with the 3D gizmo: Phase 7) Closed kinematic loops, joint limits, dragging joints, interference while a joint moves
 - Components that reference other .cadproj files (`source: File(path)`), a rotate gizmo for components: Phase 7
 - References for shell faces and for faces that tilt, split or merge; drafts next to curved faces; corner blending where filleted edges meet: Phase 7 (exact kernel)
 - Gears with undercut, profile shift, backlash, helical, internal or bevel teeth; springs with closed or ground ends; fastener head chamfers and washer faces; thread run-out, end chamfers, left-hand and fine threads, tapped holes; bearing cages, seals, angular contact, roller and thrust bearings: Phase 7
@@ -226,20 +226,22 @@ Deferred to later phases:
 Mass properties, kinematics, static structural analysis, FEA infrastructure. Every result is labelled
 approximate or validated; unvalidated results are never presented as certified.
 
-Done (unit-tested; mass properties and motion studies checked in the running app through MCP):
+Done (unit-tested; mass properties, motion studies and closed loops checked in the running app through MCP):
 - [x] Accuracy labels on analysis results: "exact" (the computation is exact for the geometry), "approximate (<reason>)", "validated against <case>"; shown beside every result and in the MCP `state`; nothing is presented as certified
 - [x] Mass properties of bodies and placed components: volume, mass, centre of mass, inertia tensor about the centre of mass, principal moments and axes, from the closed triangle mesh by the divergence theorem (exact for bodies with planar faces, approximate (tessellation) for curved ones); components use their BOM material, bodies and unknown materials an assumed 1 g/cm³ (flagged); assembly total about the assembly centre of mass with the parallel axis theorem; Model and Assembly tab "Mass properties" sections, centre of mass marker in 3D, `mass` in the MCP `state`
 - [x] Joint limits: optional min/max expressions on revolute and slider joints; a value outside fails the child's placement ("joint 1: 120 deg is above the maximum 90 deg"), never clamped; file format 24 (older files load unchanged)
 - [x] Motion studies: drive one revolute or slider joint from a start to an end value in up to 360 steps (exact joint walk per step), trace a point of a component, play back in 3D (step slider, play/pause; display only); optional collision check per step on the pairs where one side moves, reporting the first colliding step and pair with the interference region in red and the time taken; CSV export (`export_motion` in MCP); `motion` in the MCP `state`; positions "exact", collisions "approximate (sampled at the steps)"
+- [x] Closed-loop joints: a joint marked "Closes loop" is not walked; Levenberg-Marquardt (the sketch solver's loop, shared as `cad_constraints::least_squares`) sets the values of joints marked "Free joint" so that its frames meet; errors for under-constrained loops, over-constrained loops and loops that do not close; limits refuse solved values; motion studies drive linkages, starting each step from the last solution; a Grashof crank-rocker four-bar matches the analytic position equation through 360° (the only result "validated against four-bar position analysis", in tests); solved values in the joint list and the MCP `state` (`solved`), labelled "approximate (loop closed to 1e-9 mm)"; file format 25 (older files load unchanged)
+- [x] Dragging joints: a "Drag" slider and value in the joint editor shows the pose in 3D while dragging (loops solved per frame) and writes the value, with the free joints' solved values, on release
 
 Limits:
 - Mass properties: bodies have no material (1 g/cm³ assumed); curved faces are integrated on their facets (a 64-gon cylinder is 0.16 % light); no inertia about a chosen point or axis in the UI; principal axes are listed, not drawn.
 - Motion: a collision between two steps is not seen; curved faces are checked on their facets; the study runs on the UI thread (the app waits; times shown); picking, the centre of mass marker and the Interference section stay on the assembled pose; one joint per study; studies are not saved.
+- Loops: one solve for all loops (an error fails every component that depends on a free joint); the solver can land on the other assembly branch when start values are far off; limits are checked after the solve, not used by it; closing joints have no value or limits; the drag slider has a fixed range (±180 deg, ±100 mm); dragging a jointed component with the 3D gizmo is not available (Phase 7).
 
 Remaining:
-- C: closed-loop joints (four-bar linkages) and dragging joints, solved with the Levenberg-Marquardt solver
 - D: tetrahedral mesher (Kuhn grid with boundary snapping, quadratic tets) and mesh preview
-- E: static linear-elastic FEA studies (fixed faces, forces and pressures on face references, material E and ν), faer sparse Cholesky, von Mises and displacement colour maps; file format 25
+- E: static linear-elastic FEA studies (fixed faces, forces and pressures on face references, material E and ν), faer sparse Cholesky, von Mises and displacement colour maps; file format 26
 - F: analytic benchmarks (cantilever beam, bar in tension) with "validated against" labels; closes Phase 6
 
 ## Phase 7: Optimization and production

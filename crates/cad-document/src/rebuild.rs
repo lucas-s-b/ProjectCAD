@@ -1,6 +1,7 @@
 use crate::component::ComponentId;
 use crate::document::{Document, EntityId};
 use crate::feature::{BODY_TOLERANCE, BodyOp, Feature, FeatureId, FeatureKind, RevolveAxis, Target};
+use crate::joint::JointId;
 use crate::rebuild_blend::Blend;
 use crate::rebuild_draft::Draft;
 use crate::rebuild_pattern::{Pattern, resolve_pattern};
@@ -43,6 +44,9 @@ pub struct RebuildResult {
     pub rooms: Vec<(EntityId, cad_arch::Region)>,
     /// The solid of every component in id order, or why it could not be placed (`Document::placements`, `Document::place_component`).
     pub components: Vec<(ComponentId, Result<Arc<Body>, String>)>,
+    /// Solved values (radians or mm) of the free joints by joint id (`Document::solve_joints`); empty without loops
+    /// or when the solve failed (the components' errors say why).
+    pub joint_values: BTreeMap<JointId, f64>,
 }
 
 impl RebuildResult {
@@ -467,12 +471,13 @@ impl Rebuilder {
         let walls = crate::rebuild_walls::wall_bodies(doc);
         let rooms = crate::rebuild_walls::room_regions(doc);
         // Not cached: a placement is a mesh copy, and features stay cached.
-        let placements = doc.placements(&bodies);
+        let mut joint_values = BTreeMap::new();
+        let placements = doc.placements_driven(&bodies, None, &mut joint_values);
         let components = doc
             .components()
             .map(|c| (c.id, placements[&c.id].clone().and_then(|p| doc.place_component(c, &p, &bodies))))
             .collect();
-        Some(RebuildResult { bodies, states, recomputed, depends, planes, walls, rooms, components })
+        Some(RebuildResult { bodies, states, recomputed, depends, planes, walls, rooms, components, joint_values })
     }
 }
 

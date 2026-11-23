@@ -20,7 +20,7 @@ pub struct StudyRun {
 }
 
 /// The accuracy label as a small tagged line (so the MCP `widgets` list shows it).
-fn accuracy(ui: &mut egui::Ui, a: Accuracy) {
+pub(crate) fn accuracy(ui: &mut egui::Ui, a: Accuracy) {
     let text = a.to_string();
     let r = ui.small(&text);
     w::tag(ui, &text, r);
@@ -43,7 +43,7 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     ui.separator();
     ui.heading("Motion study");
     let joints: Vec<(JointId, String)> =
-        app.doc.joints().filter(|j| j.kind != JointKind::Fixed).map(|j| (j.id, format!("Drive: Joint {}", j.id))).collect();
+        app.doc.joints().filter(|j| j.kind != JointKind::Fixed && !j.closes_loop).map(|j| (j.id, format!("Drive: Joint {}", j.id))).collect();
     let Some(first) = joints.first().map(|(id, _)| *id) else {
         ui.small("Add a revolute or slider joint to drive it.");
         return;
@@ -148,6 +148,7 @@ fn results(app: &mut CadApp, ui: &mut egui::Ui) {
         Err(err) => (err.clone(), true),
     });
     let times = summary(run);
+    let positions = run.motion.accuracy;
     let mut changed = false;
     ui.horizontal_wrapped(|ui| {
         changed |= w::add(ui, "Motion slider", egui::Slider::new(&mut app.motion_step, 0..=n).show_value(false)).changed();
@@ -163,7 +164,7 @@ fn results(app: &mut CadApp, ui: &mut egui::Ui) {
     }
     ui.label(at);
     ui.label(point);
-    accuracy(ui, Accuracy::Exact);
+    accuracy(ui, positions);
     if let Some((text, red)) = collision {
         ui.label(if red { RichText::new(text).color(Color32::RED) } else { RichText::new(text) });
         accuracy(ui, Accuracy::Approximate(SAMPLED));
@@ -192,9 +193,16 @@ pub fn tick(app: &mut CadApp, ctx: &egui::Context) {
     ctx.request_repaint();
 }
 
-/// The motions of the moving components at the shown sample; None without a current study or while exploded.
+/// The motions of the moving components: of a joint value being dragged, else of the shown study sample; None while
+/// exploded or with neither.
 pub fn shown_moves(app: &CadApp) -> Option<&BTreeMap<ComponentId, DAffine3>> {
-    let run = app.motion_result().filter(|_| app.explode_factor() == 0.0)?;
+    if app.explode_factor() != 0.0 {
+        return None;
+    }
+    if let Some(d) = app.joint_drag.as_ref().filter(|d| d.rev == app.doc.revision() && app.joint_sel == Some(d.joint)) {
+        return d.moves.as_ref().ok();
+    }
+    let run = app.motion_result()?;
     run.motion.moves.get(app.motion_step.min(run.motion.moves.len() - 1))
 }
 

@@ -21,7 +21,7 @@ pub(crate) fn comp(id: ComponentId, at: [&str; 3], grounded: bool) -> Component 
 /// Parent frame at `parent_origin` along `parent_axis`; child frame at the child's origin along -Z.
 pub(crate) fn joint(id: JointId, kind: JointKind, parent: ComponentId, child: ComponentId, parent_origin: [&str; 3], parent_axis: [&str; 3], value: &str) -> Joint {
     let parent_frame = Frame { origin: parent_origin.map(String::from), axis: parent_axis.map(String::from), face: None };
-    Joint { id, kind, parent, child, parent_frame, child_frame: Frame::from_vectors(DVec3::ZERO, -DVec3::Z), value: value.into(), min: None, max: None }
+    Joint { id, kind, parent, child, parent_frame, child_frame: Frame::from_vectors(DVec3::ZERO, -DVec3::Z), value: value.into(), min: None, max: None, closes_loop: false, free: false }
 }
 
 pub(crate) fn ok(d: &mut Document, cmd: Command) -> Command {
@@ -125,7 +125,7 @@ fn joints_save_and_load() {
     assert_eq!(loaded.explode_steps(), d.explode_steps());
     assert!(loaded.component(1).unwrap().grounded);
     assert_eq!(loaded.alloc_joint_id(), 3);
-    assert_eq!(FORMAT_VERSION, 24);
+    assert_eq!(FORMAT_VERSION, 25);
 }
 
 #[test]
@@ -372,4 +372,61 @@ fn joint_limits_save_and_load() {
     assert!(!serde_json::to_string(d.joint(2).unwrap()).unwrap().contains("\"min\""));
     let old = load(&jointed(), Some(23));
     assert_eq!(old.joint(1).unwrap().max, None);
+}
+
+/// Components 1 (grounded), 2 and 3; fixed tree joints 1 (1 > 2) and 2 (2 > 3); joint 3 closes 1 > 3.
+fn looped() -> Document {
+    let mut d = boxed();
+    for c in [comp(1, O, true), comp(2, O, false), comp(3, O, false)] {
+        ok(&mut d, Command::AddComponent(c));
+    }
+    ok(&mut d, Command::AddJoint(joint(1, JointKind::Fixed, 1, 2, O, Z, "0")));
+    ok(&mut d, Command::AddJoint(joint(2, JointKind::Fixed, 2, 3, O, Z, "0")));
+    ok(&mut d, Command::AddJoint(Joint { closes_loop: true, ..joint(3, JointKind::Fixed, 1, 3, O, Z, "0") }));
+    d
+}
+
+#[test]
+fn closing_joints_skip_the_tree_checks() {
+    let mut d = looped();
+    assert_eq!(d.parent_joint(3).unwrap().id, 2);
+    let fixed = |id, parent, child| joint(id, JointKind::Fixed, parent, child, O, Z, "0");
+    assert!(matches!(d.apply(Command::AddJoint(Joint { closes_loop: true, ..fixed(4, 2, 2) })), Err(DocError::JointLoop(2))));
+    assert!(matches!(d.apply(Command::AddJoint(fixed(4, 3, 1))), Err(DocError::BadJoint("the child is grounded"))));
+    ok(&mut d, Command::AddJoint(Joint { closes_loop: true, ..fixed(4, 3, 1) }));
+    assert!(matches!(d.apply(Command::SetJoint(fixed(3, 1, 3))), Err(DocError::JointLoop(3))));
+}
+
+#[test]
+fn value_text_and_free() {
+    let rev = joint(1, JointKind::Revolute, 1, 2, O, Z, "0");
+    assert_eq!(rev.value_text(std::f64::consts::FRAC_PI_2), "90 deg");
+    assert_eq!(joint(1, JointKind::Slider, 1, 2, O, Z, "0").value_text(12.5), "12.5 mm");
+    assert!(Joint { free: true, ..rev.clone() }.is_free());
+    assert!(!rev.is_free());
+    assert!(!Joint { free: true, ..joint(1, JointKind::Fixed, 1, 2, O, Z, "0") }.is_free());
+    assert!(!Joint { free: true, closes_loop: true, ..rev }.is_free());
+}
+
+#[test]
+fn loop_flags_save_and_load() {
+    let mut d = looped();
+    let j2 = Joint { free: true, kind: JointKind::Revolute, ..d.joint(2).unwrap().clone() };
+    ok(&mut d, Command::SetJoint(j2));
+    let p = std::env::temp_dir().join(format!("cadtest_{}_joint_loops.cadproj", std::process::id()));
+    d.save(&p).unwrap();
+    let loaded = Document::load(&p);
+    std::fs::remove_file(&p).ok();
+    assert_eq!(loaded.unwrap().joints().cloned().collect::<Vec<_>>(), d.joints().cloned().collect::<Vec<_>>());
+    let text = |id| serde_json::to_string(d.joint(id).unwrap()).unwrap();
+    assert!(!text(1).contains("closes_loop") && !text(1).contains("\"free\""));
+    assert!(text(3).contains("\"closes_loop\":true"));
+    assert!(text(2).contains("\"free\":true"));
+    let mut v = serde_json::to_value(jointed()).unwrap();
+    v["version"] = 24.into();
+    std::fs::write(&p, serde_json::to_vec(&v).unwrap()).unwrap();
+    let old = Document::load(&p);
+    std::fs::remove_file(&p).ok();
+    let old = old.unwrap();
+    assert!(!old.joint(1).unwrap().closes_loop && !old.joint(1).unwrap().free);
 }

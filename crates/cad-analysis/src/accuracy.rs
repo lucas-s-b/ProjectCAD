@@ -9,6 +9,10 @@ pub const TESSELLATION: &str = "tessellation";
 /// samples is not seen).
 pub const SAMPLED: &str = "sampled at the steps";
 
+/// Reason of `Accuracy::Approximate` for positions and joint values solved around closed loops (Levenberg-Marquardt
+/// stops when every loop-closure residual is within 1e-9 mm, or 1e-9 for axis directions).
+pub const SOLVED: &str = "loop closed to 1e-9 mm";
+
 /// The label of an analysis result. Nothing is ever presented as certified: results are exact (the computation is
 /// exact for the geometry, e.g. mass properties of a body with only planar faces), approximate (with the reason), or
 /// validated against a named analytic benchmark case.

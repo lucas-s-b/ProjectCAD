@@ -12,5 +12,6 @@ mod jacobian_tests;
 #[cfg(test)]
 mod solve_tests;
 
-pub use solve::{Solution, Status, solve, solve_pinned};
+pub use faer::sparse::Triplet;
+pub use solve::{Fit, Solution, Status, least_squares, solve, solve_pinned};
 pub use types::{Constraint, Id, PointKind, PointRef, SolveError};

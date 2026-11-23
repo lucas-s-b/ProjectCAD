@@ -19,6 +19,7 @@ impl CadApp {
         self.explode_edit = None;
         self.check = None;
         self.motion = None;
+        self.joint_drag = None;
         self.motion_play = false;
         self.reset_model();
         self.constraint_cache = None;
