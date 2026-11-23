@@ -227,6 +227,7 @@ name = "cad-analysis"
 version = "0.1.0"
 dependencies = [
  "cad-modeler",
+ "faer",
  "glam 0.34.3",
 ]
 

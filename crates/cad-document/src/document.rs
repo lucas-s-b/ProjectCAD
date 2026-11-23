@@ -146,6 +146,8 @@ pub struct Document {
     pub(crate) next_joint_id: JointId,
     #[serde(default)]
     pub(crate) explode: Vec<ExplodeStep>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) studies: Vec<crate::study::Study>,
     #[serde(skip)]
     pub(crate) revision: u64,
 }
@@ -197,6 +199,8 @@ pub enum Command {
     SetJoint(Joint),
     /// Replaces the whole list of exploded-view steps.
     SetExplode(Vec<ExplodeStep>),
+    /// Replaces the whole list of static studies.
+    SetStudies(Vec<crate::study::Study>),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -314,6 +318,7 @@ impl Document {
             joints: BTreeMap::new(),
             next_joint_id: first_joint_id(),
             explode: Vec::new(),
+            studies: Vec::new(),
             revision: 0,
         }
     }
@@ -492,6 +497,7 @@ impl Document {
             Command::SetDimLink { .. } => self.apply_dim_link(cmd)?,
             Command::AddComponent(_) | Command::RemoveComponent(_) | Command::SetComponent(_) => self.apply_component(cmd)?,
             Command::AddJoint(_) | Command::RemoveJoint(_) | Command::SetJoint(_) | Command::SetExplode(_) => self.apply_joint(cmd)?,
+            Command::SetStudies(s) => self.apply_studies(s)?,
         };
         self.revision += 1;
         Ok(inverse)

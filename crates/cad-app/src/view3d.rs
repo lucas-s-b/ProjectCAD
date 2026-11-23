@@ -145,7 +145,9 @@ fn build_scene(app: &CadApp) -> Geometry {
     let offsets = app.doc.explode_offsets(app.explode_factor());
     // The motion study's shown sample; display only (picking stays on the assembled pose).
     let moves = crate::motion_panel::shown_moves(app);
-    let mesh = crate::mesh_panel::shown(app);
+    // A shown study result replaces the analysis mesh drawing (both draw the same body).
+    let study = crate::study_panel::shown(app);
+    let mesh = crate::mesh_panel::shown(app).filter(|_| study.is_none());
     let collision = crate::motion_panel::shown_collision(app);
     // The last check, drawn with the assembled placements, so only while not exploded and no motion study is shown.
     let check = app.check_result().filter(|_| app.explode_factor() == 0.0 && moves.is_none());
@@ -160,7 +162,7 @@ fn build_scene(app: &CadApp) -> Geometry {
     let shown = app.shown_bodies().map(|(id, b)| (Some(*id), None, b));
     let placed = app.placed_components().map(|(c, b)| (None, Some(c), b));
     for (id, comp, body) in shown.chain(placed) {
-        let meshed = id.is_some() && mesh.is_some_and(|m| Some(m.body) == id);
+        let meshed = id.is_some() && (mesh.is_some_and(|m| Some(m.body) == id) || study.is_some_and(|s| Some(s.body) == id));
         let selected = comp.is_some() && comp == app.component_sel;
         let shift = if selected { moving } else { DVec3::ZERO } + comp.and_then(|c| offsets.get(&c)).copied().unwrap_or(DVec3::ZERO);
         let turn = comp.and_then(|c| moves.and_then(|m| m.get(&c))).copied().unwrap_or(DAffine3::IDENTITY);
@@ -234,6 +236,22 @@ fn build_scene(app: &CadApp) -> Geometry {
                     lines.push(vertex(p[q], [0.0; 3], MESH_EDGE));
                     lines.push(vertex(p[(q + 1) % 3], [0.0; 3], MESH_EDGE));
                 }
+            }
+        }
+    }
+    // The study result: boundary triangles at their displaced corners (deformation scale), coloured per corner node.
+    // shortcut: colours and shape are linear between the corners; split each 6-node triangle into 4 if curved
+    // deformations look too coarse.
+    if let Some(rep) = study {
+        let m = &rep.mesh;
+        let v = crate::study_panel::values(app, rep);
+        let (lo, hi) = crate::study_panel::range(&v);
+        let span = (hi - lo).max(1e-30);
+        for t in m.boundary() {
+            let p = t.map(|q| m.nodes[q as usize] + rep.result.displacement[q as usize] * app.study_scale);
+            let n = (p[1] - p[0]).cross(p[2] - p[0]).normalize_or_zero().as_vec3().to_array();
+            for (q, at) in t.iter().zip(p) {
+                tris.push(vertex(at, n, crate::study_panel::ramp(((v[*q as usize] - lo) / span) as f32)));
             }
         }
     }
@@ -387,6 +405,9 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
         && let Some(p) = crate::mass_panel::marker_point(app).and_then(|q| project(app, rect, q))
     {
         crate::mass_panel::paint_marker(&ui.painter_at(rect), p);
+    }
+    if let Some(rep) = crate::study_panel::shown(app) {
+        crate::study_panel::paint_legend(app, rep, &ui.painter_at(rect), rect);
     }
     ui.painter_at(rect).text(
         rect.left_top() + egui::vec2(8.0, 8.0),

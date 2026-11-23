@@ -17,6 +17,10 @@ pub const SOLVED: &str = "loop closed to 1e-9 mm";
 /// (nodes snapped to it, sharp edges off the grid rounded off).
 pub const MESHED: &str = "mesh";
 
+/// Reason of `Accuracy::Approximate` for static finite-element results: small displacements, linear elastic
+/// material, a mesh that only approaches the body (shown with the element size, `StudyReport::label`).
+pub const FEA: &str = "FEA, linear elastic";
+
 /// The label of an analysis result. Nothing is ever presented as certified: results are exact (the computation is
 /// exact for the geometry, e.g. mass properties of a body with only planar faces), approximate (with the reason), or
 /// validated against a named analytic benchmark case.

@@ -1,7 +1,7 @@
 //! Runs MCP jobs on the UI thread by injecting egui events.
 use super::{Job, Reply, Request};
 use crate::app::{CadApp, ViewMode};
-use cad_geometry::DVec2;
+use cad_geometry::{DVec2, DVec3};
 use eframe::egui::{self, Event, Modifiers, Pos2};
 use serde_json::{Value, json};
 use std::collections::VecDeque;
@@ -409,6 +409,22 @@ fn insert_model(app: &CadApp, m: &mut serde_json::Map<String, Value>) {
         Err(err) => json!({ "error": err }),
     });
     m.insert("fea_mesh".into(), json!(fea_mesh));
+    // The last static study: mm, N, MPa; `*_at` are undeformed node positions; only `error` when it failed.
+    let fea_study = app.study_result().map(|res| match res {
+        Ok(rep) => {
+            let r = &rep.result;
+            let ((d, dn), (s, sn)) = (r.max_displacement(), r.max_von_mises());
+            let v = |p: DVec3| [p.x, p.y, p.z];
+            json!({
+                "accuracy": rep.label(), "applied": v(r.applied), "body": rep.body, "dofs": r.dofs, "elements": rep.stats.elements,
+                "error": Value::Null, "h": rep.h, "max_displacement": d, "max_displacement_at": v(rep.mesh.nodes[dn]),
+                "max_von_mises": s, "max_von_mises_at": v(rep.mesh.nodes[sn]), "mesh_ms": rep.mesh_ms, "nodes": rep.stats.nodes,
+                "reaction": v(r.reaction), "residual": r.residual, "solve_ms": rep.solve_ms, "study": rep.study,
+            })
+        }
+        Err(err) => json!({ "error": err }),
+    });
+    m.insert("fea_study".into(), json!(fea_study));
     // Values in degrees (revolute) or mm; `point` and `value` belong to the shown sample `step`.
     let motion = app.motion_result().map(|run| {
         let mo = &run.motion;

@@ -24,6 +24,7 @@ mod rebuild_sweep;
 mod rebuild_walls;
 mod refs;
 pub mod sketch;
+pub mod study;
 pub mod units;
 
 #[cfg(test)]
@@ -57,9 +58,10 @@ pub use feature::{Axis3, BODY_TOLERANCE, BodyOp, EDGE_PICK_TOLERANCE, Feature, F
 pub use history::History;
 pub use joint::{ExplodeStep, Frame, Joint, JointId, JointKind};
 pub use linetype::LineType;
-pub use cad_mech::{Check, Clearance, Meeting, Overlap, Part};
+pub use cad_mech::{Check, Clearance, MATERIALS, Material, Meeting, Overlap, Part};
 pub use bom::{BomRow, bom_csv};
-pub use cad_analysis::{Accuracy, FOUR_BAR, MESHED, MassProps, MeshStats, SAMPLED, SOLVED, TET_FACES, TetMesh, four_bar_rocker};
+pub use cad_analysis::{Accuracy, FEA, FOUR_BAR, FeaResult, MAX_DOFS, MESHED, MassProps, MeshStats, SAMPLED, SOLVED, TET_FACES, TetMesh, four_bar_rocker};
+pub use study::{Load, LoadKind, Study, StudyReport};
 pub use fea_mesh::MeshReport;
 pub use mass::{MassReport, MassRow};
 pub use motion::{Collision, MAX_STEPS, Motion, MotionStudy};

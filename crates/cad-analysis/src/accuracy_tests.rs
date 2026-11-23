@@ -35,3 +35,8 @@ fn solved_and_validated_labels() {
 fn meshed_label() {
     assert_eq!(Accuracy::Approximate(crate::MESHED).to_string(), "approximate (mesh)");
 }
+
+#[test]
+fn fea_label() {
+    assert_eq!(Accuracy::Approximate(FEA).to_string(), "approximate (FEA, linear elastic)");
+}
