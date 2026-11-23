@@ -178,3 +178,18 @@ fn closing_joint_cannot_be_driven() {
     let r = Rebuilder::default().rebuild(&a);
     assert_eq!(a.drive(&r, &study(1, "0", "90 deg", 3, 2, O)).unwrap().accuracy, Accuracy::Exact);
 }
+
+#[test]
+fn joint_axis_is_the_turning_axis() {
+    let d = arm();
+    let r = Rebuilder::default().rebuild(&d);
+    let (o, axis) = d.joint_axis(&r, d.joint(1).unwrap()).unwrap();
+    near3(o, [10.0, 0.0, 0.0], 1e-12);
+    near3(axis, [0.0, 0.0, 1.0], 1e-12);
+    let p = d.pose(&r, 1, FRAC_PI_2, &mut r.joint_values.clone()).unwrap();
+    near3(p[&2].transform_point3(DVec3::new(15.0, 10.0, 2.5)), [0.0, 5.0, 2.5], 1e-9);
+    let mut d = arm();
+    ok(&mut d, Command::SetComponent(comp(1, ["5 mm", "0", "0"], true)));
+    let r = Rebuilder::default().rebuild(&d);
+    near3(d.joint_axis(&r, d.joint(1).unwrap()).unwrap().0, [15.0, 0.0, 0.0], 1e-12);
+}

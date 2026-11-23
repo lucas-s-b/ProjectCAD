@@ -258,18 +258,24 @@ fn drag(app: &mut CadApp, ui: &mut egui::Ui) {
     // The scene shows the new pose (see the stamp in `view3d::show`).
     app.sel_rev += 1;
     if (slider.drag_stopped() || !slider.dragged()) && moves.is_ok() {
-        let mut cmds = vec![Command::SetJoint(Joint { value: j.value_text(value), ..j.clone() })];
-        for f in app.doc.joints().filter(|f| f.is_free() && f.id != j.id) {
-            if let Some(g) = guess.get(&f.id) {
-                cmds.push(Command::SetJoint(Joint { value: f.value_text(*g), ..f.clone() }));
-            }
-        }
-        app.joint_drag = None;
-        app.joint_edit = None;
-        app.exec(cmds);
+        commit_joint_value(app, &j, value, &guess);
     } else {
         app.joint_drag = Some(JointDrag { joint: j.id, rev, value, guess, moves });
     }
+}
+
+/// Writes `value` (radians or mm) into joint `j` and the free joints' solved values in `guess` (as their new start
+/// values) in one undo step, and ends the drag preview: what releasing the editor's Drag slider or the gizmo does.
+pub(crate) fn commit_joint_value(app: &mut CadApp, j: &Joint, value: f64, guess: &BTreeMap<JointId, f64>) {
+    let mut cmds = vec![Command::SetJoint(Joint { value: j.value_text(value), ..j.clone() })];
+    for f in app.doc.joints().filter(|f| f.is_free() && f.id != j.id) {
+        if let Some(g) = guess.get(&f.id) {
+            cmds.push(Command::SetJoint(Joint { value: f.value_text(*g), ..f.clone() }));
+        }
+    }
+    app.joint_drag = None;
+    app.joint_edit = None;
+    app.exec(cmds);
 }
 
 /// The frame of the face last clicked in 3D, which must lie on the joint's parent (or child) component.

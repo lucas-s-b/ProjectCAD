@@ -104,7 +104,7 @@ near "$(volume 13)" 4000 1e-6 || bad "plate volume is $(volume 13), expected 400
 [ "$(field 15 pick_face)" = true ] && [ "$(field 15 view)" = '"ThreeD"' ] || bad "Sketch on face did not start picking in the 3D view"
 [ "$(field 19 sketch)" = 1 ] || bad "active sketch after the pick is $(field 19 sketch), expected 1"
 [ "$(field 19 view)" = '"TwoD"' ] && [ "$(field 19 pick_face)" = false ] || bad "pick did not return to the 2D view"
-plane=$(flat 19 | grep -oE '"1":\{"id":1,"name":"Sketch1","plane":\{"Face":\{[^}]*\}\}' | grep -oE '\[[^]]*\]' | tr -d '[]' | tr ',' ' ' | tr '\n' ' ')
+plane=$(flat 19 | grep -oE '"1":\{"id":1,"level":null,"name":"Sketch1","plane":\{"Face":\{[^}]*\}\}' | grep -oE '\[[^]]*\]' | tr -d '[]' | tr ',' ' ' | tr '\n' ' ')
 echo "$plane" | awk '{ split("0 0 5 1 0 0 0 1 0", w, " "); ok = (NF == 12); for (i = 1; i <= 9; i++) { d = $(i + 3) - w[i]; if (d < 0) d = -d; if (d > 1e-9) ok = 0 } d = $3 - 5; if (d < 0) d = -d; if (d > 1e-9) ok = 0; exit !ok }' || bad "sketch 1 plane is [$plane], expected origin 0 0 5, x 1 0 0, y 0 1 0, at z 5"
 # 3. circle
 flat 24 | grep -q '"name":"Circle[0-9]*","shape":{"Circle":{[^}]*}},"sketch":1' || bad "the circle is not in sketch 1"

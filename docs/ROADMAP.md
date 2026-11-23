@@ -216,8 +216,8 @@ Limits:
 - Face references: a planar face is found under its picked point along its normal, a cylinder by the nearest centroid; faces that tilt, split or merge are not tracked.
 
 Deferred to later phases:
-- (done in Phase 6, except dragging a jointed component with the 3D gizmo: Phase 7) Closed kinematic loops, joint limits, dragging joints, interference while a joint moves
-- Components that reference other .cadproj files (`source: File(path)`), a rotate gizmo for components: Phase 7
+- (done in Phase 6, except dragging a jointed component with the 3D gizmo: Phase 7) Closed kinematic loops, joint limits, dragging joints, interference while a joint moves (gizmo drag done in Phase 7 batch D)
+- Components that reference other .cadproj files (`source: File(path)`), a rotate gizmo for components: Phase 7 (rotate gizmo done in Phase 7 batch D)
 - References for shell faces and for faces that tilt, split or merge; drafts next to curved faces; corner blending where filleted edges meet: Phase 7 (exact kernel)
 - Gears with undercut, profile shift, backlash, helical, internal or bevel teeth; springs with closed or ground ends; fastener head chamfers and washer faces; thread run-out, end chamfers, left-hand and fine threads, tapped holes; bearing cages, seals, angular contact, roller and thrust bearings: Phase 7
 - Booleans, interference and clearance on exact geometry instead of facets: Phase 7
@@ -241,7 +241,7 @@ Done (unit-tested; mass properties, motion studies, closed loops, the analysis m
 Limits:
 - Mass properties: bodies have no material (1 g/cm³ assumed); curved faces are integrated on their facets (a 64-gon cylinder is 0.16 % light); no inertia about a chosen point or axis in the UI; principal axes are listed, not drawn.
 - Motion: a collision between two steps is not seen; curved faces are checked on their facets; the study runs on a worker thread since Phase 7 batch B (times shown); picking, the centre of mass marker and the Interference section stay on the assembled pose; one joint per study; studies are not saved.
-- Loops: one solve for all loops (an error fails every component that depends on a free joint); the solver can land on the other assembly branch when start values are far off; limits are checked after the solve, not used by it; closing joints have no value or limits; the drag slider has a fixed range (±180 deg, ±100 mm); dragging a jointed component with the 3D gizmo is not available (Phase 7).
+- Loops: one solve for all loops (an error fails every component that depends on a free joint); the solver can land on the other assembly branch when start values are far off; limits are checked after the solve, not used by it; closing joints have no value or limits; the drag slider has a fixed range (±180 deg, ±100 mm); dragging a jointed component with the 3D gizmo arrived in Phase 7 batch D.
 - Mesh: a regular grid, so sharp edges that do not lie on grid lines are rounded off (a box turned 30° loses 4 % of its volume at 2.5 mm; a cylinder 10 mm in radius 0.9 %); boundary nodes whose move would spoil an element stay off the surface (counted); straight-sided elements; meshing runs on the UI thread with at most 50 000 grid cells; one body at a time, not components; the mesh is not saved; face node sets have no picker yet (E).
 - Static studies: linear elastic, small displacements, isotropic material; supports hold every displacement of a face (no rollers or prescribed displacements); loads are uniform over a face; straight-sided elements on the mesher's grid (sharp edges off the grid are rounded off); at most 30 000 unknowns, run on a worker thread; the safety factor compares the yield strength with the largest nodal von Mises stress only (no fatigue, buckling or notch judgement; peaks at sharp re-entrant edges grow with refinement); supports and loads are listed, not drawn.
 - Validation: 15 fixed cases on a box, a cylinder and the four-bar; a user study is never labelled validated, however close to a case; against Timoshenko the fully clamped 3D cantilever keeps about −0.8 % at h = 2.5 mm; no Lamé cylinder, gravity or stress-concentration case yet.
@@ -249,7 +249,7 @@ Limits:
 Deferred to later phases:
 - (done in Phase 7 batch B) Running static studies, motion studies, the interference check and the validation benchmarks on a worker thread
 - Mass properties, interference and collisions during motion on exact geometry instead of facets: Phase 7 (exact kernel)
-- Dragging a jointed component with the 3D gizmo along its free motion: Phase 7
+- Dragging a jointed component with the 3D gizmo along its free motion: Phase 7 (done in Phase 7 batch D)
 - Modal, thermal, buckling and fatigue analysis; contact; nonlinear materials and large displacements: later
 - Curved quadratic elements, adaptive mesh refinement, meshing components or several bodies in one study, saving meshes: later
 - Roller supports, prescribed non-zero displacements, non-uniform loads; load and support glyphs in 3D; exporting study results: later
@@ -282,8 +282,19 @@ Limits of batch C:
 - Imported meshes are stored in the project file as JSON arrays (about 1.5 times the binary STL size); open meshes and units other than millimetres are refused or not converted.
 - STEP: tori, whole spheres and free-form faces stay faceted.
 
+Done (batch D; unit-tested; checked in the running app through MCP):
+- [x] Docked panels: the Sketch, Model and Assembly panels each docked left, right or below the view from the View menu; slots resizable and hideable; "Reset layout"
+- [x] Light and dark themes with four accent colours; theme, accent and layout saved in the app settings file (`settings.json`, or `CAD_SETTINGS`), never in the project
+- [x] Command search (Ctrl+K): fuzzy search over every named widget on screen; Enter or a click runs it
+- [x] Rotate gizmo: X, Y and Z rings turn a free component about its centre; Shift snaps to 15 degrees
+- [x] Dragging a component on a revolute or slider joint with the gizmo drives the joint value (loops solved while dragging, one undo step)
+
+Limits of batch D:
+- Panels dock to fixed slots chosen in the View menu (no drag-and-drop, no floating windows, no tab strips); the 2D and 3D canvases keep their colours in the light theme.
+- Command search finds only widgets drawn on screen (no menu items); results are ranked by a greedy fuzzy match.
+- The rotate gizmo turns components only (not solid entities); a ring seen edge-on does not turn; slider drags do not snap.
+
 Remaining:
-- D: docking, themes, command search, rotate gizmo for components, dragging jointed components with the gizmo
 - E: plugin API (out-of-process plugins over the MCP protocol, `cad-plugin-api`)
 - F: user guide, README, release v0.2.0 (the tag push is left to the user)
 

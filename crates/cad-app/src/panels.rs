@@ -1,4 +1,5 @@
 use crate::app::{CadApp, Pending, SideTab, ViewMode};
+use crate::settings::{ACCENTS, Dock, Layout, Theme};
 use crate::widgets as w;
 use crate::{constraints_panel, layers_panel, model_panel, properties_panel};
 use cad_document::{Command, EntityId, Units};
@@ -39,8 +40,12 @@ pub fn shortcuts(app: &mut CadApp, ctx: &egui::Context) {
     let plain_keys_ok = !ctx.egui_wants_keyboard_input();
     let mut actions = Vec::new();
     let mut toggles = (false, false);
+    let mut open = false;
     ctx.input_mut(|i| {
         let ctrl = Modifiers::COMMAND;
+        if i.consume_key(ctrl, Key::K) {
+            open = true;
+        }
         // Shift variants first: consume_key ignores extra Shift.
         if i.consume_key(ctrl | Modifiers::SHIFT, Key::Z) || i.consume_key(ctrl, Key::Y) {
             actions.push(Action::Redo);
@@ -73,6 +78,9 @@ pub fn shortcuts(app: &mut CadApp, ctx: &egui::Context) {
             actions.push(Action::Fit);
         }
     });
+    if open {
+        crate::palette::open(app);
+    }
     app.osnap ^= toggles.0;
     app.grid_snap ^= toggles.1;
     for a in actions {
@@ -167,50 +175,116 @@ pub fn menu_bar(app: &mut CadApp, ui: &mut egui::Ui) {
                     run(app, &ctx, Action::Fit);
                 }
                 w::checkbox(ui, &mut app.show_glyphs, "Constraint glyphs");
+                ui.separator();
+                // Each entry closes the menu like `menu_item`, so a script reopens "View" before the next one.
+                for (theme, name) in [(Theme::Dark, "Dark theme"), (Theme::Light, "Light theme")] {
+                    if w::selectable(ui, app.settings.theme == theme, name).clicked() {
+                        app.settings.theme = theme;
+                        ui.close();
+                    }
+                }
+                for (name, rgb) in ACCENTS {
+                    if w::selectable(ui, app.settings.accent == rgb, &format!("Accent: {name}")).clicked() {
+                        app.settings.accent = rgb;
+                        ui.close();
+                    }
+                }
+                ui.separator();
+                for tab in SideTab::ALL {
+                    ui.horizontal(|ui| {
+                        ui.label(tab.name());
+                        for slot in [Dock::Left, Dock::Right, Dock::Bottom] {
+                            let on = app.settings.layout.docks[tab.index()] == slot;
+                            if w::add(ui, &format!("{}: {}", tab.name(), slot.name()), Button::selectable(on, slot.name())).clicked() {
+                                app.settings.layout.docks[tab.index()] = slot;
+                                app.settings.layout.shown[slot.index()] = true;
+                                ui.close();
+                            }
+                        }
+                    });
+                }
+                for slot in [Dock::Left, Dock::Right, Dock::Bottom] {
+                    if w::checkbox(ui, &mut app.settings.layout.shown[slot.index()], &format!("{} panel", slot.name())).clicked() {
+                        ui.close();
+                    }
+                }
+                if menu_item(ui, true, "Reset layout", "") {
+                    app.settings.layout = Layout::default();
+                    app.layout_gen += 1;
+                }
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                w::selectable_value(ui, &mut app.side_tab, SideTab::Assembly, "Assembly");
-                w::selectable_value(ui, &mut app.side_tab, SideTab::Model, "Model");
-                w::selectable_value(ui, &mut app.side_tab, SideTab::Sketch, "Sketch");
+                // Picking a panel shows its slot if it was hidden.
+                for tab in [SideTab::Assembly, SideTab::Model, SideTab::Sketch] {
+                    if w::selectable_value(ui, &mut app.side_tab, tab, tab.name()).clicked() {
+                        app.settings.layout.shown[app.settings.layout.docks[tab.index()].index()] = true;
+                    }
+                }
             });
         });
     });
 }
 
-pub fn right_panel(app: &mut CadApp, ui: &mut egui::Ui) {
+/// The Sketch, Model and Assembly panels in their slots (`Layout::docks`): right, then left, then bottom (above the
+/// status bar), each resizable and drawn only when shown and not empty. A slot shows the current tab when it holds
+/// it, else its first panel; the units row heads the slot that shows the current tab. Dragged sizes go back into
+/// the layout while a pointer button is down (written at the release, `settings::sync`).
+pub fn side_panels(app: &mut CadApp, ui: &mut egui::Ui, slots: &[Dock]) {
     let ctx = ui.ctx().clone();
-    egui::Panel::right("side").resizable(false).exact_size(240.0).show(ui, |ui| {
-        units_row(app, ui);
-        ui.separator();
-        if app.side_tab == SideTab::Model {
-            egui::ScrollArea::vertical().id_salt("model_side").show(ui, |ui| model_panel::show(app, ui));
-            return;
-        }
-        if app.side_tab == SideTab::Assembly {
-            egui::ScrollArea::vertical().id_salt("assembly_side").show(ui, |ui| crate::assembly_panel::show(app, ui));
-            return;
-        }
-        ui.heading("Objects");
-        let items: Vec<(EntityId, String, bool)> =
-            app.doc.entities_in(app.sketch).map(|e| (e.id, e.name.clone(), app.pickable(e))).collect();
-        egui::ScrollArea::vertical().id_salt("objects").max_height(ui.available_height() / 2.0).show(ui, |ui| {
-            for (id, name, pickable) in items {
-                let selected = app.selection.contains(&id);
-                if w::selectable(ui, selected, &name).clicked() && pickable {
-                    let shift = ui.input(|i| i.modifiers.shift);
-                    app.click_select(Some(id), shift);
-                }
+    for &slot in slots {
+        let layout = &app.settings.layout;
+        let Some(tab) = layout.shown_tab(slot, app.side_tab).filter(|_| layout.shown[slot.index()]) else { continue };
+        let size = layout.sizes[slot.index()];
+        // The right slot keeps today's id and 240 points, so the default screen is unchanged.
+        let id = format!("{}{}", if slot == Dock::Right { "side" } else { slot.name() }, app.layout_gen);
+        let (panel, range) = match slot {
+            Dock::Left => (egui::Panel::left(id), 180.0..=600.0),
+            Dock::Right => (egui::Panel::right(id), 180.0..=600.0),
+            Dock::Bottom => (egui::Panel::bottom(id), 120.0..=500.0),
+        };
+        let resp = panel.resizable(true).default_size(size).size_range(range).show(ui, |ui| {
+            if tab == app.side_tab {
+                units_row(app, ui);
+                ui.separator();
             }
+            tab_contents(app, ui, tab, &ctx);
         });
+        if ui.input(|i| i.pointer.any_down()) {
+            let r = resp.response.rect;
+            app.settings.layout.sizes[slot.index()] = if slot == Dock::Bottom { r.height() } else { r.width() }.round();
+        }
+    }
+}
+
+fn tab_contents(app: &mut CadApp, ui: &mut egui::Ui, tab: SideTab, ctx: &egui::Context) {
+    if tab == SideTab::Model {
+        egui::ScrollArea::vertical().id_salt("model_side").show(ui, |ui| model_panel::show(app, ui));
+        return;
+    }
+    if tab == SideTab::Assembly {
+        egui::ScrollArea::vertical().id_salt("assembly_side").show(ui, |ui| crate::assembly_panel::show(app, ui));
+        return;
+    }
+    ui.heading("Objects");
+    let items: Vec<(EntityId, String, bool)> =
+        app.doc.entities_in(app.sketch).map(|e| (e.id, e.name.clone(), app.pickable(e))).collect();
+    egui::ScrollArea::vertical().id_salt("objects").max_height(ui.available_height() / 2.0).show(ui, |ui| {
+        for (id, name, pickable) in items {
+            let selected = app.selection.contains(&id);
+            if w::selectable(ui, selected, &name).clicked() && pickable {
+                let shift = ui.input(|i| i.modifiers.shift);
+                app.click_select(Some(id), shift);
+            }
+        }
+    });
+    ui.separator();
+    egui::ScrollArea::vertical().id_salt("side_rest").show(ui, |ui| {
+        layers_panel::layers_section(app, ui);
         ui.separator();
-        egui::ScrollArea::vertical().id_salt("side_rest").show(ui, |ui| {
-            layers_panel::layers_section(app, ui);
-            ui.separator();
-            ui.heading("Properties");
-            properties_panel::properties(app, ui, &ctx);
-            ui.separator();
-            constraints_panel::show(app, ui);
-        });
+        ui.heading("Properties");
+        properties_panel::properties(app, ui, ctx);
+        ui.separator();
+        constraints_panel::show(app, ui);
     });
 }
 

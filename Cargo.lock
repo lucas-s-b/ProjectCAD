@@ -244,6 +244,7 @@ dependencies = [
  "glam 0.34.3",
  "png",
  "rfd",
+ "serde",
  "serde_json",
 ]
 

@@ -81,6 +81,24 @@ impl Document {
         Ok(Component { at: [mm(at.x), mm(at.y), mm(at.z)], ..c.clone() })
     }
 
+    /// `c` turned by `angle` (radians) about the line through `centre` along the unit `axis` (world coordinates),
+    /// after its current placement; `at` becomes plain millimetres and `angles` plain degrees, three decimals, values
+    /// within 5e-4 of 0 written as 0 (expressions there are replaced). The angles are read back from the turned
+    /// matrix in the placement's order (Rz Ry Rx); at a Y turn of ±90 deg the X angle is 0.
+    pub fn component_turned(&self, c: &Component, centre: DVec3, axis: DVec3, angle: f64) -> Result<Component, String> {
+        let turned = DAffine3::from_translation(centre) * DAffine3::from_axis_angle(axis, angle) * DAffine3::from_translation(-centre) * self.placement(c)?;
+        let m = turned.matrix3;
+        // m = Rz(z) Ry(y) Rx(x), m[row][col] = m.col(col)[row]: m[2][0] = -sin y, m[2][1] = cos y sin x,
+        // m[2][2] = cos y cos x, m[1][0] = sin z cos y, m[0][0] = cos z cos y; with x = 0, m[0][1] = -sin z, m[1][1] = cos z.
+        let s = (-m.x_axis.z).clamp(-1.0, 1.0);
+        let y = s.asin();
+        let (x, z) = if s.abs() < 1.0 - 1e-12 { (m.y_axis.z.atan2(m.z_axis.z), m.x_axis.y.atan2(m.x_axis.x)) } else { (0.0, (-m.y_axis.x).atan2(m.y_axis.y)) };
+        let zero = |v: f64| if v.abs() < 5e-4 { 0.0 } else { v };
+        let deg = |r: f64| format!("{} deg", cad_mech::num(zero(r.to_degrees())));
+        let t = turned.translation;
+        Ok(Component { at: [mm(zero(t.x)), mm(zero(t.y)), mm(zero(t.z))], angles: [deg(x), deg(y), deg(z)], ..c.clone() })
+    }
+
     /// The solid of `c`: its body in `bodies` moved by `placement` (from `Document::placements`).
     pub(crate) fn place_component(&self, c: &Component, placement: &DAffine3, bodies: &Bodies) -> Result<Arc<Body>, String> {
         let body = bodies.iter().find(|(id, _)| *id == c.body).map(|(_, b)| b).ok_or_else(|| format!("body {} not found", c.body))?;
