@@ -35,7 +35,7 @@ check() { # description, grep -E pattern, line id
   if ! grep -E "^\{\"id\":$3,|\"id\":$3," "$OUT" | grep -qE "$2"; then echo "FAIL: $1"; fail=1; fi
 }
 [ "$(grep -c . "$OUT")" -ge 16 ] || { echo "FAIL: expected 16 responses, got $(grep -c . "$OUT")"; fail=1; }
-[ "$(grep '"id":2,' "$OUT" | grep -o '"inputSchema"' | wc -l)" -eq 16 ] || { echo "FAIL: 16 tools not listed"; fail=1; }
+[ "$(grep '"id":2,' "$OUT" | grep -o '"inputSchema"' | wc -l)" -eq 17 ] || { echo "FAIL: 17 tools not listed"; fail=1; }
 check 'Line tool selected' '\\"tool\\":\\"Line\\"' 3
 # state is pretty-printed JSON inside a JSON string: strip escapes and whitespace before matching
 flat() { grep "\"id\":$1," "$OUT" | sed 's/[\]n//g; s/[\]"/"/g; s/ //g'; }

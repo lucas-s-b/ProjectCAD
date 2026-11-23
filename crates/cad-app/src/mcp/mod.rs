@@ -27,6 +27,7 @@ pub enum Request {
     Save(Option<std::path::PathBuf>),
     Export(std::path::PathBuf),
     ExportMotion(std::path::PathBuf),
+    Apply(Vec<cad_document::Command>),
 }
 
 pub struct Reply {
@@ -38,14 +39,32 @@ pub type Job = (Request, mpsc::Sender<Result<Reply, String>>);
 
 const TIMEOUT: Duration = Duration::from_secs(30);
 
+/// MCP over the app's own stdin/stdout (`--mcp`), every tool. The app exits when stdin closes.
 pub fn spawn(ctx: egui::Context) -> bridge::Bridge {
     let (tx, rx) = mpsc::channel::<Job>();
-    std::thread::spawn(move || reader(&ctx, &tx));
-    bridge::Bridge::new(rx)
+    std::thread::spawn(move || {
+        serve(std::io::stdin().lock(), &mut std::io::stdout(), &ctx, &tx, |_| true);
+        std::process::exit(0);
+    });
+    bridge::Bridge::new(rx, true)
 }
 
-fn reader(ctx: &egui::Context, jobs: &mpsc::Sender<Job>) {
-    for line in std::io::stdin().lock().lines() {
+/// MCP for a plugin started from the Plugins menu: requests come from `from` (the plugin's stdout), replies go to
+/// `to` (its stdin); only `tools::plugin_allowed` tools. The thread ends when the plugin closes its stdout; the app
+/// keeps running.
+pub fn spawn_plugin(ctx: egui::Context, from: impl std::io::Read + Send + 'static, mut to: impl Write + Send + 'static) -> bridge::Bridge {
+    let (tx, rx) = mpsc::channel::<Job>();
+    std::thread::spawn(move || {
+        serve(std::io::BufReader::new(from), &mut to, &ctx, &tx, tools::plugin_allowed);
+        ctx.request_repaint();
+    });
+    bridge::Bridge::new(rx, false)
+}
+
+/// Answers MCP messages read from `input` on `out` until `input` ends; only tools that `allowed` accepts are listed
+/// and run.
+fn serve(input: impl BufRead, out: &mut dyn Write, ctx: &egui::Context, jobs: &mpsc::Sender<Job>, allowed: fn(&str) -> bool) {
+    for line in input.lines() {
         let Ok(line) = line else { break };
         if line.trim().is_empty() {
             continue;
@@ -53,31 +72,34 @@ fn reader(ctx: &egui::Context, jobs: &mpsc::Sender<Job>) {
         let msg: Value = match serde_json::from_str(&line) {
             Ok(v) => v,
             Err(e) => {
-                write_line(&json!({"jsonrpc": "2.0", "id": null, "error": {"code": -32700, "message": e.to_string()}}));
+                write_line(out, &json!({"jsonrpc": "2.0", "id": null, "error": {"code": -32700, "message": e.to_string()}}));
                 continue;
             }
         };
-        let out = if msg["method"] == "tools/call" {
-            msg.get("id").map(|id| json!({"jsonrpc": "2.0", "id": id, "result": call(ctx, jobs, &msg["params"])}))
+        let reply = if msg["method"] == "tools/call" {
+            msg.get("id").map(|id| json!({"jsonrpc": "2.0", "id": id, "result": call(ctx, jobs, &msg["params"], allowed)}))
         } else {
-            handle_local(&msg)
+            handle_local(&msg, allowed)
         };
-        if let Some(out) = out {
-            write_line(&out);
+        if let Some(reply) = reply {
+            write_line(out, &reply);
         }
     }
-    std::process::exit(0);
 }
 
-fn call(ctx: &egui::Context, jobs: &mpsc::Sender<Job>, params: &Value) -> Value {
+fn call(ctx: &egui::Context, jobs: &mpsc::Sender<Job>, params: &Value, allowed: fn(&str) -> bool) -> Value {
     let name = params["name"].as_str().unwrap_or("");
-    let outcome = tools::parse(name, &params["arguments"]).and_then(|req| {
-        let (tx, rx) = mpsc::channel();
-        jobs.send((req, tx)).map_err(|_| "application is closing".to_string())?;
-        ctx.request_repaint();
-        rx.recv_timeout(TIMEOUT)
-            .map_err(|_| "application did not respond; is the window minimized?".to_string())?
-    });
+    let outcome = if allowed(name) {
+        tools::parse(name, &params["arguments"]).and_then(|req| {
+            let (tx, rx) = mpsc::channel();
+            jobs.send((req, tx)).map_err(|_| "application is closing".to_string())?;
+            ctx.request_repaint();
+            rx.recv_timeout(TIMEOUT)
+                .map_err(|_| "application did not respond; is the window minimized?".to_string())?
+        })
+    } else {
+        Err(format!("tool '{name}' is not available to plugins started from the Plugins menu"))
+    };
     match outcome {
         Ok(r) => {
             let mut content = vec![json!({"type": "text", "text": r.text})];
@@ -90,14 +112,13 @@ fn call(ctx: &egui::Context, jobs: &mpsc::Sender<Job>, params: &Value) -> Value 
     }
 }
 
-fn write_line(v: &Value) {
-    let mut out = std::io::stdout().lock();
+fn write_line(out: &mut dyn Write, v: &Value) {
     let _ = writeln!(out, "{v}");
     let _ = out.flush();
 }
 
-/// Answers everything except `tools/call`. None for notifications.
-fn handle_local(msg: &Value) -> Option<Value> {
+/// Answers everything except `tools/call`. None for notifications. `tools/list` shows only tools `allowed` accepts.
+fn handle_local(msg: &Value, allowed: fn(&str) -> bool) -> Option<Value> {
     let id = msg.get("id")?;
     let reply = |result: Value| json!({"jsonrpc": "2.0", "id": id, "result": result});
     Some(match msg["method"].as_str().unwrap_or("") {
@@ -107,7 +128,11 @@ fn handle_local(msg: &Value) -> Option<Value> {
             "serverInfo": {"name": "projectcad", "version": env!("CARGO_PKG_VERSION")},
         })),
         "ping" => reply(json!({})),
-        "tools/list" => reply(json!({"tools": tools::definitions()})),
+        "tools/list" => {
+            let all = tools::definitions();
+            let list: Vec<&Value> = all.as_array().into_iter().flatten().filter(|t| t["name"].as_str().is_some_and(allowed)).collect();
+            reply(json!({"tools": list}))
+        }
         _ => json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32601, "message": "method not found"}}),
     })
 }
@@ -141,19 +166,27 @@ mod tests {
 
     #[test]
     fn local_methods() {
-        let r = handle_local(&json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2024-11-05"}})).unwrap();
+        let all = |_: &str| true;
+        let r = handle_local(&json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2024-11-05"}}), all).unwrap();
         assert_eq!(r["result"]["protocolVersion"], "2024-11-05");
-        let r = handle_local(&json!({"id": 2, "method": "initialize"})).unwrap();
+        let r = handle_local(&json!({"id": 2, "method": "initialize"}), all).unwrap();
         assert_eq!(r["result"]["protocolVersion"], "2025-06-18");
-        assert_eq!(handle_local(&json!({"id": 3, "method": "ping"})).unwrap()["result"], json!({}));
-        let r = handle_local(&json!({"id": 4, "method": "tools/list"})).unwrap();
+        assert_eq!(handle_local(&json!({"id": 3, "method": "ping"}), all).unwrap()["result"], json!({}));
+        let r = handle_local(&json!({"id": 4, "method": "tools/list"}), all).unwrap();
         let list = r["result"]["tools"].as_array().unwrap();
-        assert_eq!(list.len(), 16);
+        assert_eq!(list.len(), 17);
         for t in list {
             assert!(t["name"].is_string() && t["description"].is_string() && t["inputSchema"].is_object());
         }
-        assert!(handle_local(&json!({"method": "notifications/initialized"})).is_none());
-        let r = handle_local(&json!({"id": 5, "method": "nope"})).unwrap();
+        assert!(handle_local(&json!({"method": "notifications/initialized"}), all).is_none());
+        let r = handle_local(&json!({"id": 5, "method": "nope"}), all).unwrap();
         assert_eq!(r["error"]["code"], -32601);
+    }
+
+    #[test]
+    fn plugin_tool_list() {
+        let r = handle_local(&json!({"id": 1, "method": "tools/list"}), tools::plugin_allowed).unwrap();
+        let names: Vec<&str> = r["result"]["tools"].as_array().unwrap().iter().filter_map(|t| t["name"].as_str()).collect();
+        assert_eq!(names, ["screenshot", "state", "export_project", "export_motion", "widgets", "apply_commands"]);
     }
 }

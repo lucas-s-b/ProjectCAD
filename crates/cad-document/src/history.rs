@@ -122,6 +122,11 @@ impl History {
         !self.redo.is_empty()
     }
 
+    /// The commands the next undo applies (the inverse of the last step, in application order); None when there is none.
+    pub fn last_undo(&self) -> Option<&[Command]> {
+        self.undo.last().map(Vec::as_slice)
+    }
+
     pub fn clear(&mut self) {
         self.undo.clear();
         self.redo.clear();
@@ -143,6 +148,20 @@ mod tests {
     }
     fn snapshot(d: &Document) -> Vec<Entity> {
         d.entities().cloned().collect()
+    }
+
+    #[test]
+    fn last_undo_is_the_inverse_step() {
+        let mut d = Document::new("t");
+        let mut h = History::default();
+        assert!(h.last_undo().is_none());
+        h.execute(&mut d, vec![add(1, 1.0), add(2, 2.0)]).unwrap();
+        let l = h.last_undo().unwrap();
+        assert_eq!(l.len(), 2);
+        assert!(matches!(l[0], Command::Remove(2)));
+        assert!(matches!(l[1], Command::Remove(1)));
+        h.execute(&mut d, vec![]).unwrap();
+        assert_eq!(h.last_undo().unwrap().len(), 2);
     }
 
     #[test]

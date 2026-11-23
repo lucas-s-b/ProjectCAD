@@ -55,7 +55,7 @@ mod sweep_feature_tests;
 pub use cad_constraints::{Constraint, PointKind, PointRef, Solution, SolveError, Status};
 pub use cad_modeler::{Body, BodyEdge, Bvh, BoolOp, Convexity, EdgeGeom, Plane3, Surface, ray_triangle};
 pub use cad_params::{ParamError, ParamSet, Value};
-pub use document::{Command, ConstraintId, DocError, Document, Entity, EntityId, FORMAT_VERSION, Layer, LayerId};
+pub use document::{Command, ConstraintId, DocError, Document, Entity, EntityId, FORMAT_VERSION, Layer, LayerId, NextIds};
 pub use feature::{Axis3, BODY_TOLERANCE, BodyOp, EDGE_PICK_TOLERANCE, Feature, FeatureId, FeatureKind, MirrorSource, RevolveAxis, Target};
 pub use history::History;
 pub use joint::{ExplodeStep, Frame, Joint, JointId, JointKind};
