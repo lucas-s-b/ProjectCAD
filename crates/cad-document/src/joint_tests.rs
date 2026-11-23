@@ -125,7 +125,7 @@ fn joints_save_and_load() {
     assert_eq!(loaded.explode_steps(), d.explode_steps());
     assert!(loaded.component(1).unwrap().grounded);
     assert_eq!(loaded.alloc_joint_id(), 3);
-    assert_eq!(FORMAT_VERSION, 26);
+    assert_eq!(FORMAT_VERSION, 27);
 }
 
 #[test]

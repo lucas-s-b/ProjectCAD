@@ -109,5 +109,5 @@ fn draft_saves_and_loads() {
     let loaded = Document::load(&p).unwrap();
     std::fs::remove_file(&p).ok();
     assert_eq!(loaded.features(), d.features());
-    assert_eq!(FORMAT_VERSION, 26);
+    assert_eq!(FORMAT_VERSION, 27);
 }

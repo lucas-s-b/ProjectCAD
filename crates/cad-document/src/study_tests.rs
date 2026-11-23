@@ -40,6 +40,41 @@ fn material_helpers() {
 }
 
 #[test]
+fn yield_strength_helpers() {
+    let mut s = Study::new("Study 1".into(), 1, "5 mm".into());
+    assert_eq!(s.yield_strength, "250");
+    assert!(s.set_material("aluminium"));
+    assert_eq!(s.yield_strength, "276");
+    s.yield_strength = "".into();
+    s.custom_if_edited();
+    assert_eq!(s.material, "Aluminium");
+    s.yield_strength = " 276 ".into();
+    s.custom_if_edited();
+    assert_eq!(s.material, "Aluminium");
+    s.yield_strength = "300".into();
+    s.custom_if_edited();
+    assert_eq!(s.material, "Custom");
+}
+
+#[test]
+fn safety_factor() {
+    let r = Rebuilder::default().rebuild(&boxed());
+    let run = |yield_strength: &str| {
+        let (d, r) = with_study(Study { yield_strength: yield_strength.into(), ..tension(&r) });
+        d.run_study(&r, 0)
+    };
+    let rep = run("250").unwrap();
+    assert_eq!(rep.yield_strength, Some(250.0));
+    near(rep.safety_factor().unwrap(), 50.0, 1e-7);
+    let rep = run("").unwrap();
+    assert_eq!((rep.yield_strength, rep.safety_factor()), (None, None));
+    near(run("355").unwrap().safety_factor().unwrap(), 71.0, 1e-7);
+    assert_eq!(run("0").map(drop), Err("yield strength must be positive".to_string()));
+    let mut d = boxed();
+    assert!(matches!(d.apply(Command::SetStudies(vec![Study { yield_strength: "2 +".into(), ..tension(&r) }])), Err(DocError::Param(_))));
+}
+
+#[test]
 fn set_studies_checks_and_undoes() {
     let mut d = boxed();
     let mut h = History::default();
@@ -69,7 +104,8 @@ fn studies_save_and_load() {
     let d2 = Document::load(&p);
     std::fs::remove_file(&p).ok();
     assert_eq!(d2.unwrap().studies(), d.studies());
-    assert!(text.contains("\"version\": 26") && text.contains("\"Force\"") && !text.contains("\"Pressure\""));
+    assert!(text.contains("\"version\": 27") && text.contains("\"Force\"") && !text.contains("\"Pressure\""));
+    assert!(text.contains("\"yield_strength\": \"250\""));
     let old = std::env::temp_dir().join(format!("cadtest_{}_study_old.cadproj", std::process::id()));
     std::fs::write(&old, r#"{"version":25,"name":"x","entities":{},"next_id":1}"#).unwrap();
     let d3 = Document::load(&old);

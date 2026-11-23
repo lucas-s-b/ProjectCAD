@@ -419,12 +419,26 @@ fn insert_model(app: &CadApp, m: &mut serde_json::Map<String, Value>) {
                 "accuracy": rep.label(), "applied": v(r.applied), "body": rep.body, "dofs": r.dofs, "elements": rep.stats.elements,
                 "error": Value::Null, "h": rep.h, "max_displacement": d, "max_displacement_at": v(rep.mesh.nodes[dn]),
                 "max_von_mises": s, "max_von_mises_at": v(rep.mesh.nodes[sn]), "mesh_ms": rep.mesh_ms, "nodes": rep.stats.nodes,
-                "reaction": v(r.reaction), "residual": r.residual, "solve_ms": rep.solve_ms, "study": rep.study,
+                "reaction": v(r.reaction), "residual": r.residual, "safety_factor": rep.safety_factor(), "solve_ms": rep.solve_ms, "study": rep.study,
+                "yield_strength": rep.yield_strength,
             })
         }
         Err(err) => json!({ "error": err }),
     });
     m.insert("fea_study".into(), json!(fea_study));
+    // The last benchmark run: one row per case; a row's `error` is relative (absolute, degrees, for the four-bar);
+    // only `error` at the top when a case could not run.
+    let validation = app.validation.as_ref().map(|(ms, res)| match res {
+        Ok(rows) => json!({
+            "failed": rows.iter().filter(|b| !b.passed()).count(), "ms": ms, "passed": rows.iter().filter(|b| b.passed()).count(),
+            "rows": rows.iter().map(|b| json!({
+                "accuracy": b.accuracy().to_string(), "case": b.case, "error": b.error(), "formula": b.formula, "mesh": b.mesh,
+                "passed": b.passed(), "quantity": b.quantity, "reference": b.reference, "result": b.result, "tolerance": b.tolerance,
+            })).collect::<Vec<_>>(),
+        }),
+        Err(err) => json!({ "error": err }),
+    });
+    m.insert("validation".into(), json!(validation));
     // Values in degrees (revolute) or mm; `point` and `value` belong to the shown sample `step`.
     let motion = app.motion_result().map(|run| {
         let mo = &run.motion;

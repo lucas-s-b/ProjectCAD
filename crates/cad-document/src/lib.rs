@@ -26,6 +26,7 @@ mod refs;
 pub mod sketch;
 pub mod study;
 pub mod units;
+pub mod validation;
 
 #[cfg(test)]
 mod construction_tests;
@@ -62,6 +63,7 @@ pub use cad_mech::{Check, Clearance, MATERIALS, Material, Meeting, Overlap, Part
 pub use bom::{BomRow, bom_csv};
 pub use cad_analysis::{Accuracy, FEA, FOUR_BAR, FeaResult, MAX_DOFS, MESHED, MassProps, MeshStats, SAMPLED, SOLVED, TET_FACES, TetMesh, four_bar_rocker};
 pub use study::{Load, LoadKind, Study, StudyReport};
+pub use validation::{Benchmark, CANTILEVER, CANTILEVER_SIZES, SOLID_BOX, SOLID_CYLINDER, TENSION_BAR, benchmarks, validation_markdown};
 pub use fea_mesh::MeshReport;
 pub use mass::{MassReport, MassRow};
 pub use motion::{Collision, MAX_STEPS, Motion, MotionStudy};
