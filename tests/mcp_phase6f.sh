@@ -99,7 +99,7 @@ fs 30 | grep -qF '"yield_strength":null' || bad "yield_strength of state 30: $(f
 # 33. 355 MPa
 near "$(fs 33 | num safety_factor)" 35.5 0.000001 || bad "safety_factor of state 33 is $(fs 33 | num safety_factor)"
 # the saved file
-grep -qF '"version": 27' target/mcp_phase6f.cadproj || bad "the saved file is not version 27"
+grep -qF '"version": 28' target/mcp_phase6f.cadproj || bad "the saved file is not version 28"
 grep -qF '"yield_strength": "355"' target/mcp_phase6f.cadproj || bad "the saved file has no yield strength 355"
 
 [ "$fail" -eq 0 ] && echo "MCP PHASE6F PASS" || { echo "outputs in $OUT"; exit 1; }

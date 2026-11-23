@@ -4,13 +4,13 @@ use cad_modeler::{Body, EdgeGeom, Surface, TrimmedBody};
 use std::fmt::Write;
 
 /// Entity writer: `add` writes `#n=<text>;` and returns n.
-struct W {
-    out: String,
-    next: usize,
+pub(crate) struct W {
+    pub(crate) out: String,
+    pub(crate) next: usize,
 }
 
 impl W {
-    fn add(&mut self, text: &str) -> usize {
+    pub(crate) fn add(&mut self, text: &str) -> usize {
         self.next += 1;
         let _ = writeln!(self.out, "#{}={text};", self.next);
         self.next
@@ -18,12 +18,12 @@ impl W {
 }
 
 /// STEP REAL: always has a decimal point.
-fn real(v: f64) -> String {
+pub(crate) fn real(v: f64) -> String {
     let s = format!("{v:.6}");
     if s.trim_start_matches('-').trim_matches(|c| c == '0' || c == '.').is_empty() { "0.".into() } else { s }
 }
 
-fn triple(v: DVec3) -> String {
+pub(crate) fn triple(v: DVec3) -> String {
     format!("({},{},{})", real(v.x), real(v.y), real(v.z))
 }
 
@@ -32,7 +32,7 @@ fn q(s: &str) -> String {
     s.replace('\'', "''")
 }
 
-fn refs(ids: &[usize]) -> String {
+pub(crate) fn refs(ids: &[usize]) -> String {
     ids.iter().map(|i| format!("#{i}")).collect::<Vec<_>>().join(",")
 }
 
@@ -114,7 +114,16 @@ fn advanced_brep(w: &mut W, label: &str, t: &TrimmedBody) -> usize {
                 let pl = place(w, *origin, *axis, axis.any_orthonormal_vector());
                 w.add(&format!("CYLINDRICAL_SURFACE('',#{pl},{})", real(*radius)))
             }
-            _ => unreachable!("TrimmedBody has only planes and cylinders"),
+            Surface::Cone { apex, axis, half_angle } => {
+                // Placed at the apex, so the radius there is 0; the cone opens along +axis, as `axis` points into it.
+                let pl = place(w, *apex, *axis, axis.any_orthonormal_vector());
+                w.add(&format!("CONICAL_SURFACE('',#{pl},0.,{})", real(*half_angle)))
+            }
+            Surface::Sphere { center, radius } => {
+                let pl = place(w, *center, DVec3::Z, DVec3::X);
+                w.add(&format!("SPHERICAL_SURFACE('',#{pl},{})", real(*radius)))
+            }
+            _ => unreachable!("TrimmedBody has only planes, cylinders, cones and spheres"),
         };
         let mut bounds = Vec::new();
         for (i, lp) in f.loops.iter().enumerate() {
@@ -129,9 +138,9 @@ fn advanced_brep(w: &mut W, label: &str, t: &TrimmedBody) -> usize {
     w.add(&format!("MANIFOLD_SOLID_BREP('{}',#{shell})", q(label)))
 }
 
-/// One solid per body, named by its label; `name` is the product name. A body of planes and cylinders becomes a MANIFOLD_SOLID_BREP
+/// One solid per body, named by its label; `name` is the product name. A body of planes, cylinders, cones and spheres becomes a MANIFOLD_SOLID_BREP
 /// of ADVANCED_FACEs; any other body a FACETED_BREP whose triangles are planar FACE_SURFACEs bounded by a POLY_LOOP.
-// shortcut: bodies with cones, spheres, tori, free-form faces or other curves are written faceted; add those surfaces when users need them
+// shortcut: bodies with tori, whole spheres, free-form faces or other curves are written faceted; add those surfaces when users need them
 pub fn to_step(bodies: &[(&str, &Body)], name: &str) -> String {
     let name = q(name);
     let mut w = W { out: String::new(), next: 0 };

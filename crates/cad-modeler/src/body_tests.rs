@@ -134,3 +134,57 @@ fn union_all_folds_and_handles_empty_and_disjoint() {
     let two = union_all(&[box_body([0.0; 3], [10.0; 3]), box_body([20.0, 0.0, 0.0], [25.0, 5.0, 5.0])]).unwrap().unwrap();
     close(two.volume(), 1125.0, 1e-9);
 }
+
+/// A cube of 10 mm: 8 corners, 12 outward triangles; `flip` swaps corners 1 and 2 of every triangle.
+fn cube_mesh(flip: bool) -> (Vec<DVec3>, Vec<[u32; 3]>) {
+    let positions: Vec<DVec3> = (0..8).map(|i| DVec3::new((i & 1) as f64, ((i >> 1) & 1) as f64, ((i >> 2) & 1) as f64) * 10.0).collect();
+    let quads: [[u32; 4]; 6] = [[0, 2, 3, 1], [4, 5, 7, 6], [0, 1, 5, 4], [2, 6, 7, 3], [0, 4, 6, 2], [1, 3, 7, 5]];
+    let mut tris = Vec::new();
+    for q in quads {
+        tris.push([q[0], q[1], q[2]]);
+        tris.push([q[0], q[2], q[3]]);
+    }
+    if flip {
+        for t in &mut tris {
+            t.swap(1, 2);
+        }
+    }
+    (positions, tris)
+}
+
+#[test]
+fn from_mesh_makes_a_cube_with_six_faces() {
+    let (p, t) = cube_mesh(false);
+    let b = Body::from_mesh(p, &t).unwrap();
+    assert!((b.volume() - 1000.0).abs() < 1e-9);
+    assert_eq!(b.faces.len(), 6);
+    assert_eq!(b.edges().len(), 12);
+    assert!(b.mesh.normals.iter().all(|n| (n.length() - 1.0).abs() < 1e-12));
+}
+
+#[test]
+fn from_mesh_turns_an_inside_out_mesh() {
+    let (p, t) = cube_mesh(true);
+    assert!((Body::from_mesh(p, &t).unwrap().volume() - 1000.0).abs() < 1e-9);
+}
+
+#[test]
+fn from_mesh_refuses_open_and_bad_meshes() {
+    let (p, mut t) = cube_mesh(false);
+    t.pop();
+    assert!(matches!(Body::from_mesh(p.clone(), &t), Err(ModelError::Invalid(msg)) if msg.contains("not closed")));
+    let (_, mut t) = cube_mesh(false);
+    t[0][0] = 99;
+    assert!(matches!(Body::from_mesh(p, &t), Err(ModelError::Invalid("mesh index out of range"))));
+}
+
+#[test]
+fn from_mesh_keeps_two_shells() {
+    let (mut p, mut t) = cube_mesh(false);
+    let (p2, t2) = cube_mesh(false);
+    p.extend(p2.iter().map(|q| *q + DVec3::new(20.0, 0.0, 0.0)));
+    t.extend(t2.iter().map(|q| q.map(|i| i + 8)));
+    let b = Body::from_mesh(p, &t).unwrap();
+    assert!((b.volume() - 2000.0).abs() < 1e-9);
+    assert_eq!(b.faces.len(), 12);
+}

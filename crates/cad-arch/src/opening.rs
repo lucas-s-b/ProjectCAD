@@ -17,21 +17,30 @@ pub fn gap(o: &Opening) -> (f64, f64) {
     (if u0 <= 1e-9 { u0 - t } else { u0 }, if u1 >= len - 1e-9 { u1 + t } else { u1 })
 }
 
+/// The box an opening cuts from its wall, in the level's coordinates: the plan rectangle (`gap` along the baseline,
+/// one thickness past each face, counter-clockwise) and its bottom and top above the level floor (one thickness past
+/// the floor or the wall top when the opening reaches them).
+pub fn opening_box(o: &Opening) -> ([DVec2; 4], f64, f64) {
+    let w = &o.wall;
+    let t = w.thickness;
+    let d = (w.b - w.a).normalize();
+    let (l, r) = w.faces();
+    let (u0, u1) = gap(o);
+    let at = |u: f64, s: f64| w.a + d * u + d.perp() * s;
+    let head = o.sill + o.height;
+    (
+        [at(u0, r - t), at(u1, r - t), at(u1, l + t), at(u0, l + t)],
+        if o.sill > 0.0 { o.sill } else { -t },
+        if head < w.height { head } else { w.height + t },
+    )
+}
+
 /// `body` (the solid of the wall the openings sit in, on `plane`) minus one box per opening: `gap` along the
 /// baseline, one thickness past each face, from the sill to the head. An opening at the floor or reaching the wall
 /// top goes one thickness past it. A cut that fails leaves the body as it was.
 pub fn cut_openings(mut body: Body, openings: &[Opening], plane: &Plane3, tol: f64) -> Body {
     for o in openings {
-        let w = &o.wall;
-        let t = w.thickness;
-        let d = (w.b - w.a).normalize();
-        let (l, r) = w.faces();
-        let (u0, u1) = gap(o);
-        let at = |u: f64, s: f64| w.a + d * u + d.perp() * s;
-        let rect = [at(u0, r - t), at(u1, r - t), at(u1, l + t), at(u0, l + t)];
-        let z0 = if o.sill > 0.0 { o.sill } else { -t };
-        let head = o.sill + o.height;
-        let z1 = if head < w.height { head } else { w.height + t };
+        let (rect, z0, z1) = opening_box(o);
         let base = Plane3 { origin: plane.origin + plane.normal() * z0, ..*plane };
         if let Ok(cutter) = wall_body(&rect, &base, z1 - z0, tol)
             && let Ok(cut) = boolean(&body, &cutter, BoolOp::Difference)

@@ -308,11 +308,13 @@ dependencies = [
 name = "cad-import-export"
 version = "0.1.0"
 dependencies = [
+ "cad-arch",
  "cad-document",
  "cad-geometry",
  "cad-modeler",
  "dxf",
  "roxmltree",
+ "serde_json",
 ]
 
 [[package]]

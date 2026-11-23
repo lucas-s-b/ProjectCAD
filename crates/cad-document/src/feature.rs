@@ -143,6 +143,10 @@ pub enum FeatureKind {
     /// rebuild, so the draft follows when earlier features move the faces. Faces next to a drafted face must be planes
     /// at right angles to it (`cad_modeler::draft_face`).
     Draft { body: FeatureId, faces: Vec<FaceRef>, sketch: SketchId, angle: String },
+    /// A closed triangle mesh imported from STL or OBJ (mm): a new body. Points as written in the file (f32), shared
+    /// between triangles; each triangle lists three point indices counter-clockwise seen from outside. Version 28.
+    // shortcut: stored as plain JSON arrays (about 1.5x the binary STL size); store base64 if imported meshes make project files too large
+    Mesh { positions: Vec<[f32; 3]>, triangles: Vec<[u32; 3]> },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -193,7 +197,7 @@ impl Feature {
             FeatureKind::Mirror { offset, .. } => vec![offset.as_str()],
             FeatureKind::Part { def, x, y, .. } => def.expressions().into_iter().chain([x.as_str(), y.as_str()]).collect(),
             FeatureKind::Draft { angle, .. } => vec![angle.as_str()],
-            FeatureKind::Sweep { .. } | FeatureKind::Loft { .. } => Vec::new(),
+            FeatureKind::Sweep { .. } | FeatureKind::Loft { .. } | FeatureKind::Mesh { .. } => Vec::new(),
         }
     }
 
@@ -300,6 +304,11 @@ impl Document {
             }
             (FeatureKind::Loft { sections, .. }, _) if sections.len() < 2 => return Err(bad("loft needs at least two sections")),
             (FeatureKind::Loft { sections, .. }, _) if sections.iter().any(Vec::is_empty) => return Err(bad("empty section")),
+            (FeatureKind::Mesh { positions, triangles }, _) => {
+                if triangles.len() < 4 || triangles.iter().flatten().any(|&i| i as usize >= positions.len()) || positions.iter().flatten().any(|v| !v.is_finite()) {
+                    return Err(bad("mesh needs at least 4 triangles with valid point indices"));
+                }
+            }
             (_, Some([])) => return Err(bad("empty profile")),
             _ => {}
         }

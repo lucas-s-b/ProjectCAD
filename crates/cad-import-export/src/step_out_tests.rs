@@ -191,3 +191,54 @@ fn mixed_bodies_link_both_representations() {
 fn step_solids_use_the_given_names() {
     assert!(to_step(&[("it's", &cuboid())], "p").contains("('it''s',"));
 }
+
+fn shaft() -> Body {
+    cad_modeler::lathe(&[DVec2::new(0.0, 0.0), DVec2::new(10.0, 0.0), DVec2::new(10.0, 40.0), DVec2::new(8.0, 42.0), DVec2::new(0.0, 42.0)], &Plane3::XY, 48).unwrap()
+}
+
+/// The annular sector between radii 5 and 10 from 20 to 70 degrees, turned about the Y axis.
+fn sector() -> Body {
+    let (a0, a1) = (20.0_f64.to_radians(), 70.0_f64.to_radians());
+    let at = |r: f64, a: f64| DVec2::new(r * a.cos(), r * a.sin());
+    let shapes = [
+        Shape::Arc { center: DVec2::ZERO, radius: 5.0, start: a0, sweep: a1 - a0 },
+        Shape::Arc { center: DVec2::ZERO, radius: 10.0, start: a0, sweep: a1 - a0 },
+        Shape::Line { a: at(5.0, a0), b: at(10.0, a0) },
+        Shape::Line { a: at(5.0, a1), b: at(10.0, a1) },
+    ];
+    let profile = Profile::from_shapes(&shapes.iter().collect::<Vec<_>>()).unwrap();
+    Body::from_brep(&cad_modeler::revolve(&profile, &Plane3::XY, DVec2::ZERO, DVec2::Y, std::f64::consts::TAU).unwrap(), 0.01).unwrap()
+}
+
+#[test]
+fn shaft_exports_a_conical_surface() {
+    let step = to_step(&[("shaft", &shaft())], "shaft");
+    assert_eq!(count(&step, "CONICAL_SURFACE"), 1);
+    assert_eq!(count(&step, "FACETED_BREP"), 0);
+    assert_eq!(count(&step, "MANIFOLD_SOLID_BREP"), 1);
+    assert!(step.contains(",0.,0.785398)"));
+    all_refs_defined(&step);
+}
+
+#[test]
+fn revolved_sector_exports_spheres_and_cones() {
+    let step = to_step(&[("sector", &sector())], "sector");
+    assert_eq!((count(&step, "SPHERICAL_SURFACE"), count(&step, "CONICAL_SURFACE"), count(&step, "FACETED_BREP")), (2, 2, 0));
+    all_refs_defined(&step);
+}
+
+#[test]
+fn whole_sphere_is_faceted() {
+    let mut outline = vec![DVec2::new(0.0, -5.0)];
+    outline.extend((1..16).map(|i| {
+        let a = std::f64::consts::PI * f64::from(i) / 16.0;
+        DVec2::new(5.0 * a.sin(), -5.0 * a.cos())
+    }));
+    outline.push(DVec2::new(0.0, 5.0));
+    let mut ball = cad_modeler::lathe(&outline, &Plane3::XY, 32).unwrap();
+    ball.faces = vec![cad_modeler::BodyFace { surface: Surface::Sphere { center: DVec3::ZERO, radius: 5.0 }, outward: true }];
+    ball.tri_face.fill(0);
+    let step = to_step(&[("ball", &ball)], "ball");
+    assert!(count(&step, "FACETED_BREP") >= 1);
+    assert_eq!(count(&step, "SPHERICAL_SURFACE"), 0);
+}

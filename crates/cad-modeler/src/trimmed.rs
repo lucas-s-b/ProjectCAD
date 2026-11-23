@@ -2,7 +2,7 @@ use crate::{Body, EdgeGeom, ModelError, Surface};
 use glam::DVec3;
 use std::collections::{HashMap, HashSet};
 
-/// A solid rebuilt as an analytic B-Rep: faces on planes and cylinders, bounded by loops of
+/// A solid rebuilt as an analytic B-Rep: faces on planes, cylinders, cones and spheres, bounded by loops of
 /// line, circle and ellipse edges. Vertices lie on all their faces within `SNAP_TOL`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TrimmedBody {
@@ -21,7 +21,7 @@ pub struct TrimEdge {
 
 /// One connected face. Each loop is a list of (edge index, forward). Every loop runs counter-clockwise
 /// seen from outside the solid, with the face on its left. `outer` is the outer loop of a planar face;
-/// it is `None` on a cylinder, where loops have no inside or outside.
+/// it is `None` on a curved face, where loops have no inside or outside.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TrimFace {
     pub surface: Surface,
@@ -32,7 +32,7 @@ pub struct TrimFace {
 
 const SNAP_TOL: f64 = 1e-6;
 const SNAP_ROUNDS: usize = 100;
-const NOT_ANALYTIC: ModelError = ModelError::Invalid("face is not a plane or a cylinder");
+const NOT_ANALYTIC: ModelError = ModelError::Invalid("face is not a plane, cylinder, cone or sphere");
 const OTHER_EDGE: ModelError = ModelError::Invalid("edge is not a line, circle or ellipse");
 const BAD_LOOP: ModelError = ModelError::Invalid("face boundary could not be rebuilt");
 const OFF_SURFACE: ModelError = ModelError::Invalid("vertex does not lie on its faces");
@@ -56,12 +56,19 @@ fn next_boundary(body: &Body, tri_of: &HashMap<(u32, u32), usize>, mut t: usize,
 
 impl TrimmedBody {
     /// Rebuilds the faces of `body` with their boundary loops. Fails for bodies with a face that is not
-    /// a plane or cylinder, an edge that is not a line, circle or ellipse, or a boundary that does not split cleanly into edges.
+    /// a plane, cylinder, cone or sphere, an edge that is not a line, circle or ellipse, or a boundary that does not split cleanly into edges.
     pub fn from_body(body: &Body) -> Result<TrimmedBody, ModelError> {
-        if !body.faces.iter().all(|f| matches!(f.surface, Surface::Plane { .. } | Surface::Cylinder { .. })) {
+        if !body.faces.iter().all(|f| matches!(f.surface, Surface::Plane { .. } | Surface::Cylinder { .. } | Surface::Cone { .. } | Surface::Sphere { .. })) {
             return Err(NOT_ANALYTIC);
         }
-        let paths = body.edge_paths();
+        let mut paths = body.edge_paths();
+        // Body::edges leaves edges on cones and spheres Other (blends cannot use them); here they are exact circles.
+        for (edge, _) in &mut paths {
+            let curved = edge.faces.iter().any(|&f| matches!(body.faces[f as usize].surface, Surface::Cone { .. } | Surface::Sphere { .. }));
+            if curved && edge.geom == EdgeGeom::Other {
+                edge.geom = crate::edges::circle_geom(&edge.points, edge.closed);
+            }
+        }
         if paths.iter().any(|(e, _)| e.geom == EdgeGeom::Other) {
             return Err(OTHER_EDGE);
         }
@@ -183,6 +190,10 @@ impl TrimmedBody {
                 (Some(i), None) => face.outer = Some(i),
                 _ => return Err(BAD_LOOP),
             }
+        }
+        // A face without a boundary (a whole sphere) cannot be written as a bounded STEP face: it stays faceted.
+        if faces.iter().any(|f| f.loops.is_empty()) {
+            return Err(BAD_LOOP);
         }
         // Snap every vertex onto all the surfaces of the edges that meet there.
         let mut surfaces: Vec<Vec<u32>> = vec![Vec::new(); mesh_of.len()];

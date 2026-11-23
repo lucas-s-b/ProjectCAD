@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 pub type SketchId = u32;
-pub const FORMAT_VERSION: u32 = 27;
+pub const FORMAT_VERSION: u32 = 28;
 
 /// Axes (x, y, normal): XY = (X, Y, +Z); XZ = (X, Z, -Y); YZ = (Y, Z, +X).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

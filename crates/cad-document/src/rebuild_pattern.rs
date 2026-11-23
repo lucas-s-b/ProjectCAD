@@ -44,7 +44,7 @@ fn mirror_matrix(plane: BasePlane, offset: f64) -> DAffine3 {
 fn forms(doc: &Document, f: &Feature, states: &BTreeMap<FeatureId, FeatureState>) -> Result<Forms, String> {
     let len = |s: &str| eval(doc, s, false);
     let (source, instances, skip) = match &f.kind {
-        FeatureKind::Extrude { .. } | FeatureKind::Revolve { .. } | FeatureKind::Sweep { .. } | FeatureKind::Loft { .. } | FeatureKind::Part { .. } => {
+        FeatureKind::Extrude { .. } | FeatureKind::Revolve { .. } | FeatureKind::Sweep { .. } | FeatureKind::Loft { .. } | FeatureKind::Part { .. } | FeatureKind::Mesh { .. } => {
             return Ok(Forms { root: f.id, all: vec![DAffine3::IDENTITY], fresh: Vec::new() });
         }
         FeatureKind::LinearPattern { source, count: n, dx, dy, dz } => {

@@ -104,7 +104,7 @@ fn studies_save_and_load() {
     let d2 = Document::load(&p);
     std::fs::remove_file(&p).ok();
     assert_eq!(d2.unwrap().studies(), d.studies());
-    assert!(text.contains("\"version\": 27") && text.contains("\"Force\"") && !text.contains("\"Pressure\""));
+    assert!(text.contains("\"version\": 28") && text.contains("\"Force\"") && !text.contains("\"Pressure\""));
     assert!(text.contains("\"yield_strength\": \"250\""));
     let old = std::env::temp_dir().join(format!("cadtest_{}_study_old.cadproj", std::process::id()));
     std::fs::write(&old, r#"{"version":25,"name":"x","entities":{},"next_id":1}"#).unwrap();

@@ -105,6 +105,9 @@ pub fn menu_bar(app: &mut CadApp, ui: &mut egui::Ui) {
                 if menu_item(ui, true, "Import DXF...", "") {
                     run(app, &ctx, Action::Import);
                 }
+                if menu_item(ui, true, "Import STL/OBJ mesh...", "") {
+                    app.import_mesh_dialog();
+                }
                 if menu_item(ui, true, "Save", "Ctrl+S") {
                     run(app, &ctx, Action::Save);
                 }
@@ -128,6 +131,15 @@ pub fn menu_bar(app: &mut CadApp, ui: &mut egui::Ui) {
                 }
                 if menu_item(ui, true, "Export STEP...", "") {
                     app.export_dialog("step");
+                }
+                if menu_item(ui, true, "Export glTF...", "") {
+                    app.export_dialog("glb");
+                }
+                if menu_item(ui, true, "Export 3MF...", "") {
+                    app.export_dialog("3mf");
+                }
+                if menu_item(ui, true, "Export IFC...", "") {
+                    app.export_dialog("ifc");
                 }
                 if menu_item(ui, true, "Export BOM CSV...", "") {
                     app.export_dialog("csv");

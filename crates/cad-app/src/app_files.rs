@@ -1,6 +1,8 @@
 use crate::app::{CadApp, Pending, PickFace};
-use cad_document::Document;
+use cad_document::{Document, FeatureId, FeatureKind};
+use cad_geometry::{DAffine3, DVec3};
 use eframe::egui;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 const MCP_NO_DIALOGS: &str = "File dialogs are off in MCP mode; use open_project / save_project";
@@ -102,11 +104,15 @@ impl CadApp {
         }
     }
 
-    /// Replaces the document with the contents of a DXF or SVG file (by extension), without a dialog and without the unsaved-changes guard.
+    /// Imports a file by extension, without a dialog and without the unsaved-changes guard. DXF or SVG replace the
+    /// document; STL or OBJ add a mesh body (`import_mesh`).
     pub fn import_path(&mut self, p: PathBuf) -> Result<String, String> {
+        let ext = p.extension().map(|e| e.to_string_lossy().to_lowercase());
+        if matches!(ext.as_deref(), Some("stl" | "obj")) {
+            return self.import_mesh(&p);
+        }
         let text = std::fs::read_to_string(&p).map_err(|e| format!("Import failed: {e}"));
         let name = p.file_stem().map_or_else(|| "Untitled".to_string(), |s| s.to_string_lossy().into_owned());
-        let ext = p.extension().map(|e| e.to_string_lossy().to_lowercase());
         let parsed = text.and_then(|t| match ext.as_deref() {
             Some("svg") => cad_import_export::from_svg(&t, &name),
             Some("dxf") => cad_import_export::from_dxf(&t, &name),
@@ -128,6 +134,47 @@ impl CadApp {
                 self.status = e.clone();
                 Err(e)
             }
+        }
+    }
+
+    /// Adds the closed triangle mesh of an STL or OBJ file (by extension, mm) as a mesh-body feature at the end of the
+    /// feature list (one undo step), keeping the document; a mesh that is not closed is refused here, not left as a failed feature.
+    pub fn import_mesh(&mut self, p: &Path) -> Result<String, String> {
+        let stem = p.file_stem().map_or_else(|| "Mesh".to_string(), |s| s.to_string_lossy().into_owned());
+        let is_obj = p.extension().is_some_and(|e| e.eq_ignore_ascii_case("obj"));
+        let parsed = std::fs::read(p).map_err(|err| err.to_string()).and_then(|bytes| {
+            let (positions, triangles) =
+                if is_obj { cad_import_export::from_obj(&String::from_utf8_lossy(&bytes)) } else { cad_import_export::from_stl(&bytes) }?;
+            let points = positions.iter().map(|q| DVec3::from(q.map(f64::from))).collect();
+            cad_document::Body::from_mesh(points, &triangles).map_err(|err| err.to_string())?;
+            Ok((positions, triangles))
+        });
+        let (positions, triangles) = match parsed {
+            Ok(mesh) => mesh,
+            Err(err) => {
+                self.status = format!("Import failed: {err}");
+                return Err(self.status.clone());
+            }
+        };
+        let n = triangles.len();
+        let id = crate::model_features::add_feature(self, &stem, FeatureKind::Mesh { positions, triangles });
+        if self.doc.feature(id).is_none() {
+            return Err(self.status.clone());
+        }
+        self.status = format!("Imported mesh {stem}: {n} triangles");
+        Ok(self.status.clone())
+    }
+
+    /// "Import STL/OBJ mesh": asks for a path and imports.
+    pub fn import_mesh_dialog(&mut self) {
+        if self.mcp.is_some() {
+            self.status = "File dialogs are off in MCP mode; use import_project".into();
+            return;
+        }
+        if let Some(p) = rfd::FileDialog::new().add_filter("Mesh", &["stl", "obj"]).pick_file()
+            && let Err(err) = self.import_mesh(&p)
+        {
+            self.status = err;
         }
     }
 
@@ -166,7 +213,8 @@ impl CadApp {
         self.save_to(p)
     }
 
-    /// Writes SVG, DXF or PDF (visible 2D entities) or STL, OBJ or STEP (shown bodies and placed components) or CSV (bill of materials), chosen by the file extension.
+    /// Writes SVG, DXF or PDF (visible 2D entities) or STL, OBJ or STEP (shown bodies and placed components) or CSV (bill of materials), chosen by the file extension;
+    /// also glTF (.glb) or 3MF (shown bodies and placed components), IFC (the architectural model).
     pub fn export_path(&mut self, p: PathBuf) -> Result<(), String> {
         let ext = p.extension().map(|e| e.to_string_lossy().to_lowercase());
         let bytes = match ext.as_deref() {
@@ -179,6 +227,19 @@ impl CadApp {
                 }
                 self.mesh_bytes(mesh)?
             }
+            Some(ext @ ("glb" | "3mf")) => {
+                if !self.model_current() {
+                    return Err("the model is still rebuilding; try again in a moment".into());
+                }
+                let scene = self.scene()?;
+                if ext == "glb" { cad_import_export::to_glb(&scene) } else { cad_import_export::to_3mf(&scene)? }
+            }
+            Some("ifc") => {
+                if !self.model_current() {
+                    return Err("the model is still rebuilding; try again in a moment".into());
+                }
+                cad_import_export::to_ifc(&self.doc, self.model_result().ok_or("no rebuild yet")?)?.into_bytes()
+            }
             Some("csv") => {
                 if !self.model_current() {
                     return Err("the model is still rebuilding; try again in a moment".into());
@@ -189,7 +250,7 @@ impl CadApp {
                 }
                 cad_document::bom_csv(&rows).into_bytes()
             }
-            _ => return Err("unknown export format; use .svg, .dxf, .pdf, .stl, .obj, .step or .csv".into()),
+            _ => return Err("unknown export format; use .svg, .dxf, .pdf, .stl, .obj, .step, .glb, .3mf, .ifc or .csv".into()),
         };
         self.write_export(&p, bytes)
     }
@@ -245,6 +306,28 @@ impl CadApp {
             "step" | "stp" => cad_import_export::to_step(&bodies, &self.doc.name).into_bytes(),
             _ => cad_import_export::to_stl(&bodies.iter().map(|(_, b)| *b).collect::<Vec<_>>()),
         })
+    }
+
+    /// The shown bodies (each its own mesh, unplaced) and the placed components (one mesh per source body, placed by
+    /// `RebuildResult::placements`) of the current rebuild, for glTF and 3MF.
+    fn scene(&self) -> Result<cad_import_export::Scene<'_>, String> {
+        let model = self.model_result().ok_or("no rebuild yet")?;
+        let mut scene = cad_import_export::Scene { meshes: Vec::new(), items: Vec::new() };
+        for (id, b) in self.shown_bodies() {
+            scene.items.push((format!("Body_{id}"), scene.meshes.len(), DAffine3::IDENTITY));
+            scene.meshes.push((format!("Body_{id}"), &**b));
+        }
+        let mut mesh_of: BTreeMap<FeatureId, usize> = BTreeMap::new();
+        for (c, _) in self.placed_components() {
+            let Some(comp) = self.doc.component(c) else { continue };
+            let (Some(src), Some(at)) = (model.body(comp.body), model.placements.get(&c)) else { continue };
+            let mesh = *mesh_of.entry(comp.body).or_insert_with(|| {
+                scene.meshes.push((format!("Body_{}", comp.body), &**src));
+                scene.meshes.len() - 1
+            });
+            scene.items.push((comp.name.clone(), mesh, *at));
+        }
+        if scene.items.is_empty() { Err("no solid body to export".into()) } else { Ok(scene) }
     }
 
     /// File menu entry: asks for a path and exports.

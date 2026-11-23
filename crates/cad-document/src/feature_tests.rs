@@ -156,3 +156,50 @@ fn features_using_param_follows_parameter_dependencies() {
     assert_eq!(d.features_using_param("d"), [2]);
     assert!(d.features_using_param("other").is_empty());
 }
+
+/// The 10 mm cube as a mesh feature named "Cube" (id 1); `n` triangles of its 12.
+fn cube_feature(id: FeatureId, n: usize) -> Feature {
+    let positions: Vec<[f32; 3]> = (0..8).map(|i| [(i & 1) as f32 * 10.0, ((i >> 1) & 1) as f32 * 10.0, ((i >> 2) & 1) as f32 * 10.0]).collect();
+    let quads: [[u32; 4]; 6] = [[0, 2, 3, 1], [4, 5, 7, 6], [0, 1, 5, 4], [2, 6, 7, 3], [0, 4, 6, 2], [1, 3, 7, 5]];
+    let triangles: Vec<[u32; 3]> = quads.iter().flat_map(|q| [[q[0], q[1], q[2]], [q[0], q[2], q[3]]]).take(n).collect();
+    Feature { id, name: "Cube".into(), suppressed: false, kind: FeatureKind::Mesh { positions, triangles } }
+}
+
+#[test]
+fn mesh_feature_makes_a_body() {
+    let mut d = Document::new("m");
+    d.apply(Command::AddFeature { index: 0, feature: cube_feature(1, 12) }).unwrap();
+    let r = Rebuilder::default().rebuild(&d);
+    assert_eq!(r.bodies.len(), 1);
+    assert_eq!(r.bodies[0].0, 1);
+    assert!((r.bodies[0].1.volume() - 1000.0).abs() < 1e-6);
+    assert_eq!(r.states[&1], FeatureState::Ok);
+    let kind = FeatureKind::LinearPattern { source: 1, count: "2".into(), dx: "20 mm".into(), dy: "0".into(), dz: "0".into() };
+    d.apply(Command::AddFeature { index: 1, feature: Feature { id: 2, name: "Pat".into(), suppressed: false, kind } }).unwrap();
+    let r = Rebuilder::default().rebuild(&d);
+    let total: f64 = r.bodies.iter().map(|(_, b)| b.volume()).sum();
+    assert!((total - 2000.0).abs() < 1e-6, "{total}");
+}
+
+#[test]
+fn mesh_feature_survives_save_and_load() {
+    let mut d = Document::new("m");
+    let f = cube_feature(1, 12);
+    d.apply(Command::AddFeature { index: 0, feature: f.clone() }).unwrap();
+    let p = std::env::temp_dir().join("cad-mesh-feature.cadproj");
+    d.save(&p).unwrap();
+    let text = std::fs::read_to_string(&p).unwrap();
+    let loaded = Document::load(&p).unwrap();
+    std::fs::remove_file(&p).ok();
+    assert_eq!(loaded.features()[0].kind, f.kind);
+    assert!(text.contains("\"version\": 28"), "{}", &text[..text.len().min(80)]);
+}
+
+#[test]
+fn bad_mesh_feature_is_refused() {
+    let mut d = Document::new("m");
+    assert!(matches!(d.apply(Command::AddFeature { index: 0, feature: cube_feature(1, 3) }), Err(DocError::BadFeature(_))));
+    d.apply(Command::AddFeature { index: 0, feature: cube_feature(1, 4) }).unwrap();
+    let r = Rebuilder::default().rebuild(&d);
+    assert!(matches!(&r.states[&1], FeatureState::Error(msg) if msg.contains("not closed")), "{:?}", r.states);
+}

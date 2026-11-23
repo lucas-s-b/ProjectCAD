@@ -8,7 +8,7 @@ mod solid;
 #[cfg(test)]
 mod fixtures;
 pub use join::{JOIN_TOL, footprints};
-pub use opening::{cut_openings, gap, ifc_class, opening_symbol};
+pub use opening::{cut_openings, gap, ifc_class, opening_box, opening_symbol};
 pub use plan::{Plan, plan};
 pub use roof::{roof_body, stair_body};
 pub use room::{Region, regions};

@@ -1,4 +1,4 @@
-//! Benchmark baseline: `cargo run --release -p cad-bench` prints a Markdown table of timings; `cargo run --release -p cad-bench -- validate` runs the analytic validation cases and writes docs/VALIDATION.md; `cargo run -p cad-bench -- assembly <path> [n] [pitch]` writes the benchmark assembly (n components of one gear, default 200, `pitch` mm apart, default 100) as a project file; `-- pin <path>` and `-- beam <path>` write the motion and static-study models of the analysis cases.
+//! Benchmark baseline: `cargo run --release -p cad-bench` prints a Markdown table of timings; `cargo run --release -p cad-bench -- validate` runs the analytic validation cases and writes docs/VALIDATION.md; `cargo run -p cad-bench -- assembly <path> [n] [pitch]` writes the benchmark assembly (n components of one gear, default 200, `pitch` mm apart, default 100) as a project file; `-- pin <path>` and `-- beam <path>` write the motion and static-study models of the analysis cases; `-- house <path>` writes the sample house (`cad_document::samples::house`).
 use cad_analysis::{Elastic, element_stiffness, internal_forces, nodal_von_mises};
 use cad_constraints::{Constraint, PointKind, PointRef, solve};
 use cad_document::{BodyOp, Bvh, Command, Component, Document, Entity, Feature, FeatureKind, Frame, History, Joint, JointKind, MotionStudy, PartDef, Rebuilder, Target};
@@ -351,6 +351,10 @@ fn main() {
     if arg(1).as_deref() == Some("beam") {
         let (beam, _) = cad_document::validation::beam(2.45, "0.3", ["0", "0", "-100"]).expect("the beam builds");
         beam.save(std::path::Path::new(&arg(2).expect("usage: cad-bench beam <path>"))).expect("save the beam");
+        return;
+    }
+    if arg(1).as_deref() == Some("house") {
+        cad_document::samples::house().save(std::path::Path::new(&arg(2).expect("usage: cad-bench house <path>"))).expect("save the house");
         return;
     }
     let mut t = Table(Vec::new());

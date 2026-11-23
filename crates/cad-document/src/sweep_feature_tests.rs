@@ -182,7 +182,7 @@ fn undo_redo_and_save_load() {
     let loaded = Document::load(&p).unwrap();
     std::fs::remove_file(&p).unwrap();
     assert_eq!(loaded.features(), after);
-    assert_eq!(FORMAT_VERSION, 27);
+    assert_eq!(FORMAT_VERSION, 28);
 }
 
 #[test]
