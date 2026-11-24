@@ -1,6 +1,7 @@
 //! The Settings window: General, Interface, Navigation and Controls pages. Every change lands in `app.settings` and
 //! is written by `settings::sync`; the Controls page rebinds a shortcut by capturing the next key press.
 use crate::app::CadApp;
+use crate::i18n::{Language, tr};
 use crate::keymap::{Action, Chord, Gesture, Preset};
 use crate::settings::{ACCENTS, General, Interface, Theme};
 use crate::widgets as w;
@@ -71,7 +72,8 @@ pub fn show(app: &mut CadApp, ctx: &egui::Context) {
         return;
     }
     let mut open = true;
-    egui::Window::new("Settings")
+    egui::Window::new(tr("Settings"))
+        .id(egui::Id::unique("settings_window"))
         .open(&mut open)
         .collapsible(false)
         .default_size([560.0, 520.0])
@@ -98,7 +100,7 @@ pub fn show(app: &mut CadApp, ctx: &egui::Context) {
 
 fn section(ui: &mut egui::Ui, title: &str) {
     ui.add_space(6.0);
-    ui.label(RichText::new(title).strong());
+    ui.label(RichText::new(tr(title)).strong());
 }
 
 /// A labelled row: caption on the left, the widget after it.
@@ -115,11 +117,28 @@ fn caption_cell(ui: &mut egui::Ui, width: f32, caption: &str) {
     let size = egui::vec2(width, ui.spacing().interact_size.y);
     ui.allocate_ui_with_layout(size, egui::Layout::left_to_right(egui::Align::Center), |ui| {
         ui.set_min_size(size);
-        ui.add(egui::Label::new(caption).truncate());
+        ui.add(egui::Label::new(tr(caption)).truncate());
+    });
+}
+
+/// The language picker, in each language's own name (also on the tutorial's first step).
+pub fn language_row(app: &mut CadApp, ui: &mut egui::Ui) {
+    let lang = &mut app.settings.language;
+    row(ui, "Language", |ui| {
+        w::combo(ui, "Language", egui::ComboBox::from_id_salt("language").selected_text(lang.native_name()).width(150.0), |ui| {
+            for l in Language::ALL {
+                w::selectable_value(ui, lang, l, l.native_name());
+            }
+        });
     });
 }
 
 fn general(app: &mut CadApp, ui: &mut egui::Ui) {
+    section(ui, "Language");
+    language_row(app, ui);
+    if w::button(ui, "Show the tutorial").clicked() {
+        app.tutorial = Some(0);
+    }
     let g = &mut app.settings.general;
     section(ui, "Startup");
     w::checkbox(ui, &mut g.osnap_on_start, "Object snap on at startup");
@@ -127,7 +146,7 @@ fn general(app: &mut CadApp, ui: &mut egui::Ui) {
     section(ui, "Files");
     row(ui, "Autosave every (minutes, 0 = off)", |ui| w::add(ui, "Autosave minutes", DragValue::new(&mut g.autosave_min).range(0..=120)));
     if let Some(dir) = app.settings_path.as_deref().and_then(|p| p.parent()) {
-        ui.label(RichText::new(format!("Autosaves go to {}", dir.join("autosave").display())).weak().small());
+        ui.label(RichText::new(format!("{} {}", tr("Autosaves go to"), dir.join("autosave").display())).weak().small());
     }
     row(ui, "Recent files kept", |ui| w::add(ui, "Recent files kept", DragValue::new(&mut g.recent_max).range(1..=30)));
     let max = g.recent_max;
@@ -175,7 +194,7 @@ fn interface(app: &mut CadApp, ui: &mut egui::Ui) {
         w::checkbox(ui, &mut s.ui.camera_transitions, "Smooth camera transitions");
         row(ui, "Camera transition (ms)", |ui| w::add(ui, "Camera transition ms", DragValue::new(&mut s.ui.camera_ms).range(0..=1000)));
     });
-    ui.label(RichText::new("Animations only draw extra frames while they run; an idle window stays idle.").weak().small());
+    ui.label(RichText::new(tr("Animations only draw extra frames while they run; an idle window stays idle.")).weak().small());
     section(ui, "Views");
     w::checkbox(ui, &mut s.ui.hover_highlight, "Highlight the entity under the cursor (2D)");
     w::checkbox(ui, &mut s.ui.grid_2d, "2D grid");
@@ -204,7 +223,7 @@ fn preset_combo(app: &mut CadApp, ui: &mut egui::Ui) {
         c.apply_preset(p);
         app.status = format!("Controls: {} preset", p.name());
     }
-    ui.label(RichText::new(preset_note(app.settings.controls.preset)).weak().small());
+    ui.label(RichText::new(tr(preset_note(app.settings.controls.preset))).weak().small());
 }
 
 fn preset_note(p: Preset) -> &'static str {
@@ -233,7 +252,7 @@ fn navigation(app: &mut CadApp, ui: &mut egui::Ui) {
     gesture_combo(ui, "Orbit", &mut n.orbit);
     gesture_combo(ui, "Pan", &mut n.pan);
     gesture_combo(ui, "Drag zoom", &mut n.zoom);
-    ui.label(RichText::new("The left button stays for selecting; in 2D the orbit gesture pans too.").weak().small());
+    ui.label(RichText::new(tr("The left button stays for selecting; in 2D the orbit gesture pans too.")).weak().small());
     section(ui, "Speed");
     row(ui, "Orbit speed", |ui| w::add(ui, "Orbit speed", egui::Slider::new(&mut n.orbit_speed, 0.1..=4.0)));
     row(ui, "Pan speed", |ui| w::add(ui, "Pan speed", egui::Slider::new(&mut n.pan_speed, 0.1..=4.0)));
@@ -251,13 +270,13 @@ fn navigation(app: &mut CadApp, ui: &mut egui::Ui) {
 fn controls(app: &mut CadApp, ui: &mut egui::Ui) {
     preset_combo(app, ui);
     ui.horizontal(|ui| {
-        ui.label("Filter");
-        w::add(ui, "Filter shortcuts", egui::TextEdit::singleline(&mut app.controls_filter).desired_width(180.0).hint_text("action or key"));
-        if w::add_enabled(ui, !app.settings.controls.overrides.is_empty(), "Reset all shortcuts", Button::new("Reset all shortcuts")).clicked() {
+        ui.label(tr("Filter"));
+        w::add(ui, "Filter shortcuts", egui::TextEdit::singleline(&mut app.controls_filter).desired_width(180.0).hint_text(tr("action or key")));
+        if w::add_enabled(ui, !app.settings.controls.overrides.is_empty(), "Reset all shortcuts", Button::new(tr("Reset all shortcuts"))).clicked() {
             app.settings.controls.overrides.clear();
         }
     });
-    ui.label(RichText::new("Click a key to change it, then press the new key (Esc cancels). + adds another key.").weak().small());
+    ui.label(RichText::new(tr("Click a key to change it, then press the new key (Esc cancels). + adds another key.")).weak().small());
     let filter = app.controls_filter.to_lowercase();
     // Resolved once per frame: conflicts are looked up here instead of re-resolving every action per key.
     let all = app.settings.controls.all();
@@ -281,7 +300,7 @@ fn controls(app: &mut CadApp, ui: &mut egui::Ui) {
         "Hold Ctrl to snap: grid steps, 15 degrees, or 0.1 scale steps",
         "Enter or left click confirms; Esc or right click cancels",
     ] {
-        ui.label(RichText::new(line).small());
+        ui.label(RichText::new(tr(line)).small());
     }
 }
 
@@ -294,9 +313,9 @@ fn action_row(app: &mut CadApp, ui: &mut egui::Ui, a: Action, chords: &[Chord], 
             let waiting = app.rebind == Some((a, Some(i)));
             let clash = others(*c);
             let conflict = !clash.is_empty();
-            let text = if waiting { "Press a key...".to_string() } else if conflict { format!("⚠ {c}") } else { c.to_string() };
+            let text = if waiting { tr("Press a key...").to_string() } else if conflict { format!("⚠ {c}") } else { c.to_string() };
             let r = w::add(ui, &format!("{label}: key {i}"), Button::new(text).selected(waiting).min_size(egui::vec2(70.0, 0.0)));
-            let r = if conflict { r.on_hover_text(format!("Also bound to: {}", clash.join(", "))) } else { r };
+            let r = if conflict { r.on_hover_text(format!("{} {}", tr("Also bound to:"), clash.iter().map(|l| tr(l)).collect::<Vec<_>>().join(", "))) } else { r };
             if r.clicked() {
                 app.rebind = Some((a, Some(i)));
             }
@@ -307,13 +326,13 @@ fn action_row(app: &mut CadApp, ui: &mut egui::Ui, a: Action, chords: &[Chord], 
             }
         }
         let waiting = app.rebind == Some((a, None));
-        if w::add(ui, &format!("{label}: add key"), Button::new(if waiting { "Press a key..." } else { "+" }).selected(waiting)).on_hover_text("Add a key").clicked() {
+        if w::add(ui, &format!("{label}: add key"), Button::new(if waiting { tr("Press a key...") } else { "+" }).selected(waiting)).on_hover_text(tr("Add a key")).clicked() {
             app.rebind = Some((a, None));
         }
-        if !chords.is_empty() && w::add(ui, &format!("{label}: clear"), Button::new("×")).on_hover_text("Unbind (right-click a key removes just that one)").clicked() {
+        if !chords.is_empty() && w::add(ui, &format!("{label}: clear"), Button::new("×")).on_hover_text(tr("Unbind (right-click a key removes just that one)")).clicked() {
             app.settings.controls.set(a, &[]);
         }
-        if app.settings.controls.overrides.contains_key(&a) && w::add(ui, &format!("{label}: reset"), Button::new("↺")).on_hover_text("Back to the preset's keys").clicked() {
+        if app.settings.controls.overrides.contains_key(&a) && w::add(ui, &format!("{label}: reset"), Button::new("↺")).on_hover_text(tr("Back to the preset's keys")).clicked() {
             app.settings.controls.overrides.remove(&a);
         }
     });

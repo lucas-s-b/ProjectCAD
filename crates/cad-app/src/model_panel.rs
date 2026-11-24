@@ -6,10 +6,10 @@ use cad_geometry::DVec3;
 use eframe::egui::{self, Color32, RichText, TextEdit};
 
 pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
-    ui.heading("Parameters");
+    ui.heading(crate::i18n::tr("Parameters"));
     params(app, ui);
     ui.separator();
-    ui.heading("Features");
+    ui.heading(crate::i18n::tr("Features"));
     model_features::show(app, ui);
     ui.separator();
     body(app, ui);
@@ -104,16 +104,16 @@ pub fn totals(r: &RebuildResult) -> Option<Totals> {
 fn body(app: &CadApp, ui: &mut egui::Ui) {
     let has_features = !app.doc.features().is_empty();
     if app.rebuilding() {
-        ui.label("Rebuilding...");
+        ui.label(crate::i18n::tr("Rebuilding..."));
     }
     let Some(r) = app.model_result() else { return };
     let Some(t) = totals(r) else {
         if has_features {
-            ui.label("No body");
+            ui.label(crate::i18n::tr("No body"));
         }
         return;
     };
-    ui.heading("Body");
+    ui.heading(crate::i18n::tr("Body"));
     let c = t.centroid;
     ui.label(format!("Volume \u{2248} {:.3} mm\u{b3}", t.volume));
     ui.label(format!("Area \u{2248} {:.3} mm\u{b2}", t.area));

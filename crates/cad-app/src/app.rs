@@ -386,6 +386,10 @@ pub struct CadApp {
     pub settings_path: Option<std::path::PathBuf>,
     /// The theme and accent the egui visuals were last set from.
     pub theme_applied: Option<crate::settings::Applied>,
+    /// The language `i18n` and the fonts were last set to.
+    pub lang_applied: Option<crate::i18n::Language>,
+    /// The tutorial window's current step while it is open (`tutorial.rs`).
+    pub tutorial: Option<usize>,
     /// Bumped by "Reset layout" so egui forgets the slots' dragged sizes (part of the panel ids).
     pub layout_gen: u32,
     /// The plugins folder (`plugins` beside the settings file); None without a settings file.
@@ -435,6 +439,8 @@ impl CadApp {
         };
         let plugins_dir = crate::plugins::dir(settings_path.as_deref());
         let (plugins, plugin_errors) = plugins_dir.as_deref().map(crate::plugins::scan).unwrap_or_default();
+        // Not in MCP mode: scripts start from the default settings and expect no window over the views.
+        let tutorial = (!mcp && !settings.tutorial_done).then_some(0);
         Self {
             doc: Document::new("Untitled"),
             history: History::default(),
@@ -577,6 +583,8 @@ impl CadApp {
             settings,
             settings_path,
             theme_applied: None,
+            lang_applied: None,
+            tutorial,
             layout_gen: 0,
             plugins_dir,
             plugins,
@@ -927,6 +935,7 @@ impl eframe::App for CadApp {
         }
         panels::confirm_dialog(self, &ctx);
         crate::settings_window::show(self, &ctx);
+        crate::tutorial::show(self, &ctx);
         crate::palette::show(self, &ctx);
         panels::update_title(self, &ctx);
         egui::CentralPanel::default().show(ui, |ui| match self.view {

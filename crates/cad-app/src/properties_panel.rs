@@ -56,7 +56,7 @@ fn layer_combo(app: &mut CadApp, ui: &mut egui::Ui) {
 fn transform_group(app: &mut CadApp, ui: &mut egui::Ui) {
     let Some(pivot) = app.selection_center() else { return };
     ui.group(|ui| {
-        ui.label("Transform");
+        ui.label(crate::i18n::tr("Transform"));
         ui.horizontal(|ui| {
             w::add(ui, "Rotate angle", egui::DragValue::new(&mut app.rot_deg).speed(0.5));
             if w::button(ui, "Rotate").clicked() {
@@ -87,30 +87,30 @@ fn array_group(app: &mut CadApp, ui: &mut egui::Ui) {
     let header = egui::CollapsingHeader::new("Array").show(ui, |ui| {
         let mut p = app.array;
         ui.horizontal(|ui| {
-            ui.label("nx");
+            ui.label(crate::i18n::tr("nx"));
             w::add(ui, "nx", egui::DragValue::new(&mut p.nx).range(1..=100));
-            ui.label("ny");
+            ui.label(crate::i18n::tr("ny"));
             w::add(ui, "ny", egui::DragValue::new(&mut p.ny).range(1..=100));
         });
         ui.horizontal(|ui| {
-            ui.label("dx");
+            ui.label(crate::i18n::tr("dx"));
             w::add(ui, "dx", egui::DragValue::new(&mut p.dx).speed(0.1));
-            ui.label("dy");
+            ui.label(crate::i18n::tr("dy"));
             w::add(ui, "dy", egui::DragValue::new(&mut p.dy).speed(0.1));
         });
         if w::button(ui, "Rectangular").clicked() {
             app.array_rect(p.nx, p.ny, p.dx, p.dy);
         }
         ui.horizontal(|ui| {
-            ui.label("count");
+            ui.label(crate::i18n::tr("count"));
             w::add(ui, "count", egui::DragValue::new(&mut p.count).range(2..=360));
-            ui.label("angle");
+            ui.label(crate::i18n::tr("angle"));
             w::add(ui, "angle", egui::DragValue::new(&mut p.angle_deg).speed(0.5));
         });
         ui.horizontal(|ui| {
-            ui.label("cx");
+            ui.label(crate::i18n::tr("cx"));
             w::add(ui, "cx", egui::DragValue::new(&mut p.center.x).speed(0.1));
-            ui.label("cy");
+            ui.label(crate::i18n::tr("cy"));
             w::add(ui, "cy", egui::DragValue::new(&mut p.center.y).speed(0.1));
         });
         if w::button(ui, "Polar").clicked() {

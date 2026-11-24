@@ -6,11 +6,11 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-cad-arch = { version = "0.2.0", path = "../cad-arch" }
-cad-document = { version = "0.2.0", path = "../cad-document" }
-cad-import-export = { version = "0.2.0", path = "../cad-import-export" }
-cad-geometry = { version = "0.2.0", path = "../cad-geometry" }
-cad-renderer = { version = "0.2.0", path = "../cad-renderer" }
+cad-arch = { version = "0.3.0", path = "../cad-arch" }
+cad-document = { version = "0.3.0", path = "../cad-document" }
+cad-import-export = { version = "0.3.0", path = "../cad-import-export" }
+cad-geometry = { version = "0.3.0", path = "../cad-geometry" }
+cad-renderer = { version = "0.3.0", path = "../cad-renderer" }
 eframe = { version = "0.37.0", default-features = false, features = ["wgpu", "default_fonts", "x11", "wayland"] }
 glam = "0.34.3"
 png = "0.18.1"

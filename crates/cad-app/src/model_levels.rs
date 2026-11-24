@@ -7,7 +7,7 @@ use eframe::egui::{self, TextEdit};
 
 pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     ui.separator();
-    ui.heading("Levels");
+    ui.heading(crate::i18n::tr("Levels"));
     let rows: Vec<(SketchId, String, String)> = app
         .doc
         .sketches()
@@ -26,17 +26,17 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     }
     // Wrapped: three labelled buttons in one row are wider than the panel.
     ui.horizontal_wrapped(|ui| {
-        ui.label("Show");
+        ui.label(crate::i18n::tr("Show"));
         for (v, label) in [(LevelView::Active, "Active level"), (LevelView::Below, "Level below"), (LevelView::All, "All levels")] {
             w::selectable_value(ui, &mut app.level_view, v, label);
         }
     });
     ui.horizontal(|ui| {
-        ui.label("Elevation");
+        ui.label(crate::i18n::tr("Elevation"));
         w::add(ui, "Level elevation", TextEdit::singleline(&mut app.level_elevation).desired_width(70.0));
     });
     ui.horizontal(|ui| {
-        ui.label("Height");
+        ui.label(crate::i18n::tr("Height"));
         w::add(ui, "Level height", TextEdit::singleline(&mut app.level_height).desired_width(70.0));
     });
     let plane = PlaneDef::Principal { base: BasePlane::XY, offset: app.level_elevation.clone() };
@@ -76,7 +76,7 @@ fn rooms(app: &mut CadApp, ui: &mut egui::Ui) {
         return;
     }
     ui.separator();
-    ui.heading("Rooms");
+    ui.heading(crate::i18n::tr("Rooms"));
     for (id, room) in rows {
         let area = app.model.as_ref().and_then(|(_, m)| m.rooms.iter().find(|g| g.0 == id)).map(|g| g.1.area);
         ui.horizontal(|ui| {

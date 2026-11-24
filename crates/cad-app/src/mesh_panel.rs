@@ -18,13 +18,13 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
         return;
     }
     ui.separator();
-    ui.heading("Analysis mesh");
+    ui.heading(crate::i18n::tr("Analysis mesh"));
     if !labels.iter().any(|(id, _)| *id == app.mesh_body) {
         app.mesh_body = app.face_sel.map(|(b, _)| b).filter(|b| labels.iter().any(|(id, _)| id == b)).unwrap_or(labels[labels.len() - 1].0);
     }
     let current = labels.iter().find(|(id, _)| *id == app.mesh_body).map_or_else(String::new, |(_, t)| t.clone());
     ui.horizontal_wrapped(|ui| {
-        ui.label("Body");
+        ui.label(crate::i18n::tr("Body"));
         w::combo(ui, "Mesh body", egui::ComboBox::from_id_salt("mesh_body").selected_text(current).width(140.0), |ui| {
             for (id, text) in &labels {
                 w::selectable_value(ui, &mut app.mesh_body, *id, text);
@@ -34,7 +34,7 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     // The mesher reads the last rebuild, so it waits until that matches the document.
     let (ready, mut run) = (app.model_current(), false);
     ui.horizontal_wrapped(|ui| {
-        ui.label("Element size");
+        ui.label(crate::i18n::tr("Element size"));
         w::add(ui, "Element size", TextEdit::singleline(&mut app.mesh_size).desired_width(70.0));
         run = w::add_enabled(ui, ready, "Mesh for analysis", egui::Button::new("Mesh for analysis")).clicked();
     });

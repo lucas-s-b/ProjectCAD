@@ -6,7 +6,7 @@ use eframe::egui::{self, TextEdit};
 pub fn controls(app: &mut CadApp, ui: &mut egui::Ui, has_body: bool) {
     ui.add_enabled_ui(has_body, |ui| {
         ui.horizontal(|ui| {
-            ui.label("Thickness");
+            ui.label(crate::i18n::tr("Thickness"));
             w::add(ui, "Thickness", TextEdit::singleline(&mut app.shell_thickness).desired_width(80.0));
         });
         if w::button(ui, "Shell face").clicked() {
@@ -16,7 +16,7 @@ pub fn controls(app: &mut CadApp, ui: &mut egui::Ui, has_body: bool) {
             app.status = "Click the planar face to open".into();
         }
         ui.horizontal(|ui| {
-            ui.label("Draft angle");
+            ui.label(crate::i18n::tr("Draft angle"));
             w::add(ui, "Draft angle", TextEdit::singleline(&mut app.draft_angle).desired_width(80.0));
         });
         if w::button(ui, "Draft faces").clicked() {

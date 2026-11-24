@@ -41,7 +41,7 @@ pub fn pick(app: &mut CadApp, origin: DVec3, dir: DVec3) -> Option<(ComponentId,
 }
 
 pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
-    ui.heading("Components");
+    ui.heading(crate::i18n::tr("Components"));
     add_controls(app, ui);
     list(app, ui);
     editor(app, ui);
@@ -51,7 +51,7 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     crate::assembly_check::show(app, ui);
     crate::mass_panel::assembly(app, ui);
     ui.separator();
-    ui.heading("Bill of materials");
+    ui.heading(crate::i18n::tr("Bill of materials"));
     bom(app, ui);
 }
 
@@ -130,7 +130,7 @@ fn editor(app: &mut CadApp, ui: &mut egui::Ui) {
     let jointed = app.doc.parent_joint(id).map(|j| j.id);
     let Some(buffer) = app.component_edit.as_mut() else { return };
     ui.separator();
-    ui.label("Selected component");
+    ui.label(crate::i18n::tr("Selected component"));
     if let Some(j) = jointed {
         ui.small(format!("Placed by joint {j}: position and rotation are ignored"));
     }
@@ -185,7 +185,7 @@ fn bom(app: &CadApp, ui: &mut egui::Ui) {
     let Some(r) = app.model_result() else { return };
     let rows = app.doc.bom(r);
     if rows.is_empty() {
-        ui.label("No components");
+        ui.label(crate::i18n::tr("No components"));
         return;
     }
     for row in rows {

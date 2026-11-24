@@ -23,7 +23,7 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
         app.constraint_edit = None;
         return;
     }
-    ui.heading("Constraints");
+    ui.heading(crate::i18n::tr("Constraints"));
     constrain_buttons(app, ui, options);
     if !any {
         app.constraint_edit = None;

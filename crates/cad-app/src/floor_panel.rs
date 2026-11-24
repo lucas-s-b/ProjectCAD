@@ -36,9 +36,9 @@ fn make(app: &mut CadApp, id: EntityId, is_room: bool, shape: Shape) {
 pub fn floor_group(app: &mut CadApp, ui: &mut egui::Ui) {
     let Some((id, is_room, outline)) = source(app) else { return };
     ui.group(|ui| {
-        ui.label("Floor");
+        ui.label(crate::i18n::tr("Floor"));
         ui.horizontal(|ui| {
-            ui.label("Thickness");
+            ui.label(crate::i18n::tr("Thickness"));
             w::add(ui, "Floor thickness", egui::DragValue::new(&mut app.floor_thickness).speed(1.0).range(1.0..=f64::MAX));
         });
         if w::button(ui, "Make floor").clicked() {
@@ -53,20 +53,20 @@ pub fn floor_group(app: &mut CadApp, ui: &mut egui::Ui) {
 pub fn roof_group(app: &mut CadApp, ui: &mut egui::Ui) {
     let Some((id, is_room, outline)) = source(app) else { return };
     ui.group(|ui| {
-        ui.label("Roof");
+        ui.label(crate::i18n::tr("Roof"));
         ui.horizontal(|ui| {
             for k in [RoofKind::Flat, RoofKind::Shed, RoofKind::Gable, RoofKind::Hip] {
                 w::selectable_value(ui, &mut app.roof.kind, k, &format!("{k:?}"));
             }
         });
         ui.horizontal(|ui| {
-            ui.label("Pitch");
+            ui.label(crate::i18n::tr("Pitch"));
             w::add(ui, "Roof pitch", egui::DragValue::new(&mut app.roof.pitch).speed(1.0).range(1.0..=75.0).suffix("°"));
         });
         ui.horizontal(|ui| {
-            ui.label("Thickness");
+            ui.label(crate::i18n::tr("Thickness"));
             w::add(ui, "Roof thickness", egui::DragValue::new(&mut app.roof.thickness).speed(1.0).range(1.0..=f64::MAX));
-            ui.label("Overhang");
+            ui.label(crate::i18n::tr("Overhang"));
             w::add(ui, "Roof overhang", egui::DragValue::new(&mut app.roof.overhang).speed(1.0).range(0.0..=f64::MAX));
         });
         if w::button(ui, "Make roof").clicked() {

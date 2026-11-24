@@ -8,11 +8,11 @@ use eframe::egui::{self, Color32, RichText, TextEdit};
 
 pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     ui.separator();
-    ui.heading("Interference");
+    ui.heading(crate::i18n::tr("Interference"));
     // The check reads the last rebuild, so it waits until that matches the document.
     let (current, mut run) = (app.model_current(), false);
     ui.horizontal_wrapped(|ui| {
-        ui.label("Clearance limit");
+        ui.label(crate::i18n::tr("Clearance limit"));
         w::add(ui, "Clearance limit", TextEdit::singleline(&mut app.check_limit).desired_width(70.0));
         run = w::add_enabled(ui, current && app.jobs.running().is_none(), "Check", egui::Button::new("Check")).clicked();
     });
@@ -59,7 +59,7 @@ fn rows(app: &CadApp, ui: &mut egui::Ui) {
         return;
     };
     if c.meetings.is_empty() && c.clearances.is_empty() {
-        ui.label("No interference, contact or clearance within the limit");
+        ui.label(crate::i18n::tr("No interference, contact or clearance within the limit"));
     }
     let s = app.doc.settings();
     for m in &c.meetings {

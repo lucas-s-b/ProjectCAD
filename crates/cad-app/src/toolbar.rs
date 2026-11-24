@@ -75,20 +75,20 @@ pub fn toolbar(app: &mut CadApp, ui: &mut egui::Ui) {
             match app.tool {
                 Tool::Text => {
                     w::add(ui, "Text input", egui::TextEdit::singleline(&mut app.text_input).desired_width(90.0));
-                    ui.label("Height");
+                    ui.label(crate::i18n::tr("Height"));
                     w::add(ui, "Height", egui::DragValue::new(&mut app.text_height).speed(0.1).range(0.0..=f64::MAX));
                 }
                 Tool::Polygon => {
-                    ui.label("Sides");
+                    ui.label(crate::i18n::tr("Sides"));
                     w::add(ui, "Sides", egui::DragValue::new(&mut app.polygon_sides).range(3..=64));
                 }
                 Tool::Leader => {
                     w::add(ui, "Text input", egui::TextEdit::singleline(&mut app.text_input).desired_width(90.0));
-                    ui.label("Text height");
+                    ui.label(crate::i18n::tr("Text height"));
                     w::add(ui, "Text height", egui::DragValue::new(&mut app.dim_text_height).speed(0.1).range(0.0..=f64::MAX));
                 }
                 Tool::Wall => {
-                    ui.label("Thickness");
+                    ui.label(crate::i18n::tr("Thickness"));
                     w::add(ui, "Wall thickness", egui::DragValue::new(&mut app.wall_thickness).speed(1.0).range(1.0..=f64::MAX));
                     let align = app.wall_align;
                     w::combo(ui, "Wall align", egui::ComboBox::from_id_salt("wall_align").selected_text(format!("{align:?}")).width(80.0), |ui| {
@@ -98,33 +98,33 @@ pub fn toolbar(app: &mut CadApp, ui: &mut egui::Ui) {
                     });
                 }
                 Tool::Stair => {
-                    ui.label("Width");
+                    ui.label(crate::i18n::tr("Width"));
                     w::add(ui, "Stair width", egui::DragValue::new(&mut app.stair_width).speed(1.0).range(1.0..=f64::MAX));
-                    ui.label("Max riser");
+                    ui.label(crate::i18n::tr("Max riser"));
                     w::add(ui, "Max riser", egui::DragValue::new(&mut app.stair_max_riser).speed(1.0).range(1.0..=f64::MAX));
-                    ui.label("Tread");
+                    ui.label(crate::i18n::tr("Tread"));
                     w::add(ui, "Tread", egui::DragValue::new(&mut app.stair_tread).speed(1.0).range(1.0..=f64::MAX));
                 }
                 Tool::Door | Tool::Window => {
                     let o = if app.tool == Tool::Door { &mut app.door } else { &mut app.window };
-                    ui.label("Width");
+                    ui.label(crate::i18n::tr("Width"));
                     w::add(ui, "Opening width", egui::DragValue::new(&mut o.width).speed(1.0).range(1.0..=f64::MAX));
-                    ui.label("Height");
+                    ui.label(crate::i18n::tr("Height"));
                     w::add(ui, "Opening height", egui::DragValue::new(&mut o.height).speed(1.0).range(1.0..=f64::MAX));
-                    ui.label("Sill");
+                    ui.label(crate::i18n::tr("Sill"));
                     w::add(ui, "Opening sill", egui::DragValue::new(&mut o.sill).speed(1.0).range(0.0..=f64::MAX));
                 }
                 Tool::RadiusDim => {
                     w::checkbox(ui, &mut app.radial_diameter, "Diameter");
                 }
                 Tool::Dimension => {
-                    ui.label("Text height");
+                    ui.label(crate::i18n::tr("Text height"));
                     w::add(ui, "Text height", egui::DragValue::new(&mut app.dim_text_height).speed(0.1).range(0.0..=f64::MAX));
                 }
                 _ => {}
             }
             if let Some(v) = value {
-                ui.label(label);
+                ui.label(crate::i18n::tr(label));
                 w::add(ui, label, egui::DragValue::new(v).speed(0.1).range(0.0..=f64::MAX));
             }
             ui.separator();

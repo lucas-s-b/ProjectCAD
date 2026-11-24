@@ -13,7 +13,7 @@ fn describe(plane: &PlaneDef) -> String {
 
 pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     ui.separator();
-    ui.heading("Sketches");
+    ui.heading(crate::i18n::tr("Sketches"));
     let rows: Vec<(SketchId, String, String, Option<String>)> = app
         .doc
         .sketches()

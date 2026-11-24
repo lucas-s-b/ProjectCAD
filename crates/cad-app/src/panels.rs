@@ -1,5 +1,6 @@
 use crate::app::{CadApp, Pending, SideTab, ViewMode};
 use crate::settings::{ACCENTS, Dock, Layout, Theme};
+use crate::i18n::tr;
 use crate::widgets as w;
 use crate::{constraints_panel, layers_panel, model_panel, properties_panel};
 use cad_document::{Command, EntityId, Units};
@@ -197,7 +198,7 @@ fn action_item(app: &mut CadApp, ui: &mut egui::Ui, ctx: &egui::Context, enabled
 }
 
 fn menu_item(ui: &mut egui::Ui, enabled: bool, label: &str, shortcut: &str) -> bool {
-    let clicked = w::add_enabled(ui, enabled, label, Button::new(label).shortcut_text(shortcut)).clicked();
+    let clicked = w::add_enabled(ui, enabled, label, Button::new(tr(label)).shortcut_text(shortcut)).clicked();
     if clicked {
         ui.close();
     }
@@ -213,7 +214,7 @@ pub fn menu_bar(app: &mut CadApp, ui: &mut egui::Ui) {
                 action_item(app, ui, &ctx, true, "Open...", Action::Open);
                 w::menu_button(ui, "Open recent", |ui| {
                     if app.settings.recent.is_empty() {
-                        ui.label("No recent projects");
+                        ui.label(tr("No recent projects"));
                     }
                     for (i, p) in app.settings.recent.clone().iter().enumerate() {
                         let name = std::path::Path::new(p).file_name().map_or(p.clone(), |n| n.to_string_lossy().into_owned());
@@ -321,7 +322,8 @@ pub fn menu_bar(app: &mut CadApp, ui: &mut egui::Ui) {
                     }
                 }
                 for (name, rgb) in ACCENTS {
-                    if w::selectable(ui, app.settings.accent == rgb, &format!("Accent: {name}")).clicked() {
+                    let text = format!("{}: {}", tr("Accent"), tr(name));
+                    if w::add(ui, &format!("Accent: {name}"), Button::selectable(app.settings.accent == rgb, text)).clicked() {
                         app.settings.accent = rgb;
                         ui.close();
                     }
@@ -329,10 +331,10 @@ pub fn menu_bar(app: &mut CadApp, ui: &mut egui::Ui) {
                 ui.separator();
                 for tab in SideTab::ALL {
                     ui.horizontal(|ui| {
-                        ui.label(tab.name());
+                        ui.label(tr(tab.name()));
                         for slot in [Dock::Left, Dock::Right, Dock::Bottom] {
                             let on = app.settings.layout.docks[tab.index()] == slot;
-                            if w::add(ui, &format!("{}: {}", tab.name(), slot.name()), Button::selectable(on, slot.name())).clicked() {
+                            if w::add(ui, &format!("{}: {}", tab.name(), slot.name()), Button::selectable(on, tr(slot.name()))).clicked() {
                                 app.settings.layout.docks[tab.index()] = slot;
                                 app.settings.layout.shown[slot.index()] = true;
                                 ui.close();
@@ -351,6 +353,9 @@ pub fn menu_bar(app: &mut CadApp, ui: &mut egui::Ui) {
                 }
             });
             w::menu_button(ui, "Help", |ui| {
+                if menu_item(ui, true, "Tutorial", "") {
+                    app.tutorial = Some(0);
+                }
                 if menu_item(ui, true, "Keyboard shortcuts", "") {
                     app.settings_open = true;
                     app.settings_page = crate::settings_window::Page::Controls;
@@ -382,7 +387,7 @@ pub fn menu_bar(app: &mut CadApp, ui: &mut egui::Ui) {
                 }
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if w::add(ui, "Open settings", Button::selectable(app.settings_open, "Settings")).clicked() {
+                if w::add(ui, "Open settings", Button::selectable(app.settings_open, tr("Settings"))).clicked() {
                     app.settings_open = !app.settings_open;
                 }
                 ui.separator();
@@ -437,7 +442,7 @@ fn tab_contents(app: &mut CadApp, ui: &mut egui::Ui, tab: SideTab, ctx: &egui::C
         egui::ScrollArea::vertical().id_salt("assembly_side").show(ui, |ui| crate::assembly_panel::show(app, ui));
         return;
     }
-    ui.heading("Objects");
+    ui.heading(tr("Objects"));
     let items: Vec<(EntityId, String, bool)> =
         app.doc.entities_in(app.sketch).map(|e| (e.id, e.name.clone(), app.pickable(e))).collect();
     egui::ScrollArea::vertical().id_salt("objects").max_height(ui.available_height() / 2.0).show(ui, |ui| {
@@ -453,7 +458,7 @@ fn tab_contents(app: &mut CadApp, ui: &mut egui::Ui, tab: SideTab, ctx: &egui::C
     egui::ScrollArea::vertical().id_salt("side_rest").show(ui, |ui| {
         layers_panel::layers_section(app, ui);
         ui.separator();
-        ui.heading("Properties");
+        ui.heading(tr("Properties"));
         properties_panel::properties(app, ui, ctx);
         ui.separator();
         constraints_panel::show(app, ui);
@@ -464,13 +469,13 @@ fn units_row(app: &mut CadApp, ui: &mut egui::Ui) {
     let mut s = *app.doc.settings();
     let (old_units, old_precision) = (s.units, s.precision);
     ui.horizontal(|ui| {
-        ui.label("Units");
+        ui.label(tr("Units"));
         w::combo(ui, "Units", egui::ComboBox::from_id_salt("units").selected_text(s.units.suffix()).width(50.0), |ui| {
             for u in Units::ALL {
                 w::selectable_value(ui, &mut s.units, u, u.suffix());
             }
         });
-        ui.label("Decimals");
+        ui.label(tr("Decimals"));
         w::add(ui, "Decimals", egui::DragValue::new(&mut s.precision).range(0..=8));
     });
     if s.units != old_units {
@@ -486,7 +491,7 @@ pub fn status_bar(app: &mut CadApp, ui: &mut egui::Ui) {
             crate::coord_input::show(app, ui);
             if let Some((kind, secs)) = app.jobs.running() {
                 ui.spinner();
-                ui.label(format!("Running {}: {secs:.1} s", kind.name()));
+                ui.label(format!("{} {}: {secs:.1} s", tr("Running"), kind.name()));
                 if w::button(ui, "Cancel job").clicked() {
                     app.jobs.cancel();
                     app.status = format!("Cancelled the {}", kind.name());
@@ -495,7 +500,7 @@ pub fn status_bar(app: &mut CadApp, ui: &mut egui::Ui) {
                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
                 ui.separator();
             }
-            ui.label(if app.status.is_empty() && app.rebuilding() { "Rebuilding..." } else { &app.status });
+            ui.label(if app.status.is_empty() && app.rebuilding() { tr("Rebuilding...") } else { &app.status });
             ui.separator();
             let (s, c) = (app.doc.settings(), app.cursor_world);
             ui.label(format!("X {}  Y {} {}", s.format_length(c.x), s.format_length(c.y), s.units.suffix()));
@@ -505,11 +510,11 @@ pub fn status_bar(app: &mut CadApp, ui: &mut egui::Ui) {
                 ui.separator();
             }
             if app.view == ViewMode::ThreeD && app.cam3d.ortho {
-                ui.label("Ortho");
+                ui.label(tr("Ortho"));
                 ui.separator();
             }
-            ui.label(format!("Entities: {}", app.doc.len()));
-            ui.label(format!("Selected: {}", app.selection.len()));
+            ui.label(format!("{} {}", tr("Entities:"), app.doc.len()));
+            ui.label(format!("{} {}", tr("Selected:"), app.selection.len()));
             ui.separator();
             ui.label(format!("{}{}", app.doc.name, if app.is_dirty() { "*" } else { "" }));
         });
@@ -529,12 +534,13 @@ pub fn update_title(app: &mut CadApp, ctx: &egui::Context) {
 pub fn confirm_dialog(app: &mut CadApp, ctx: &egui::Context) {
     let Some(pending) = app.confirm else { return };
     let mut choice = None;
-    egui::Window::new("Unsaved changes")
+    egui::Window::new(tr("Unsaved changes"))
+        .id(egui::Id::unique("unsaved_changes"))
         .collapsible(false)
         .resizable(false)
         .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
         .show(ctx, |ui| {
-            ui.label("The project has unsaved changes.");
+            ui.label(tr("The project has unsaved changes."));
             ui.horizontal(|ui| {
                 for (label, c) in [("Save", 0), ("Discard", 1), ("Cancel", 2)] {
                     if w::button(ui, label).clicked() {

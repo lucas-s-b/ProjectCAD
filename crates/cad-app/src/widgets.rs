@@ -1,4 +1,6 @@
-//! Registry of named widgets, so the MCP mode can click a widget by name instead of by pixel.
+//! Registry of named widgets, so the MCP mode can click a widget by name instead of by pixel. The labelled helpers
+//! draw the label in the current language (`i18n::tr`) and register it under its English text.
+use crate::i18n::tr;
 use eframe::egui;
 
 #[derive(Clone, Debug)]
@@ -50,12 +52,12 @@ pub fn add_enabled(ui: &mut egui::Ui, enabled: bool, name: &str, widget: impl eg
 }
 
 pub fn button(ui: &mut egui::Ui, label: &str) -> egui::Response {
-    let r = ui.button(label);
+    let r = ui.button(tr(label));
     tag(ui, label, r)
 }
 
 pub fn selectable(ui: &mut egui::Ui, selected: bool, label: &str) -> egui::Response {
-    let r = ui.selectable_label(selected, label);
+    let r = ui.selectable_label(selected, tr(label));
     tag(ui, label, r)
 }
 
@@ -70,7 +72,7 @@ pub fn selectable_value<T: PartialEq>(ui: &mut egui::Ui, current: &mut T, value:
 }
 
 pub fn checkbox(ui: &mut egui::Ui, value: &mut bool, label: &str) -> egui::Response {
-    let r = ui.checkbox(value, label);
+    let r = ui.checkbox(value, tr(label));
     tag(ui, label, r)
 }
 
@@ -85,7 +87,7 @@ pub fn request_scroll(ctx: &egui::Context, name: &str, index: usize) {
 }
 
 pub fn menu_button(ui: &mut egui::Ui, label: &str, contents: impl FnOnce(&mut egui::Ui)) {
-    let r = ui.menu_button(label, contents);
+    let r = ui.menu_button(tr(label), contents);
     tag(ui, label, r.response);
 }
 

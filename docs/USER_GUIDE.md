@@ -221,7 +221,7 @@ More: [PLUGINS.md](PLUGINS.md) (developer guide, the Rust client and the example
 Use this section to change how the app looks and how it is controlled.
 
 1. Open the Settings window: click **Settings** at the right end of the menu bar, choose **File > Settings...**, or press Ctrl+, (Ctrl+Comma). It has four pages:
-   - **General**: snap states at startup, autosave interval (default 5 minutes, 0 turns it off), how many recent files are kept, and the arrow-key nudge distance.
+   - **General**: the language of the menus, panels and dialogs (14 languages; Chinese, Japanese and Korean need a font for that script installed on the system), a button that shows the tutorial again, snap states at startup, autosave interval (default 5 minutes, 0 turns it off), how many recent files are kept, and the arrow-key nudge distance.
    - **Interface**: theme, accent colour (four presets or any colour), UI scale (75 % to 200 %), animations and their duration, smooth camera transitions, hover highlight in 2D, the 2D and 3D grids, the axis triad and a frame-time readout in the status bar.
    - **Navigation**: the control preset, which mouse drag orbits, pans and zooms, the orbit, pan and zoom speeds, inverted wheel zoom, inverted vertical orbit, and fly keys.
    - **Controls**: every keyboard shortcut. Click a key to change it, then press the new key (Esc cancels). **+** adds another key, **×** unbinds the action, right-click removes one key, and **↺** goes back to the preset's keys. A key bound to two actions shows a ⚠ sign. Type in **Filter** to find an action or a key.
@@ -234,11 +234,12 @@ Use this section to change how the app looks and how it is controlled.
 3. Theme and accent are also in the **View** menu. Layout: see [The window](#the-window); **Reset layout** restores the default.
 4. All settings are saved in the settings file (see [Install and run](#install-and-run)) when they change. They are never saved in a project. Autosaves go to the `autosave` folder beside the settings file; they never touch the project file.
 5. **File > Open recent** lists the last opened or saved projects.
+7. Tutorial: at the first start a short tour of the window opens. **Previous** and **Next** move through its steps, **Skip tutorial** closes it for good, and **Help > Tutorial** opens it again. Its first step has the language picker.
 6. Command search: press Ctrl+K. A window opens with a search field. Type part of a name; the best eight matches are listed. Press Enter to run the first match, or click a match. Esc closes the window. The search runs over the named widgets on screen (buttons, fields, tabs), and choosing one clicks that widget.
 
 ![Light theme with command search](images/command-search.png)
 
-Limits: command search finds only what is on screen (no menu items), and ranks by a simple fuzzy match. Fly keys and drag zoom work in the 3D view only.
+Limits: command search finds only what is on screen (no menu items), and ranks by a simple fuzzy match. Translations cover the menus, the toolbar, the panel headings, the Settings window, the dialogs and the tutorial; status messages and some panel fields stay in English. Command search and plugins use the English names. Fly keys and drag zoom work in the 3D view only.
 
 ## Construction lines and parallel snap
 

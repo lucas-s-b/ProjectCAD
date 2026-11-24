@@ -6,7 +6,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-cad-geometry = { version = "0.2.0", path = "../cad-geometry" }
+cad-geometry = { version = "0.3.0", path = "../cad-geometry" }
 faer = { version = "0.22.6", default-features = false, features = ["std", "linalg", "sparse"] }
 nalgebra = "0.35.0"
 serde = { version = "1.0.229", features = ["derive"] }

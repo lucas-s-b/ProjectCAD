@@ -4,7 +4,11 @@ All notable changes to ProjectCAD. The format follows [Keep a Changelog](https:/
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-24
+
 ### Added
+- Interface languages: English, Español, Français, Deutsch, Português, Italiano, Nederlands, Polski, Русский, Українська, Türkçe, 简体中文, 日本語 and 한국어 (Settings > General > Language); Chinese, Japanese and Korean use a font installed on the system
+- A tutorial that opens at the first start, with Previous, Next and Skip; Help > Tutorial and Settings > General open it again
 - Phase 8 batch B: construction lines (XLine) and rays with snapping along their whole length, and a parallel snap with a tracking line; project file format 29
 - Phase 8 batch A: Move, Copy, Rotate..., Scale... and Mirror... tools driven by picked base, reference and target points, and a Stretch tool with a crossing window; all points snap and accept typed coordinates
 - Settings window (File > Settings, Ctrl+Comma, or the Settings button): General, Interface, Navigation and Controls pages
@@ -17,6 +21,7 @@ All notable changes to ProjectCAD. The format follows [Keep a Changelog](https:/
 - File > Open recent, autosave to the settings folder, hover highlight in the 2D view, grid and frame-time toggles
 
 ### Changed
+- On Windows the release build no longer opens a console window beside the app
 - Sharper look: smaller corner radii, short shadows, accent-coloured hover outlines and no grow-on-hover (sizes and spacing unchanged)
 - Menu entries show the shortcut currently bound to them
 - Ctrl+D (duplicate) no longer runs while a text field has the keyboard
@@ -88,5 +93,6 @@ All notable changes to ProjectCAD. The format follows [Keep a Changelog](https:/
 - A first part of Phase 3: parameters with units and expressions, B-Rep kernel, extrude and revolve with booleans, feature history, sketches on planes and faces, fillet, chamfer, sweep, loft, shell, patterns, mirror, and STL and OBJ export
 - MIT license, CI and release workflows
 
+[0.3.0]: https://github.com/lucas-s-b/ProjectCAD/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/lucas-s-b/ProjectCAD/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/lucas-s-b/ProjectCAD/releases/tag/v0.1.0
