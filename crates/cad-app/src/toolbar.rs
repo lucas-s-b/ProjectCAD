@@ -46,6 +46,20 @@ pub fn toolbar(app: &mut CadApp, ui: &mut egui::Ui) {
             ] {
                 w::selectable_value(ui, &mut app.tool, tool, label);
             }
+            ui.separator();
+            for (tool, label) in [
+                (Tool::Move, "Move"),
+                (Tool::Copy, "Copy"),
+                (Tool::RotateRef, "Rotate…"),
+                (Tool::ScaleRef, "Scale…"),
+                (Tool::Mirror, "Mirror…"),
+                (Tool::Stretch, "Stretch"),
+            ] {
+                w::selectable_value(ui, &mut app.tool, tool, label);
+            }
+            if app.tool == Tool::Mirror {
+                w::checkbox(ui, &mut app.mirror_keep, "Keep original");
+            }
             if app.tool != before {
                 app.points.clear();
                 app.op_target = None;

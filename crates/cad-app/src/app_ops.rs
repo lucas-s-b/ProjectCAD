@@ -136,6 +136,24 @@ impl CadApp {
         self.exec(cmds);
     }
 
+    /// Adds a copy of the selection placed by `m` as one undo step; the copies become the selection when `select`.
+    pub fn copy_transformed(&mut self, m: &DAffine2, select: bool) {
+        let src = self.copies();
+        let cmds = match self.copy_commands(&src, |s| s.transformed(m)) {
+            Ok(c) => c,
+            Err(e) => {
+                self.status = e.to_string();
+                return;
+            }
+        };
+        let ids: Vec<EntityId> = cmds.iter().filter_map(|c| if let Command::Add(e) = c { Some(e.id) } else { None }).collect();
+        self.exec(cmds);
+        if select {
+            let made: Vec<EntityId> = ids.into_iter().filter(|id| self.doc.get(*id).is_some()).collect();
+            self.set_selection(made);
+        }
+    }
+
     pub fn duplicate_selection(&mut self) {
         let src = self.copies();
         let cmds = match self.copy_commands(&src, |s| Ok(s.clone())) {

@@ -81,6 +81,12 @@ pub fn run(app: &mut CadApp, ctx: &egui::Context, action: Action) {
         Action::ToolWall => tool(app, Tool::Wall),
         Action::ToolTrim => tool(app, Tool::Trim),
         Action::ToolOffset => tool(app, Tool::Offset),
+        Action::ToolMove => tool(app, Tool::Move),
+        Action::ToolCopy => tool(app, Tool::Copy),
+        Action::ToolRotateRef => tool(app, Tool::RotateRef),
+        Action::ToolScaleRef => tool(app, Tool::ScaleRef),
+        Action::ToolMirror => tool(app, Tool::Mirror),
+        Action::ToolStretch => tool(app, Tool::Stretch),
     }
 }
 
