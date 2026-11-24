@@ -17,6 +17,14 @@ fn string(painter: &egui::Painter, at: egui::Pos2, local: impl Fn(Vec2) -> Vec2,
 /// Draws the strokes, filled arrows and labels of any shape.
 pub fn draw(app: &CadApp, painter: &egui::Painter, rect: egui::Rect, shape: &Shape, stroke: Stroke, dash_px: &[f32]) {
     let to_screen = |p: DVec2| app.cam2d.world_to_screen(rect, p);
+    if let Shape::XLine { point, dir, ray } = shape {
+        // Clipped to the view: the 10 km reach must never reach the painter.
+        let (lo, hi) = (app.cam2d.screen_to_world(rect, rect.left_bottom()), app.cam2d.screen_to_world(rect, rect.right_top()));
+        if let Some((a, b)) = cad_geometry::xline::clip(*point, *dir, *ray, lo, hi) {
+            crate::view2d::stroke_path(painter, vec![to_screen(a), to_screen(b)], stroke, dash_px);
+        }
+        return;
+    }
     for path in strokes(shape) {
         crate::view2d::stroke_path(painter, path.iter().map(|p| to_screen(*p)).collect(), stroke, dash_px);
     }

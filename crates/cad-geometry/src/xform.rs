@@ -121,6 +121,7 @@ impl Shape {
             Shape::Roof(r) => Shape::Roof(Roof { outline: r.outline.iter().map(|p| m.transform_point2(*p)).collect(), ..r.clone() }),
             // Width is kept under scaling, like wall thickness; the run scales, so the tread does.
             Shape::Stair(s) => Shape::Stair(Stair { a: m.transform_point2(s.a), b: m.transform_point2(s.b), ..*s }),
+            Shape::XLine { point, dir, ray } => Shape::XLine { point: m.transform_point2(*point), dir: m.transform_vector2(*dir).normalize(), ray: *ray },
             Shape::Box { .. } | Shape::Cylinder { .. } | Shape::Sphere { .. } => {
                 return Err(GeomError::Unsupported("2D transform of a solid"));
             }

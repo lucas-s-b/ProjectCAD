@@ -136,7 +136,8 @@ fn build_scene(app: &CadApp) -> Scene {
                 _ => (a, b),
             };
             let c = if selected { SELECTED } else { col };
-            if e.construction {
+            // A construction line is 20 km long: dashing it would make millions of dashes.
+            if e.construction && !matches!(shape, cad_geometry::Shape::XLine { .. }) {
                 for [p, q] in dashed(a, b, &mut phase) {
                     line(p, q, c);
                 }

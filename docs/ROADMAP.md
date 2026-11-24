@@ -315,8 +315,8 @@ Done (batch F):
 The drafting items deferred by Phase 2, in six batches. Each batch ends unit-tested, checked in the running app through MCP, and as its own pull request.
 
 Plan:
-- Batch A: transforms by picked points (Move, Copy, Rotate, Scale, Mirror) and Stretch
-- Batch B: construction lines (infinite lines and rays) and parallel snap
+- Batch A: transforms by picked points (Move, Copy, Rotate, Scale, Mirror) and Stretch (done)
+- Batch B: construction lines (infinite lines and rays) and parallel snap (done)
 - Batch C: blocks: shared definitions, insert, explode, edit in place, DXF BLOCK / INSERT
 - Batch D: constraints on rectangles and polylines; associative radial and angular dimensions and hatches
 - Batch E: curves: extend and offset for ellipses and splines, exact conic and spline intersections, fillets with arcs, hatch islands, faster ellipse and spline snapping
@@ -334,6 +334,16 @@ Limits of batch A:
 - Move, Copy, Rotate, Scale and Mirror act on the selection made before the tool; Stretch acts on every pickable entity its window crosses (no preselection).
 - Stretch leaves solids, openings, slabs and stairs alone; circles, arcs, ellipses, text and radial or angular dimensions move whole when their centre or insertion point is inside.
 - Scale is uniform; Copy does not copy constraints, dimension links or group membership.
+
+Done (batch B; unit-tested; checked in the running app through MCP):
+- [x] Construction lines: `Shape::XLine` (infinite) and its ray form; XLine and Ray tools (first point, then one line per click through it, until Esc); made as construction entities, drawn dashed and clipped to the view; file format version 29
+- [x] Construction lines take part in object snaps along their whole length (intersections, perpendicular), picking, stretch, the transform tools and the Properties panel (point, angle, ray switch)
+- [x] Parallel snap: while drawing from a point, hovering a straight edge acquires its direction; a cursor within 10 pixels of the parallel through the last point snaps onto it, with a dashed tracking line
+- [x] Shortcuts (ProjectCAD preset): Shift+X construction line, Shift+R ray
+
+Limits of batch B:
+- Construction lines reach 10 km each way (drawing, snapping and intersections); they are not exported (construction geometry never is), and trim, extend, offset and split do not take them yet.
+- The parallel snap follows the last edge hovered; it needs object snap on and yields to any object snap.
 
 ## Beyond the roadmap
 The roadmap ended with Phase 7; Phase 8 takes the 2D drafting items below. Everything below was deferred by a phase ("Phase 7", "later") or ruled out, and is not done. The lines in the phases above stay as they were written; this list is the current state.

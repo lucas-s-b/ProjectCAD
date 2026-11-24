@@ -149,6 +149,8 @@ fn shape(w: &mut W, s: &Shape, layer: &str, doc: &Document) {
         | Shape::Leader { .. }
         | Shape::RadialDim { .. }
         | Shape::AngularDim { .. } => annotation(w, s, layer, doc),
+        // Construction aids, not drawing content (the tools make them construction entities, which are not exported).
+        Shape::XLine { .. } => {}
         Shape::Box { .. } | Shape::Cylinder { .. } | Shape::Sphere { .. } => {}
     }
 }

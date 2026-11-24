@@ -15,6 +15,8 @@ pub fn toolbar(app: &mut CadApp, ui: &mut egui::Ui) {
             for (tool, label) in [
                 (Tool::Select, "Select"),
                 (Tool::Line, "Line"),
+                (Tool::XLine, "XLine"),
+                (Tool::Ray, "Ray"),
                 (Tool::Circle, "Circle"),
                 (Tool::Rect, "Rect"),
                 (Tool::Arc, "Arc"),

@@ -95,7 +95,7 @@ near "$(vol 13 2)" "$W3" "$TOL" || bad "OBJ import volume: $(vol 13 2) vs $W3 ($
 near "$(vol 13 1)" "$W3" "$TOL" || bad "first volume after the OBJ import: $(vol 13 1)"
 [ "$(vol 16 1)" = "$(vol 13 1)" ] && [ "$(vol 16 2)" = "$(vol 13 2)" ] || bad "volumes after save and open: $(bv 16)"
 # saved file
-grep -q '"version": 28' "$SAVED" && grep -q '"Mesh"' "$SAVED" || bad "saved mesh file"
+grep -q '"version": 29' "$SAVED" && grep -q '"Mesh"' "$SAVED" || bad "saved mesh file"
 # an open mesh is refused
 grep '"id":17,' "$OUT" | grep -q 'not closed' || bad "open mesh: $(grep '"id":17,' "$OUT")"
 # IFC

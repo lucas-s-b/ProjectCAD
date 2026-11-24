@@ -116,6 +116,10 @@ pub fn outline_paths(shape: &Shape) -> Vec<Vec<DVec3>> {
     let mut out: Vec<Vec<DVec3>> = Vec::new();
     match shape {
         Shape::Line { a, b } => out.push(vec![a.extend(0.0), b.extend(0.0)]),
+        Shape::XLine { point, dir, ray } => {
+            let (a, b) = Shape::xline_ends(*point, *dir, *ray);
+            out.push(vec![a.extend(0.0), b.extend(0.0)]);
+        }
         Shape::Wall(w) => out.push(ring(&w.corners().map(|p| p.extend(0.0)))),
         Shape::Opening(o) => out.push(ring(&o.corners().map(|p| p.extend(0.0)))),
         Shape::Slab(s) => out.push(ring(&s.outline.iter().map(|p| p.extend(0.0)).collect::<Vec<_>>())),

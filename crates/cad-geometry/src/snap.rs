@@ -12,6 +12,8 @@ pub enum SnapKind {
     Center,
     Perpendicular,
     Tangent,
+    /// On the line from the last point parallel to an acquired straight edge.
+    Parallel,
     Grid,
 }
 
@@ -69,7 +71,7 @@ pub fn snap_points(shape: &Shape) -> Vec<Snap> {
             }
         }
         Shape::Spline { points, .. } => out.extend(points.iter().map(|p| s(*p, SnapKind::Endpoint))),
-        Shape::Text { pos, .. } => out.push(s(*pos, SnapKind::Endpoint)),
+        Shape::Text { pos, .. } | Shape::XLine { point: pos, .. } => out.push(s(*pos, SnapKind::Endpoint)),
         Shape::Dimension { .. } | Shape::Opening(_) | Shape::Room(_) => {}
         Shape::Hatch { boundary: points, .. }
         | Shape::Leader { points, .. }
@@ -94,6 +96,10 @@ enum Prim {
 fn prims(shape: &Shape) -> Vec<Prim> {
     match shape {
         Shape::Line { a, b } => vec![Prim::Seg(*a, *b)],
+        Shape::XLine { point, dir, ray } => {
+            let (a, b) = Shape::xline_ends(*point, *dir, *ray);
+            vec![Prim::Seg(a, b)]
+        }
         Shape::Wall(w) => vec![Prim::Seg(w.a, w.b)],
         Shape::Rect { min, max } => {
             let c = [*min, DVec2::new(max.x, min.y), *max, DVec2::new(min.x, max.y)];
@@ -259,14 +265,7 @@ pub fn object_snap<'a>(
     from: Option<DVec2>,
     shapes: impl IntoIterator<Item = &'a Shape>,
 ) -> Option<Snap> {
-    let near: Vec<&Shape> = shapes
-        .into_iter()
-        .filter(|s| {
-            let (lo, hi) = s.bbox();
-            let r = DVec2::splat(radius);
-            cursor.cmpge(lo.truncate() - r).all() && cursor.cmple(hi.truncate() + r).all()
-        })
-        .collect();
+    let near: Vec<&Shape> = shapes.into_iter().filter(|s| near_cursor(s, cursor, radius)).collect();
     let mut cands: Vec<Snap> = near.iter().flat_map(|s| snap_points(s)).collect();
     if let Some(f) = from {
         cands.extend(near.iter().flat_map(|s| from_points(s, f)));
@@ -284,6 +283,33 @@ pub fn object_snap<'a>(
             if c.0 < best.0 - 1e-9 || ((c.0 - best.0).abs() < 1e-9 && c.1.kind < best.1.kind) { c } else { best }
         })
         .map(|(_, s)| s)
+}
+
+/// Whether `s` can have a snap within `radius` of `cursor`: its box grown by the radius holds the cursor (a
+/// construction line, whose box is only its anchor, is measured directly).
+fn near_cursor(s: &Shape, cursor: DVec2, radius: f64) -> bool {
+    if matches!(s, Shape::XLine { .. }) {
+        return crate::pick::distance_2d(s, cursor) <= radius;
+    }
+    let (lo, hi) = s.bbox();
+    let r = DVec2::splat(radius);
+    cursor.cmpge(lo.truncate() - r).all() && cursor.cmple(hi.truncate() + r).all()
+}
+
+/// Direction of the straight edge nearest to `cursor` within `radius` (lines, construction lines, rectangle and
+/// polyline sides, walls): the edge a parallel snap acquires. None when no straight edge is that near.
+pub fn edge_direction<'a>(cursor: DVec2, radius: f64, shapes: impl IntoIterator<Item = &'a Shape>) -> Option<DVec2> {
+    shapes
+        .into_iter()
+        .filter(|s| near_cursor(s, cursor, radius) && !matches!(s, Shape::Ellipse { .. } | Shape::Spline { .. }))
+        .flat_map(prims)
+        .filter_map(|p| match p {
+            Prim::Seg(a, b) if a.distance(b) > 1e-9 => Some((crate::pick::point_segment_distance(cursor, a, b), (b - a).normalize())),
+            _ => None,
+        })
+        .filter(|(d, _)| *d <= radius)
+        .min_by(|x, y| x.0.total_cmp(&y.0))
+        .map(|(_, dir)| dir)
 }
 
 pub fn grid_snap(cursor: DVec2, step: f64) -> Snap {

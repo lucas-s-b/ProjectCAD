@@ -20,6 +20,10 @@ pub enum HatchPattern {
     Solid,
 }
 
+/// How far a construction line reaches each way for drawing, snapping and intersections, mm (10 km).
+// shortcut: lines are 10 km segments, not truly infinite; geometry farther out misses them
+pub const XLINE_REACH: f64 = 1e7;
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Shape {
     Line { a: DVec2, b: DVec2 },
@@ -54,6 +58,8 @@ pub enum Shape {
     RadialDim { center: DVec2, radius: f64, angle: f64, text_height: f64, diameter: bool },
     /// Angle `sweep` from direction `start`, arc drawn at `radius`.
     AngularDim { center: DVec2, start: f64, sweep: f64, radius: f64, text_height: f64 },
+    /// An infinite construction line through `point` along the unit `dir`; with `ray`, only the half from `point` on.
+    XLine { point: DVec2, dir: DVec2, ray: bool },
     /// A straight wall; only in level sketches (see cad-document).
     Wall(Wall),
     /// A door or window in a wall; only in level sketches, hosted by a wall (see cad-document).
@@ -126,6 +132,7 @@ impl Shape {
                 center.is_finite() && rx.is_finite() && ry.is_finite() && angle.is_finite()
             }
             Shape::Spline { points, .. } => points.iter().all(|p| p.is_finite()),
+            Shape::XLine { point, dir, .. } => point.is_finite() && dir.is_finite(),
             Shape::Hatch { boundary, angle, spacing, .. } => {
                 boundary.iter().all(|p| p.is_finite()) && angle.is_finite() && spacing.is_finite()
             }
@@ -196,6 +203,7 @@ impl Shape {
                 }
                 Ok(())
             }
+            Shape::XLine { dir, .. } if (dir.length() - 1.0).abs() > 1e-6 => Err(GeomError::Degenerate("construction line direction must be a unit vector")),
             Shape::Ellipse { rx, ry, .. } if *rx <= t || *ry <= t => {
                 Err(GeomError::Degenerate("ellipse radii must be positive"))
             }
@@ -293,6 +301,11 @@ impl Shape {
         matches!(self, Shape::Box { .. } | Shape::Cylinder { .. } | Shape::Sphere { .. })
     }
 
+    /// The drawn and intersected extent of a construction line: `XLINE_REACH` each way from its point (a ray: forward only).
+    pub fn xline_ends(point: DVec2, dir: DVec2, ray: bool) -> (DVec2, DVec2) {
+        (if ray { point } else { point - dir * XLINE_REACH }, point + dir * XLINE_REACH)
+    }
+
     pub fn kind(&self) -> &'static str {
         match self {
             Shape::Line { .. } => "Line",
@@ -307,6 +320,8 @@ impl Shape {
             Shape::Dimension { .. } => "Dimension",
             Shape::Ellipse { .. } => "Ellipse",
             Shape::Spline { .. } => "Spline",
+            Shape::XLine { ray: false, .. } => "XLine",
+            Shape::XLine { ray: true, .. } => "Ray",
             Shape::Hatch { .. } => "Hatch",
             Shape::Leader { .. } => "Leader",
             Shape::RadialDim { .. } => "Radial dimension",
@@ -337,7 +352,7 @@ impl Shape {
             | Shape::AngularDim { center, .. } => *center += d2,
             Shape::Hatch { boundary: points, .. } | Shape::Leader { points, .. } => points.iter_mut().for_each(|p| *p += d2),
             Shape::Polyline { points, .. } | Shape::Spline { points, .. } => points.iter_mut().for_each(|p| *p += d2),
-            Shape::Text { pos, .. } => *pos += d2,
+            Shape::Text { pos, .. } | Shape::XLine { point: pos, .. } => *pos += d2,
             Shape::Dimension { a, b, .. } => {
                 *a += d2;
                 *b += d2;
@@ -369,6 +384,8 @@ impl Shape {
 
     pub fn bbox(&self) -> (DVec3, DVec3) {
         match self {
+            // An infinite line has no box; its anchor point keeps fits and extents finite.
+            Shape::XLine { point, .. } => (point.extend(0.0), point.extend(0.0)),
             Shape::Line { a, b } => (a.min(*b).extend(0.0), a.max(*b).extend(0.0)),
             Shape::Circle { center, radius } => {
                 let r = DVec2::splat(*radius);

@@ -192,7 +192,7 @@ fn mesh_feature_survives_save_and_load() {
     let loaded = Document::load(&p).unwrap();
     std::fs::remove_file(&p).ok();
     assert_eq!(loaded.features()[0].kind, f.kind);
-    assert!(text.contains("\"version\": 28"), "{}", &text[..text.len().min(80)]);
+    assert!(text.contains("\"version\": 29"), "{}", &text[..text.len().min(80)]);
 }
 
 #[test]

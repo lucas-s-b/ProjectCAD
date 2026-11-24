@@ -112,17 +112,31 @@ pub fn grid_step(zoom: f64) -> f64 {
 pub fn snapped(app: &mut CadApp, rect: egui::Rect, pos: egui::Pos2, exclude_selection: bool, from: Option<DVec2>) -> DVec2 {
     let zoom = app.cam2d.zoom;
     let world = app.cam2d.screen_to_world(rect, pos);
-    let hit = if app.osnap {
-        let shapes = app
-            .doc
-            .entities_in(app.sketch)
-            .filter(|e| app.visible(e) && !(exclude_selection && app.selection.contains(&e.id)))
-            .map(|e| &e.shape);
-        object_snap(world, SNAP_PIXELS / zoom, from, shapes)
-    } else {
-        None
+    let radius = SNAP_PIXELS / zoom;
+    let (hit, edge) = {
+        let shapes = || app.doc.entities_in(app.sketch).filter(|e| app.visible(e) && !(exclude_selection && app.selection.contains(&e.id))).map(|e| &e.shape);
+        let hit = if app.osnap { object_snap(world, radius, from, shapes()) } else { None };
+        let edge = if app.osnap && from.is_some() { cad_geometry::snap::edge_direction(world, radius, shapes()) } else { None };
+        (hit, edge)
     };
-    app.snap = hit.or_else(|| app.grid_snap.then(|| grid_snap(world, grid_step(zoom))));
+    // Parallel snap: hovering a straight edge while drawing from a point acquires its direction; later, a cursor
+    // within SNAP_PIXELS of the parallel through the last point snaps onto it (not while on an edge itself).
+    if from.is_none() || !app.osnap {
+        app.parallel_ref = None;
+    } else if hit.is_none() && edge.is_some() {
+        app.parallel_ref = edge;
+    }
+    let parallel = match (hit, edge, from, app.parallel_ref) {
+        (None, None, Some(f), Some(d)) => {
+            let len = world.distance(f) * zoom;
+            let max_angle = (SNAP_PIXELS / len.max(SNAP_PIXELS)).asin();
+            cad_geometry::xline::parallel(f, world, d, max_angle)
+                .filter(|_| len > 2.0 * SNAP_PIXELS)
+                .map(|point| cad_geometry::snap::Snap { point, kind: cad_geometry::snap::SnapKind::Parallel })
+        }
+        _ => None,
+    };
+    app.snap = hit.or(parallel).or_else(|| app.grid_snap.then(|| grid_snap(world, grid_step(zoom))));
     app.snap.map_or(world, |s| s.point)
 }
 
