@@ -58,8 +58,8 @@ impl Shaft {
             p.push(DVec2::new(r(0), c));
         }
         let mut z = 0.0;
-        for i in 0..n {
-            z += self.steps[i].1;
+        for (i, step) in self.steps.iter().enumerate().take(n) {
+            z += step.1;
             if i + 1 < n {
                 if (r(i + 1) - r(i)).abs() > 1e-9 {
                     p.push(DVec2::new(r(i), z));
