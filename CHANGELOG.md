@@ -5,6 +5,7 @@ All notable changes to ProjectCAD. The format follows [Keep a Changelog](https:/
 ## [Unreleased]
 
 ### Added
+- Phase 8 batch A: Move, Copy, Rotate..., Scale... and Mirror... tools driven by picked base, reference and target points, and a Stretch tool with a crossing window; all points snap and accept typed coordinates
 - Settings window (File > Settings, Ctrl+Comma, or the Settings button): General, Interface, Navigation and Controls pages
 - Rebindable keyboard shortcuts with conflict warnings, and control presets modelled on ProjectCAD, Blender, Godot and Roblox Studio (shortcuts and mouse navigation)
 - Configurable mouse navigation: orbit, pan and drag-zoom gestures, speeds, inverted zoom and orbit, fly keys (W A S D Q E while the orbit button is held)

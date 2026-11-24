@@ -115,10 +115,16 @@ pub enum Action {
     ToolWall,
     ToolTrim,
     ToolOffset,
+    ToolMove,
+    ToolCopy,
+    ToolRotateRef,
+    ToolScaleRef,
+    ToolMirror,
+    ToolStretch,
 }
 
 impl Action {
-    pub const ALL: [Action; 49] = [
+    pub const ALL: [Action; 55] = [
         Action::New,
         Action::Open,
         Action::Save,
@@ -168,6 +174,12 @@ impl Action {
         Action::ToolWall,
         Action::ToolTrim,
         Action::ToolOffset,
+        Action::ToolMove,
+        Action::ToolCopy,
+        Action::ToolRotateRef,
+        Action::ToolScaleRef,
+        Action::ToolMirror,
+        Action::ToolStretch,
     ];
 
     /// Label in the Controls settings and the menus.
@@ -222,6 +234,12 @@ impl Action {
             Action::ToolWall => "Tool: wall",
             Action::ToolTrim => "Tool: trim",
             Action::ToolOffset => "Tool: offset",
+            Action::ToolMove => "Tool: move (base point)",
+            Action::ToolCopy => "Tool: copy (base point)",
+            Action::ToolRotateRef => "Tool: rotate by points",
+            Action::ToolScaleRef => "Tool: scale by points",
+            Action::ToolMirror => "Tool: mirror",
+            Action::ToolStretch => "Tool: stretch",
         }
     }
 
@@ -330,6 +348,10 @@ impl Preset {
                 (ToolWall, &["W"]),
                 (ToolTrim, &["Shift+T"]),
                 (ToolOffset, &["O"]),
+                (ToolMove, &["M"]),
+                (ToolCopy, &["Shift+C"]),
+                (ToolMirror, &["Shift+M"]),
+                (ToolStretch, &["Shift+S"]),
             ],
             Preset::Blender => &[
                 (CommandSearch, &["F3", "Ctrl+K"]),

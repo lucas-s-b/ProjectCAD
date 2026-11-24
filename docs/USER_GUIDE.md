@@ -14,6 +14,7 @@ ProjectCAD is a CAD program for 2D drafting with constraints, parametric 3D part
 - [Plugins](#plugins)
 - [Settings, themes and command search](#settings-themes-and-command-search)
 - [Grab, rotate and scale](#grab-rotate-and-scale)
+- [Transform by points and stretch](#transform-by-points-and-stretch)
 - [Keyboard and mouse](#keyboard-and-mouse)
 - [More documentation](#more-documentation)
 
@@ -251,6 +252,23 @@ Use this to move the selection with the mouse without dragging, as in Blender.
 
 Limits: solids (Box, Cylinder, Sphere) can only be grabbed; components can be grabbed and rotated, not scaled; sketch shapes rotate and scale only uniformly.
 
+## Transform by points and stretch
+
+Use these tools to move, copy, rotate, scale, mirror or stretch geometry exactly, with snaps, as in AutoCAD. They are in the tool column under the edit tools.
+
+1. Select the entities first (not needed for **Stretch**).
+2. Pick a tool. The hint at the top left of the 2D view says which point to pick next; a ghost shows the result.
+   - **Move**: base point, then target point.
+   - **Copy**: base point, then a target per copy; Esc ends.
+   - **Rotate...**: base point, a reference point (the start direction), a target point (the new direction).
+   - **Scale...**: base point, a reference point (the start length), a target point (the new length).
+   - **Mirror...**: two points on the mirror line. **Keep original** (on by default) adds a mirrored copy; off mirrors in place.
+   - **Stretch**: two corners of a crossing window, then base point and target. Points inside the window move; shapes wholly inside move whole.
+3. Every point snaps like a drawing point (object snap, grid snap, Shift for 15 degree steps), and you can type it in the coordinate field: `x,y`, `@dx,dy` or `@d<a`.
+4. Each finished operation is one undo step.
+
+Limits: Stretch does not change solids, openings, slabs or stairs; circles, arcs, ellipses and text move whole when their centre or insertion point is inside the window. Scale is uniform. Copies do not take constraints or dimension links.
+
 ## Keyboard and mouse
 
 Ctrl is the Control key; on macOS it is Cmd. The table lists the **ProjectCAD** preset; every key can be changed on the Controls page of the Settings window.
@@ -275,6 +293,7 @@ Ctrl is the Control key; on macOS it is Cmd. The table lists the **ProjectCAD** 
 | 5 | Orthographic or perspective | when no text field has focus |
 | Ctrl+Space | Hide or show the toolbar and side panels | when no text field has focus |
 | Q / L / C / B / A / P / T / D / W / O / Shift+T | Tools: select, line, circle, rectangle, arc, polyline, text, dimension, wall, offset, trim | when no text field has focus |
+| M / Shift+C / Shift+M / Shift+S | Tools: move, copy, mirror, stretch (by points) | when no text field has focus |
 | F3 | Object snap on/off | when no text field has focus |
 | F9 | Grid snap on/off | when no text field has focus |
 | Esc | Cancel the current tool; close command search | 2D view, 3D view, command search |

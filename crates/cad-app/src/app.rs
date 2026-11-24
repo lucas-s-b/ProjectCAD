@@ -87,6 +87,13 @@ pub enum Tool {
     Fillet,
     Chamfer,
     Split,
+    /// Transform tools by picked points (`view2d_xform`).
+    Move,
+    Copy,
+    RotateRef,
+    ScaleRef,
+    Mirror,
+    Stretch,
 }
 
 impl Tool {
@@ -202,6 +209,8 @@ pub struct CadApp {
     pub text_height: f64,
     pub dim_text_height: f64,
     pub polygon_sides: u32,
+    /// The Mirror tool keeps the original and adds the mirrored copy.
+    pub mirror_keep: bool,
     /// Thickness of new walls, mm.
     pub wall_thickness: f64,
     /// Alignment of new walls.
@@ -460,6 +469,7 @@ impl CadApp {
             text_height: 5.0,
             dim_text_height: 3.5,
             polygon_sides: 6,
+            mirror_keep: true,
             wall_thickness: 200.0,
             wall_align: WallAlign::Center,
             door: opening_template(OpeningKind::Door, 900.0, 2100.0, 0.0),

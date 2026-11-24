@@ -311,8 +311,32 @@ Done (batch F):
 - [x] Version 0.2.0; CI runs `cargo clippy --workspace --all-targets -- -D warnings` before the tests
 - [x] Release build checked locally; the `v0.2.0` tag push, which builds the release archives, is left to the user
 
+## Phase 8: 2D drafting depth (in progress)
+The drafting items deferred by Phase 2, in six batches. Each batch ends unit-tested, checked in the running app through MCP, and as its own pull request.
+
+Plan:
+- Batch A: transforms by picked points (Move, Copy, Rotate, Scale, Mirror) and Stretch
+- Batch B: construction lines (infinite lines and rays) and parallel snap
+- Batch C: blocks: shared definitions, insert, explode, edit in place, DXF BLOCK / INSERT
+- Batch D: constraints on rectangles and polylines; associative radial and angular dimensions and hatches
+- Batch E: curves: extend and offset for ellipses and splines, exact conic and spline intersections, fillets with arcs, hatch islands, faster ellipse and spline snapping
+- Batch F: user coordinate systems; true DXF DIMENSION entities; documentation
+
+Done (batch A; unit-tested; checked in the running app through MCP):
+- [x] Move and Copy tools: base point, then target (Copy repeats from the same base point until Esc)
+- [x] Rotate... and Scale... tools: base point, reference point, target point (the angle or length ratio between the two directions)
+- [x] Mirror... tool: two points on the mirror line, "Keep original" on by default
+- [x] Stretch tool: crossing window, base point, target; points inside the window move, shapes wholly inside move whole, a rectangle stays a rectangle when a whole side moves (else it becomes a closed polyline)
+- [x] Every picked point uses object snap, grid snap, Shift polar steps and the coordinate field (x,y  @dx,dy  @d<a); the step hint and a ghost of the result are drawn while picking
+- [x] Shortcuts (ProjectCAD preset): M move, Shift+C copy, Shift+M mirror, Shift+S stretch; all rebindable
+
+Limits of batch A:
+- Move, Copy, Rotate, Scale and Mirror act on the selection made before the tool; Stretch acts on every pickable entity its window crosses (no preselection).
+- Stretch leaves solids, openings, slabs and stairs alone; circles, arcs, ellipses, text and radial or angular dimensions move whole when their centre or insertion point is inside.
+- Scale is uniform; Copy does not copy constraints, dimension links or group membership.
+
 ## Beyond the roadmap
-The roadmap ends with Phase 7. Everything below was deferred by a phase ("Phase 7", "later") or ruled out, and is not done. The lines in the phases above stay as they were written; this list is the current state.
+The roadmap ended with Phase 7; Phase 8 takes the 2D drafting items below. Everything below was deferred by a phase ("Phase 7", "later") or ruled out, and is not done. The lines in the phases above stay as they were written; this list is the current state.
 
 Kernel and exact geometry:
 - A NURBS kernel: NURBS curves and surfaces, exact booleans and surface-surface intersection; the kernel stays a mesh-boolean B-Rep by measured choice (docs/KERNEL_EVAL.md, docs/BOOLEAN_EVAL.md) (Phase 3, won't do)

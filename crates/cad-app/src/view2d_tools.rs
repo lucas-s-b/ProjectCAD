@@ -90,6 +90,10 @@ fn build_shape(app: &CadApp, points: &[DVec2], cursor: DVec2) -> Option<Shape> {
 
 /// Feeds one world point to the active draw tool; creates the shape when enough points exist.
 pub fn tool_point(app: &mut CadApp, p: DVec2) {
+    if crate::view2d_xform::is_xform(app.tool) {
+        crate::view2d_xform::point(app, p);
+        return;
+    }
     app.points.push(p);
     if app.tool == Tool::Wall {
         // Walls chain: each click ends one wall and starts the next; Escape stops.
@@ -179,6 +183,7 @@ pub fn draw_tool(app: &mut CadApp, ui: &egui::Ui, resp: &egui::Response, rect: e
 }
 
 pub fn draw_preview(app: &CadApp, painter: &egui::Painter, rect: egui::Rect, cursor: DVec2) {
+    crate::view2d_xform::preview(app, painter, rect, cursor);
     if let Some(shape) = build_shape(app, &app.points, cursor)
         && shape.validate(&Tolerance::default()).is_ok()
     {

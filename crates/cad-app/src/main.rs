@@ -51,6 +51,7 @@ mod view2d_annot;
 mod view2d_edit;
 mod view2d_tools;
 mod view2d_walls;
+mod view2d_xform;
 mod view3d;
 mod widgets;
 
