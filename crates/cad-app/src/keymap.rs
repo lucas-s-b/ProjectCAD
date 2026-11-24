@@ -121,10 +121,12 @@ pub enum Action {
     ToolScaleRef,
     ToolMirror,
     ToolStretch,
+    ToolXLine,
+    ToolRay,
 }
 
 impl Action {
-    pub const ALL: [Action; 55] = [
+    pub const ALL: [Action; 57] = [
         Action::New,
         Action::Open,
         Action::Save,
@@ -180,6 +182,8 @@ impl Action {
         Action::ToolScaleRef,
         Action::ToolMirror,
         Action::ToolStretch,
+        Action::ToolXLine,
+        Action::ToolRay,
     ];
 
     /// Label in the Controls settings and the menus.
@@ -240,6 +244,8 @@ impl Action {
             Action::ToolScaleRef => "Tool: scale by points",
             Action::ToolMirror => "Tool: mirror",
             Action::ToolStretch => "Tool: stretch",
+            Action::ToolXLine => "Tool: construction line",
+            Action::ToolRay => "Tool: ray",
         }
     }
 
@@ -352,6 +358,8 @@ impl Preset {
                 (ToolCopy, &["Shift+C"]),
                 (ToolMirror, &["Shift+M"]),
                 (ToolStretch, &["Shift+S"]),
+                (ToolXLine, &["Shift+X"]),
+                (ToolRay, &["Shift+R"]),
             ],
             Preset::Blender => &[
                 (CommandSearch, &["F3", "Ctrl+K"]),

@@ -108,6 +108,8 @@ fn shape(out: &mut String, s: &Shape, col: &str, doc: &Document) {
         | Shape::Leader { .. }
         | Shape::RadialDim { .. }
         | Shape::AngularDim { .. } => annotation(out, s, col, doc),
+        // Construction aids, not drawing content (the tools make them construction entities, which are not exported).
+        Shape::XLine { .. } => {}
         Shape::Box { .. } | Shape::Cylinder { .. } | Shape::Sphere { .. } => {}
     }
 }

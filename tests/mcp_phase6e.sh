@@ -122,7 +122,7 @@ near "$(fs 38 | num max_displacement)" 0.000952381 0.000000001 || bad "max_displ
 # 41. no support
 fs 41 | grep -qF '{"error":"fixatleastoneface"}' || bad "fea_study of state 41: $(fs 41)"
 # 46. the study survives save and open; the result does not
-for t in '"version":28' '"fea_study":null' '"fixed":[{' '{"Pressure":"10"}'; do
+for t in '"version":29' '"fea_study":null' '"fixed":[{' '{"Pressure":"10"}'; do
   flat 46 | grep -qF "$t" || bad "no $t in state 46"
 done
 

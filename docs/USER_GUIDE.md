@@ -13,6 +13,7 @@ ProjectCAD is a CAD program for 2D drafting with constraints, parametric 3D part
 - [Import and export](#import-and-export)
 - [Plugins](#plugins)
 - [Settings, themes and command search](#settings-themes-and-command-search)
+- [Construction lines and parallel snap](#construction-lines-and-parallel-snap)
 - [Grab, rotate and scale](#grab-rotate-and-scale)
 - [Transform by points and stretch](#transform-by-points-and-stretch)
 - [Keyboard and mouse](#keyboard-and-mouse)
@@ -239,6 +240,18 @@ Use this section to change how the app looks and how it is controlled.
 
 Limits: command search finds only what is on screen (no menu items), and ranks by a simple fuzzy match. Fly keys and drag zoom work in the 3D view only.
 
+## Construction lines and parallel snap
+
+Use construction lines as drawing guides that run across the whole sheet.
+
+1. Pick **XLine** (an infinite line) or **Ray** (a line from a point onward) in the tool column.
+2. Click the point the line passes through, then click a second point to set its direction. Every further click adds another line through the first point; Esc ends.
+3. Construction lines are construction geometry: drawn dashed, never exported, never part of a profile. Their intersections with each other and with other geometry are snap points.
+4. To change one, select it: Properties shows its point, its angle and **ray (one side only)**.
+5. Parallel snap (with Object snap on): while drawing from a point, rest the cursor on a straight edge to acquire its direction, then move towards where the new segment should go. Near the parallel through your last point, the cursor snaps onto it and a dashed green tracking line appears.
+
+Limits: construction lines reach 10 km each way; trim, extend, offset and split do not work on them yet.
+
 ## Grab, rotate and scale
 
 Use this to move the selection with the mouse without dragging, as in Blender.
@@ -294,6 +307,7 @@ Ctrl is the Control key; on macOS it is Cmd. The table lists the **ProjectCAD** 
 | Ctrl+Space | Hide or show the toolbar and side panels | when no text field has focus |
 | Q / L / C / B / A / P / T / D / W / O / Shift+T | Tools: select, line, circle, rectangle, arc, polyline, text, dimension, wall, offset, trim | when no text field has focus |
 | M / Shift+C / Shift+M / Shift+S | Tools: move, copy, mirror, stretch (by points) | when no text field has focus |
+| Shift+X / Shift+R | Tools: construction line, ray | when no text field has focus |
 | F3 | Object snap on/off | when no text field has focus |
 | F9 | Grid snap on/off | when no text field has focus |
 | Esc | Cancel the current tool; close command search | 2D view, 3D view, command search |

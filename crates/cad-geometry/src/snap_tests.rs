@@ -133,3 +133,14 @@ fn kind_order_puts_new_kinds_before_grid() {
     assert!(SnapKind::Center < SnapKind::Perpendicular);
     assert!(SnapKind::Perpendicular < SnapKind::Tangent && SnapKind::Tangent < SnapKind::Grid);
 }
+
+#[test]
+fn construction_lines_snap_far_from_their_anchor() {
+    let x = Shape::XLine { point: v2(0.0, 0.0), dir: v2(1.0, 0.0), ray: false };
+    let l = Shape::Line { a: v2(500.0, -10.0), b: v2(500.0, 10.0) };
+    let hit = object_snap(v2(500.2, 0.1), 1.0, None, [&x, &l]).unwrap();
+    assert_eq!(hit.kind, SnapKind::Intersection);
+    assert!(hit.point.distance(v2(500.0, 0.0)) < 1e-6);
+    assert!(edge_direction(v2(-3000.0, 0.5), 1.0, [&x]).is_some_and(|d| (d.x.abs() - 1.0).abs() < 1e-12));
+    assert_eq!(edge_direction(v2(0.0, 5.0), 1.0, [&x]), None);
+}

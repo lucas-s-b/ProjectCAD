@@ -13,6 +13,7 @@ pub mod stair;
 pub mod tol;
 pub mod wall;
 pub mod xform;
+pub mod xline;
 
 #[cfg(test)]
 mod curve_edit_tests;

@@ -85,12 +85,12 @@ pl() { flat "$1" | grep -oE '"plugins":\{"available":\[[^]]*\],"errors":\[[^]]*\
 [ "$(grep -c . "$OUT")" -ge 27 ] || bad "expected at least 27 responses, got $(grep -c . "$OUT")"
 
 # 1: the standalone run
-grep -q '"version": 28' "$SAVED" || bad "saved file version"
+grep -q '"version": 29' "$SAVED" || bad "saved file version"
 [ "$(grep -c '"Circle"' "$SAVED")" -eq 7 ] || bad "circles in the saved file: $(grep -c '"Circle"' "$SAVED")"
 [ "$(grep -c '"Extrude"' "$SAVED")" -eq 7 ] || bad "extrudes in the saved file: $(grep -c '"Extrude"' "$SAVED")"
 grep -q "6 holes" target/mcp_phase7e_plugin.err || bad "standalone plugin message: $(cat target/mcp_phase7e_plugin.err)"
 # 2: apply_commands
-flat 3 | grep -qF '"applied":0,"features":0,"format_version":28,"next":{"component":1,"constraint":1,"entity":1,"feature":1,"group":1,"joint":1,"layer":1,"sketch":1},"undo":[]' || bad "query reply: $(flat 3)"
+flat 3 | grep -qF '"applied":0,"features":0,"format_version":29,"next":{"component":1,"constraint":1,"entity":1,"feature":1,"group":1,"joint":1,"layer":1,"sketch":1},"undo":[]' || bad "query reply: $(flat 3)"
 flat 4 | grep -qF '"applied":2' && flat 4 | grep -qF '"entity":3' && flat 4 | grep -qF '"undo":[{"Remove":2},{"Remove":1}]' || bad "apply reply: $(flat 4)"
 [ "$(ents 5)" = 2 ] || bad "entities after apply: $(ents 5)"
 [ "$(ents 7)" = 0 ] || bad "entities after one undo: $(ents 7)"

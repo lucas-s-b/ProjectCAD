@@ -64,6 +64,9 @@ pub enum LevelView {
 pub enum Tool {
     Select,
     Line,
+    /// Infinite construction line, and its one-sided form.
+    XLine,
+    Ray,
     Circle,
     Rect,
     Arc,
@@ -196,6 +199,8 @@ pub struct CadApp {
     pub show_glyphs: bool,
     /// Snap found this frame, for the marker.
     pub snap: Option<Snap>,
+    /// Direction of the straight edge last hovered while drawing, for the parallel snap.
+    pub parallel_ref: Option<DVec2>,
     pub rot_deg: f64,
     pub scale_factor: f64,
     /// Rename buffer of the layers panel.
@@ -458,6 +463,7 @@ impl CadApp {
             grid_snap: settings.general.grid_snap_on_start,
             show_glyphs: true,
             snap: None,
+            parallel_ref: None,
             rot_deg: 90.0,
             scale_factor: 2.0,
             layer_name: String::new(),
@@ -745,18 +751,27 @@ impl CadApp {
     }
 
     pub fn add_shape(&mut self, shape: Shape) {
-        self.add_shape_linked(shape, None);
+        self.add_entity(shape, None, false);
+    }
+
+    /// Adds the shape as construction geometry (drawn dashed, left out of profiles and exports).
+    pub fn add_construction(&mut self, shape: Shape) {
+        self.add_entity(shape, None, true);
     }
 
     /// Adds the shape; a linear dimension also gets its link in the same undo step.
     pub fn add_shape_linked(&mut self, shape: Shape, link: Option<(PointRef, PointRef)>) {
+        self.add_entity(shape, link, false);
+    }
+
+    fn add_entity(&mut self, shape: Shape, link: Option<(PointRef, PointRef)>, construction: bool) {
         if !self.doc.layer(self.layer).is_some_and(|l| l.visible && !l.locked) {
             self.status = "Current layer is hidden or locked".into();
             return;
         }
         let id = self.doc.alloc_id();
         let name = format!("{} {}", shape.kind(), id);
-        let mut cmds = vec![Command::Add(Entity { id, name, shape, layer: self.layer, sketch: self.sketch, construction: false, group: None, meta: Default::default() })];
+        let mut cmds = vec![Command::Add(Entity { id, name, shape, layer: self.layer, sketch: self.sketch, construction, group: None, meta: Default::default() })];
         cmds.extend(link.map(|l| Command::SetDimLink { id, link: Some(l) }));
         self.exec(cmds);
         if self.doc.get(id).is_some() {

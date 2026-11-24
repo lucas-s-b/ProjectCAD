@@ -17,6 +17,12 @@ fn polygon(center: DVec2, vertex: DVec2, sides: u32) -> Shape {
     Shape::Polyline { points, closed: true }
 }
 
+/// Construction line (or ray) from `first` through `through`; None when the points coincide.
+fn xline(first: DVec2, through: DVec2, ray: bool) -> Option<Shape> {
+    let d = through - first;
+    (d.length() > 1e-9).then(|| Shape::XLine { point: first, dir: d.normalize(), ray })
+}
+
 /// Ellipse from its centre, the end of the first axis and a point that sets the second radius.
 fn ellipse(center: DVec2, axis_end: DVec2, third: DVec2) -> Shape {
     let d = axis_end - center;
@@ -53,6 +59,7 @@ fn build_shape(app: &CadApp, points: &[DVec2], cursor: DVec2) -> Option<Shape> {
     let (tool, text_height, sides) = (app.tool, app.dim_text_height, app.polygon_sides);
     match (tool, points.len()) {
         (Tool::Line, 1) => Some(Shape::Line { a: first, b: cursor }),
+        (Tool::XLine | Tool::Ray, 1) => xline(first, cursor, tool == Tool::Ray),
         (Tool::Circle, 1) => Some(Shape::Circle { center: first, radius: first.distance(cursor) }),
         (Tool::Rect, 1) => Some(Shape::rect(first, cursor)),
         (Tool::Arc, 1) => Some(Shape::Line { a: first, b: cursor }),
@@ -95,6 +102,16 @@ pub fn tool_point(app: &mut CadApp, p: DVec2) {
         return;
     }
     app.points.push(p);
+    if matches!(app.tool, Tool::XLine | Tool::Ray) {
+        // The first point stays: every later click adds another line through it, until Escape.
+        if let [first, through] = app.points[..] {
+            app.points.truncate(1);
+            if let Some(shape) = xline(first, through, app.tool == Tool::Ray) {
+                app.add_construction(shape);
+            }
+        }
+        return;
+    }
     if app.tool == Tool::Wall {
         // Walls chain: each click ends one wall and starts the next; Escape stops.
         if let [a, b] = app.points[..] {
@@ -198,6 +215,15 @@ pub fn draw_marker(app: &CadApp, painter: &egui::Painter, rect: egui::Rect) {
     }
     let at = app.cam2d.world_to_screen(rect, snap.point);
     let yellow = Color32::YELLOW;
+    if snap.kind == SnapKind::Parallel
+        && let (Some(from), Some(dir)) = (app.points.last(), app.parallel_ref)
+    {
+        let (lo, hi) = (app.cam2d.screen_to_world(rect, rect.left_bottom()), app.cam2d.screen_to_world(rect, rect.right_top()));
+        if let Some((a, b)) = cad_geometry::xline::clip(*from, dir, false, lo, hi) {
+            let pts = [app.cam2d.world_to_screen(rect, a), app.cam2d.world_to_screen(rect, b)];
+            painter.extend(egui::Shape::dashed_line(&pts, Stroke::new(1.0, Color32::from_rgb(120, 200, 120)), 6.0, 4.0));
+        }
+    }
     painter.rect_stroke(egui::Rect::from_center_size(at, egui::vec2(10.0, 10.0)), 0.0, Stroke::new(1.5, yellow), StrokeKind::Middle);
     painter.text(at + egui::vec2(10.0, -10.0), egui::Align2::LEFT_BOTTOM, format!("{:?}", snap.kind), egui::FontId::proportional(12.0), yellow);
 }

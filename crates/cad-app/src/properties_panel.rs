@@ -227,6 +227,17 @@ fn edit_shape(ui: &mut egui::Ui, shape: &mut Shape, settings: Settings) {
             ui.label(format!("{} points", points.len()));
             w::checkbox(ui, closed, "closed");
         }
+        Shape::XLine { point, dir, ray } => {
+            vec2(ui, "point", point);
+            let before = dir.to_angle();
+            let mut angle = before;
+            degrees(ui, "angle", &mut angle);
+            // Only an edit rewrites the direction: a round trip through the angle would differ in the last bits.
+            if angle != before {
+                *dir = DVec2::from_angle(angle);
+            }
+            w::checkbox(ui, ray, "ray (one side only)");
+        }
         Shape::Text { pos, height, angle, text } => {
             vec2(ui, "pos", pos);
             num(ui, "height", height);

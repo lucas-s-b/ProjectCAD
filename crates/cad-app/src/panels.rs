@@ -87,6 +87,8 @@ pub fn run(app: &mut CadApp, ctx: &egui::Context, action: Action) {
         Action::ToolScaleRef => tool(app, Tool::ScaleRef),
         Action::ToolMirror => tool(app, Tool::Mirror),
         Action::ToolStretch => tool(app, Tool::Stretch),
+        Action::ToolXLine => tool(app, Tool::XLine),
+        Action::ToolRay => tool(app, Tool::Ray),
     }
 }
 

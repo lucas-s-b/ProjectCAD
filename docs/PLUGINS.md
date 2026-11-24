@@ -73,10 +73,10 @@ default (an `Add` needs only `id`, `name` and `shape`).
   "command 1: unknown variant `Explode`" or "command 0: missing field `name`"); the argument object holds only
   `commands` ("unknown argument '<k>'"); at most 10 000 commands per call; then the document validates each command
   ("entity 3 already exists", "entity 99 not found", ...). The reply of a refused call is a tool error.
-- **Reply.** `{"applied": n, "features": count, "format_version": 28, "next": {"component", "constraint", "entity",
+- **Reply.** `{"applied": n, "features": count, "format_version": 29, "next": {"component", "constraint", "entity",
   "feature", "group", "joint", "layer", "sketch"}, "undo": [...]}`; `undo` holds the inverse commands of the step (empty
   for an empty list).
-- **Versioning.** The schema is the project file's types, so it changes exactly when `FORMAT_VERSION` changes (28 now).
+- **Versioning.** The schema is the project file's types, so it changes exactly when `FORMAT_VERSION` changes (29 now).
   The Rust client checks `format_version` when it connects and refuses an app with another version: rebuild the plugin
   after a format change.
 

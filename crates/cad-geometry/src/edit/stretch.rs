@@ -46,6 +46,7 @@ pub fn stretch(shape: &Shape, inside: impl Fn(DVec2) -> bool, d: DVec2) -> Optio
         | Shape::AngularDim { center, .. } => inside(*center).then(whole).flatten(),
         Shape::Text { pos, .. } => inside(*pos).then(whole).flatten(),
         Shape::Room(r) => inside(r.seed).then(whole).flatten(),
+        Shape::XLine { point, .. } => inside(*point).then(whole).flatten(),
         // shortcut: solids, openings, slabs and stairs are left alone; stretch them when users ask
         _ => None,
     }
