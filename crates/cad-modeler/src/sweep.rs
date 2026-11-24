@@ -53,8 +53,7 @@ pub(crate) fn outline(profile: &Profile, tol: f64, flip: bool) -> Vec<Vec<(DVec2
         .iter()
         .map(|&(from, to)| {
             let mut lp = Vec::new();
-            for k in from..to {
-                let s = flat.segs[k];
+            for (k, &s) in flat.segs.iter().enumerate().take(to).skip(from) {
                 match s {
                     Seg::Line { a, .. } => lp.push((*a, k)),
                     Seg::Arc { radius, sweep, .. } => {

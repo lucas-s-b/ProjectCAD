@@ -256,7 +256,7 @@ Deferred to later phases:
 - More benchmarks (Lamé thick-walled cylinder, which needs roller supports and curved elements; gravity; pressure on curved faces; stress concentrations); recognising a user's study as a benchmark case: later
 - Continuous collision detection between motion samples, motion studies saved in the document, loops solved per independent group, joint limits as solver constraints: later
 
-## Phase 7: Optimization and production (in progress)
+## Phase 7: Optimization and production (done; deferred items in "Beyond the roadmap")
 Profiling-driven work: instancing, culling, LOD, mesh caches, binary cache format, parallel tessellation.
 STEP, IGES, STL, OBJ, 3MF, glTF, PDF, IFC. Plugin API. Docking, themes, command search. Documentation.
 
@@ -305,13 +305,67 @@ Limits of batch E:
 - One plugin at a time; its arguments are fixed in its manifest (no parameter dialog); menu-started plugins cannot click, type, open or save.
 - A plugin built for another project file format version is refused (rebuild it after a format change).
 
-Remaining:
-- F: user guide, README, release v0.2.0 (the tag push is left to the user)
+Done (batch F):
+- [x] User guide: docs/USER_GUIDE.md, organised by task, with screenshots made by `tests/mcp_docs_shots.sh`
+- [x] README rewritten; CHANGELOG.md from 0.1.0 to 0.2.0
+- [x] Version 0.2.0; CI runs `cargo clippy --workspace --all-targets -- -D warnings` before the tests
+- [x] Release build checked locally; the `v0.2.0` tag push, which builds the release archives, is left to the user
 
-Won't do in this project:
-- A NURBS kernel, exact booleans and everything that needs them: topological naming of faces that tilt, split or merge; corner blending and fillets on other edges; drafts next to curved faces; loft holes and sweep/loft self-intersection checks; mass, interference and collisions on exact geometry (facet errors are measured and labelled)
-- STEP and IGES import, STEP of tori and free-form faces, IGES export (need NURBS; STEP is read everywhere IGES was), 3D PDF
-- LOD and hidden-line rendering, unless batch B measures GPU-bound frames after culling
-- Mass properties, BOM, frustum culling, a binary rebuild cache, rayon in patterns, mirrors, the mesher, tessellation, feature edges and the FEA element loops, a worker for the analysis mesh and a BVH per source body for picking: measured or read unnecessary in batch B (docs/BENCHMARKS.md)
-- The feature-catalogue items deferred in Phases 2, 4, 5 and 6 (2D blocks and drafting extras, roof, stair and opening extras, gear, spring, thread and bearing variants, further analysis types): modelling features, not optimisation or production
-- Components referencing other project files; a 2D spatial index (measured unnecessary)
+## Beyond the roadmap
+The roadmap ends with Phase 7. Everything below was deferred by a phase ("Phase 7", "later") or ruled out, and is not done. The lines in the phases above stay as they were written; this list is the current state.
+
+Kernel and exact geometry:
+- A NURBS kernel: NURBS curves and surfaces, exact booleans and surface-surface intersection; the kernel stays a mesh-boolean B-Rep by measured choice (docs/KERNEL_EVAL.md, docs/BOOLEAN_EVAL.md) (Phase 3, won't do)
+- Trimmed faces and analytic curves for tori and cylinder-cylinder intersections (Phase 3, won't do)
+- References (topological naming) for shell faces and for faces that tilt, split or merge (Phase 3, Phase 5, won't do)
+- Corner blending where filleted edges meet, fillets on other edge types, drafts next to curved faces (Phase 3, Phase 5, won't do)
+- Loft sections with holes; self-intersection checks for sweep and loft (Phase 3, won't do)
+- Mass properties, interference, clearance and collisions (also during motion) on exact geometry instead of facets; the facet errors are measured and labelled approximate (Phase 5, Phase 6, won't do)
+
+Exchange formats:
+- STEP and IGES import (Phase 7, won't do)
+- STEP export of tori and free-form faces (they stay faceted) and of whole spheres (Phase 3, Phase 7, won't do)
+- IGES export; STEP is read by every target program (Phase 7, won't do)
+- 3D PDF (PRC/U3D); the 2D PDF export stays (Phase 7, won't do)
+- glTF and 3MF export of walls, colours per body and textures (Phase 7, batch C limit)
+- IFC export of mechanical bodies and components, door and window frames and leaves, and levels that do not lie on XY (Phase 7, batch C limit)
+- STL and OBJ import of open meshes and of units other than millimetres (Phase 7, batch C limit)
+
+Rendering and performance:
+- LOD and hidden-line rendering (LOD only if GPU-bound frames show up after culling) (Phase 7, won't do)
+- Measured or read unnecessary in batch B, see docs/BENCHMARKS.md: one BVH per body for picking, rayon in the FEA element loops, patterns, mirrors, the mesher, tessellation and feature edges, frustum culling, a worker for the analysis mesh, parallel collision search, a binary rebuild cache, faster mass properties and BOM (Phase 7, won't do)
+- A spatial index for 2D snapping and picking (1 ms snap and 10 ms pick over 100 000 lines) (Phase 2, Phase 7, won't do)
+
+2D drafting:
+- Blocks with shared definitions and instances (Phase 2)
+- Infinite construction lines, stretch, transforms with a picked base point (Phase 2)
+- Extend and offset for ellipse and spline; exact conic and spline intersections; fillet with arcs; hatch islands (Phase 2)
+- Constraints on rectangle and polyline (Phase 2)
+- Associative radial and angular dimensions and hatches; true DXF DIMENSION entities (Phase 2)
+- Parallel snap, user coordinate systems, line types and annotation text in the 3D view (Phase 2)
+- Speed of ellipse and spline snapping (about 2000 segments per ellipse on every mouse move; not measured) (Phase 2)
+
+Architecture:
+- Roofs on concave outlines (straight skeleton), dormers, roof openings, walls trimmed to the roof (Phase 4)
+- Stairs with landings, turns or spirals, railings, the stair opening in the slab above (Phase 4)
+- Plan cut height, walls attached to the level above, openings in slabs, dragging openings along their wall (Phase 4)
+
+Mechanical parts and assemblies:
+- Gears with undercut, profile shift, backlash, helical, internal or bevel teeth (Phase 5)
+- Springs with closed or ground ends; fastener head chamfers and washer faces (Phase 5)
+- Thread run-out, end chamfers, left-hand and fine threads, tapped holes (Phase 5)
+- Bearing cages, seals, angular contact, roller and thrust bearings (Phase 5)
+- Components that reference other .cadproj files: cross-file relinking, cycles and versions (Phase 5, Phase 7, won't do)
+
+Analysis and motion:
+- Modal, thermal, buckling and fatigue analysis; contact; nonlinear materials and large displacements (Phase 6, later)
+- Curved quadratic elements, adaptive mesh refinement, meshing components or several bodies in one study, saving meshes (Phase 6, later)
+- Roller supports, prescribed non-zero displacements, non-uniform loads; load and support glyphs in 3D; exporting study results (Phase 6, later)
+- More benchmarks (Lame thick-walled cylinder, gravity, pressure on curved faces, stress concentrations); recognising a user's study as a benchmark case (Phase 6, later)
+- Continuous collision detection between motion samples, motion studies saved in the document, loops solved per independent group, joint limits as solver constraints (Phase 6, later)
+
+User interface and plugins:
+- Drag-and-drop docking, floating windows and tab strips (Phase 7, batch D limit)
+- Command search over menu items (Phase 7, batch D limit)
+- A rotate gizmo for solid entities; snapping of slider drags (Phase 7, batch D limit)
+- Plugin parameter dialogs, several plugins at once, a sandbox, connecting to an already running GUI app, plugin UI inside the app, a folder watcher, clients in languages other than Rust (Phase 7, batch E limit)
