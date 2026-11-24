@@ -20,6 +20,15 @@ pub const RING_POINTS: usize = 48;
 /// Start direction `u` of the ring about each of `AXES` (`v = axis × u`): Y for X, Z for Y, X for Z.
 pub const RING_U: [DVec3; 3] = [DVec3::Y, DVec3::Z, DVec3::X];
 
+/// Which handles the gizmo shows (the Godot and Roblox presets switch with W / E and Ctrl+2 / Ctrl+4).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum GizmoMode {
+    #[default]
+    All,
+    Move,
+    Rotate,
+}
+
 /// What a gizmo drag changes.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum GizmoKind {
@@ -151,6 +160,9 @@ pub fn hit_ring(polys: &[Vec<Pos2>], p: Pos2, tol: f32) -> Option<usize> {
 /// Screen points (origin, X tip, Y tip, Z tip) of the gizmo, moved by the drag in progress; arrows are 0.2 x the camera distance long.
 /// None without a gizmo or when the centre is behind the camera.
 pub fn screen(app: &CadApp, rect: egui::Rect) -> Option<[Pos2; 4]> {
+    if app.gizmo_mode == GizmoMode::Rotate || app.modal.is_some() {
+        return None;
+    }
     let c = center(app)? + app.gizmo.as_ref().map_or(DVec3::ZERO, GizmoDrag::delta);
     let len = 0.2 * f64::from(app.cam3d.distance);
     let project = |q: DVec3| crate::view3d::project(app, rect, q);
@@ -161,7 +173,7 @@ pub fn screen(app: &CadApp, rect: egui::Rect) -> Option<[Pos2; 4]> {
 /// entity selected and `center` known (it already excludes grounded, jointed and exploded components); moved with a
 /// `Move` drag in progress. None when a point is behind the camera.
 pub fn rings(app: &CadApp, rect: egui::Rect) -> Option<[Vec<Pos2>; 3]> {
-    if !app.selection.is_empty() {
+    if !app.selection.is_empty() || app.gizmo_mode == GizmoMode::Move || app.modal.is_some() {
         return None;
     }
     let c = center(app)? + app.gizmo.as_ref().map_or(DVec3::ZERO, GizmoDrag::delta);

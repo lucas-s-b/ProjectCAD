@@ -536,6 +536,9 @@ fn state_json(app: &CadApp, ctx: &egui::Context) -> Value {
     m.insert("gizmo_rings".into(), json!(app.gizmo_rings.as_ref().map(|rs| rs.iter().map(|r| [px(r[6]), px(r[18])]).collect::<Vec<_>>())));
     m.insert("gizmo_joint".into(), json!(app.gizmo_joint.as_ref().map(|(kind, start, pts)| match kind { JointKind::Slider => json!({ "kind": "Slider", "points": [px(*start), px(pts[0])] }), _ => json!({ "kind": "Revolute", "points": [px(*start), px(pts[6]), px(pts[18])] }) })));
     m.insert("settings".into(), serde_json::to_value(&app.settings).unwrap_or_default());
+    m.insert("modal".into(), json!(app.modal.as_ref().map(|md| json!({ "mode": md.mode.name(), "axis": md.axis, "plane": md.plane, "typed": md.typed }))));
+    m.insert("camera3d".into(), json!({ "yaw": app.cam3d.yaw.to_degrees(), "pitch": app.cam3d.pitch.to_degrees(), "distance": app.cam3d.distance, "ortho": app.cam3d.ortho }));
+    m.insert("ui".into(), json!({ "settings_open": app.settings_open, "focus_mode": app.focus_mode, "gizmo_mode": format!("{:?}", app.gizmo_mode), "rebind": app.rebind.map(|(a, s)| json!([a, s])), "osnap": app.osnap, "grid_snap": app.grid_snap }));
     m.insert("palette".into(), json!(app.palette.as_ref().map(|p| json!({ "matches": crate::palette::ranked(&p.query, &p.items, crate::palette::SHOWN).iter().map(|(n, _)| n).collect::<Vec<_>>(), "query": p.query }))));
     m.insert("plugins".into(), json!({"available": app.plugins.iter().map(|p| &p.name).collect::<Vec<_>>(), "errors": app.plugin_errors, "running": app.plugin.as_ref().map(|p| &p.name)}));
     m.insert("section_cap_area".into(), json!(cap_area));

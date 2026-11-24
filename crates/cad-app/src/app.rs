@@ -145,6 +145,8 @@ pub enum Pending {
     Open,
     Import,
     ImportSvg,
+    /// Open the entry of `Settings::recent` at this index.
+    OpenRecent(usize),
     Quit,
 }
 
@@ -369,7 +371,7 @@ pub struct CadApp {
     /// The settings file; None in MCP mode without `CAD_SETTINGS`.
     pub settings_path: Option<std::path::PathBuf>,
     /// The theme and accent the egui visuals were last set from.
-    pub theme_applied: Option<(crate::settings::Theme, [u8; 3])>,
+    pub theme_applied: Option<crate::settings::Applied>,
     /// Bumped by "Reset layout" so egui forgets the slots' dragged sizes (part of the panel ids).
     pub layout_gen: u32,
     /// The plugins folder (`plugins` beside the settings file); None without a settings file.
@@ -384,6 +386,26 @@ pub struct CadApp {
     pub palette: Option<crate::palette::Palette>,
     /// The chosen search result being clicked, one step per frame.
     pub palette_click: Option<crate::palette::PaletteClick>,
+    /// The Grab / Rotate / Scale modal in progress (`transform.rs`).
+    pub modal: Option<crate::transform::Modal>,
+    /// The camera glide in progress (`navigation.rs`).
+    pub glide: Option<crate::navigation::Glide>,
+    /// The Settings window: open, its page, the action waiting for a key press (and the chord slot it replaces:
+    /// None adds one), and the filter of the Controls page.
+    pub settings_open: bool,
+    pub settings_page: crate::settings_window::Page,
+    pub rebind: Option<(crate::keymap::Action, Option<usize>)>,
+    pub controls_filter: String,
+    /// Toolbar and side panels hidden (Toggle panels).
+    pub focus_mode: bool,
+    /// Which handles the 3D gizmo shows.
+    pub gizmo_mode: crate::gizmo::GizmoMode,
+    /// When the project was last autosaved (or the app started).
+    pub autosaved: std::time::Instant,
+    /// Smoothed frame time for the status bar, ms.
+    pub frame_avg: f64,
+    /// Entity under the cursor in the 2D view (hover highlight).
+    pub hover: Option<EntityId>,
     /// Present only with --mcp.
     pub mcp: Option<Bridge>,
 }
@@ -423,8 +445,8 @@ impl CadApp {
             allow_close: false,
             layer: 0,
             sketch: 0,
-            osnap: true,
-            grid_snap: false,
+            osnap: settings.general.osnap_on_start,
+            grid_snap: settings.general.grid_snap_on_start,
             show_glyphs: true,
             snap: None,
             rot_deg: 90.0,
@@ -546,6 +568,17 @@ impl CadApp {
             plugin: None,
             palette: None,
             palette_click: None,
+            modal: None,
+            glide: None,
+            settings_open: false,
+            settings_page: Default::default(),
+            rebind: None,
+            controls_filter: String::new(),
+            focus_mode: false,
+            gizmo_mode: Default::default(),
+            autosaved: std::time::Instant::now(),
+            frame_avg: 0.0,
+            hover: None,
             mcp: mcp.then(|| mcp::spawn(cc.egui_ctx.clone())),
         }
     }
@@ -586,7 +619,7 @@ impl CadApp {
 
     /// No rebuild pending and no analysis running: MCP replies and held requests wait for this.
     pub fn idle(&self) -> bool {
-        self.model_current() && self.jobs.running().is_none() && self.palette_click.is_none()
+        self.model_current() && self.jobs.running().is_none() && self.palette_click.is_none() && self.glide.is_none()
     }
 
     /// Cancels a job whose document has changed, then hands a finished job's output to its panel, which stores it
@@ -761,6 +794,9 @@ impl CadApp {
             s.translate(g.delta());
             return s;
         }
+        if self.modal.as_ref().is_some_and(|m| !matches!(m.target, crate::transform::Target::Component(_))) && self.selection.contains(&e.id) {
+            return crate::transform::preview(self, &e.shape);
+        }
         e.shape.clone()
     }
 
@@ -805,14 +841,15 @@ impl CadApp {
             .unwrap_or((DVec3::new(-50.0, -50.0, 0.0), DVec3::new(50.0, 50.0, 50.0)))
     }
 
+    /// Fits the active view to everything, gliding when camera transitions are on.
     pub fn fit_active(&mut self) {
-        match self.view {
-            ViewMode::TwoD => self.fit_sketch(),
+        crate::navigation::glide(self, |app| match app.view {
+            ViewMode::TwoD => app.fit_sketch(),
             ViewMode::ThreeD => {
-                let (lo, hi) = self.scene_bounds();
-                self.cam3d.fit(lo, hi);
+                let (lo, hi) = app.scene_bounds();
+                app.cam3d.fit(lo, hi);
             }
-        }
+        });
     }
 }
 
@@ -850,13 +887,21 @@ impl eframe::App for CadApp {
         }
         self.sync_model();
         self.poll_jobs();
+        crate::navigation::tick(self, &ctx);
+        panels::autosave(self);
+        crate::settings_window::capture(self, &ctx);
         panels::shortcuts(self, &ctx);
         panels::menu_bar(self, ui);
-        crate::toolbar::toolbar(self, ui);
-        panels::side_panels(self, ui, &Dock::ALL[..2]);
+        if !self.focus_mode {
+            crate::toolbar::toolbar(self, ui);
+            panels::side_panels(self, ui, &Dock::ALL[..2]);
+        }
         panels::status_bar(self, ui);
-        panels::side_panels(self, ui, &Dock::ALL[2..]);
+        if !self.focus_mode {
+            panels::side_panels(self, ui, &Dock::ALL[2..]);
+        }
         panels::confirm_dialog(self, &ctx);
+        crate::settings_window::show(self, &ctx);
         crate::palette::show(self, &ctx);
         panels::update_title(self, &ctx);
         egui::CentralPanel::default().show(ui, |ui| match self.view {
@@ -866,7 +911,9 @@ impl eframe::App for CadApp {
         // Edits made during this frame go to the worker now, not a frame later.
         self.sync_model();
         // Longest frame since the last MCP state read: a job that holds the UI thread shows here.
-        self.perf.frame_ms = self.perf.frame_ms.max(frame_start.elapsed().as_secs_f64() * 1000.0);
+        let ms = frame_start.elapsed().as_secs_f64() * 1000.0;
+        self.perf.frame_ms = self.perf.frame_ms.max(ms);
+        self.frame_avg = if self.frame_avg == 0.0 { ms } else { self.frame_avg * 0.9 + ms * 0.1 };
     }
 }
 

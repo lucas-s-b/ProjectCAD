@@ -110,7 +110,7 @@ lt() { awk -v a="$1" -v b="$2" 'BEGIN {exit !(a != "" && a < b)}'; }
 # the bodies array of state $1
 bv() { flat "$1" | grep -oE '"bodies":\[[^]]*\]'; }
 # the settings object of state $1
-sv() { flat "$1" | grep -oE '"settings":\{"accent":\[[^]]*\],"layout":\{[^}]*\},"theme":"[A-Za-z]+"\}'; }
+sv() { flat "$1" | grep -oE '"settings":\{"accent":\[[^]]*\],"controls":.*"theme":"[A-Za-z]+"'; }
 # the view rectangle of state $1
 vr() { flat "$1" | grep -oE '"view2d":\{"center":\[[^]]*\],"rect":\[[^]]*\]' | grep -oE '"rect":.*'; }
 # the widget named $2 (spaces removed) in the widgets reply $1

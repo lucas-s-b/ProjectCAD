@@ -5,6 +5,14 @@ fn sample() -> Settings {
         theme: Theme::Light,
         accent: [200, 100, 20],
         layout: Layout { docks: [Dock::Right, Dock::Left, Dock::Bottom], shown: [true, false, true], sizes: [300.0, 250.0, 180.0] },
+        ui: Interface { scale: 1.25, animations: false, ..Interface::default() },
+        general: General { autosave_min: 0, nudge_mm: 0.5, ..General::default() },
+        controls: {
+            let mut c = crate::keymap::Controls::default();
+            c.apply_preset(crate::keymap::Preset::Blender);
+            c
+        },
+        recent: vec!["C:/a.cadproj".into()],
     }
 }
 
@@ -68,6 +76,24 @@ fn mcp_has_no_settings_file_without_cad_settings() {
     if std::env::var_os("CAD_SETTINGS").is_none() {
         assert_eq!(path(true), None);
     }
+}
+
+#[test]
+fn old_files_load_with_new_defaults() {
+    let s = serde_json::from_str::<Settings>(r#"{"theme":"Dark","accent":[0,92,128],"layout":{}}"#).unwrap();
+    assert_eq!(s.ui, Interface::default());
+    assert_eq!(s.general, General::default());
+    assert_eq!(s.controls, crate::keymap::Controls::default());
+    assert!(s.recent.is_empty());
+}
+
+#[test]
+fn recent_list_moves_to_front_and_is_capped() {
+    let mut s = Settings { general: General { recent_max: 3, ..General::default() }, ..Settings::default() };
+    for p in ["a", "b", "c", "d", "b"] {
+        s.push_recent(Path::new(p));
+    }
+    assert_eq!(s.recent, vec!["b", "d", "c"]);
 }
 
 #[test]
