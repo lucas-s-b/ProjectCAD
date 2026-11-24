@@ -4,6 +4,7 @@ use glam::{Mat4, Vec2, Vec3};
 
 const FOV: f32 = std::f32::consts::FRAC_PI_4;
 
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Camera2D {
     pub center: DVec2,
     /// Pixels per millimetre.
@@ -51,16 +52,46 @@ impl Camera2D {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct OrbitCamera {
     pub target: Vec3,
     pub yaw: f32,
     pub pitch: f32,
     pub distance: f32,
+    /// Orthographic projection; the visible height at the target is the perspective one, so toggling keeps the size.
+    pub ortho: bool,
+}
+
+/// A standard view direction of the 3D camera.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StdView {
+    Front,
+    Back,
+    Right,
+    Left,
+    Top,
+    Bottom,
+    Iso,
+}
+
+impl StdView {
+    /// (yaw, pitch) in degrees; the eye sits at yaw/pitch from the target (front: on -Y, looking along +Y).
+    pub fn angles(self) -> (f32, f32) {
+        match self {
+            StdView::Front => (-90.0, 0.0),
+            StdView::Back => (90.0, 0.0),
+            StdView::Right => (0.0, 0.0),
+            StdView::Left => (180.0, 0.0),
+            StdView::Top => (-90.0, 89.9),
+            StdView::Bottom => (-90.0, -89.9),
+            StdView::Iso => (-45.0, 35.264),
+        }
+    }
 }
 
 impl Default for OrbitCamera {
     fn default() -> Self {
-        Self { target: Vec3::ZERO, yaw: -60f32.to_radians(), pitch: 30f32.to_radians(), distance: 150.0 }
+        Self { target: Vec3::ZERO, yaw: -60f32.to_radians(), pitch: 30f32.to_radians(), distance: 150.0, ortho: false }
     }
 }
 
@@ -76,8 +107,22 @@ impl OrbitCamera {
     }
 
     pub fn view_proj(&self, aspect: f32) -> Mat4 {
-        glam::camera::rh::proj::directx::perspective(FOV, aspect, self.distance * 0.01, self.distance * 100.0)
-            * glam::camera::rh::view::look_at_mat4(self.eye(), self.target, Vec3::Z)
+        let proj = if self.ortho {
+            let h = self.distance * (FOV / 2.0).tan();
+            // shortcut: the near plane sits a camera length behind the eye, so pick tolerances (scaled by the ray
+            // length) are about 2x looser in ortho; pass a pixel size from the camera if that bites
+            glam::camera::rh::proj::directx::orthographic(-h * aspect, h * aspect, -h, h, -self.distance, self.distance * 100.0)
+        } else {
+            glam::camera::rh::proj::directx::perspective(FOV, aspect, self.distance * 0.01, self.distance * 100.0)
+        };
+        proj * glam::camera::rh::view::look_at_mat4(self.eye(), self.target, Vec3::Z)
+    }
+
+    /// Turns the camera to a standard view, keeping target and distance.
+    pub fn set_view(&mut self, v: StdView) {
+        let (yaw, pitch) = v.angles();
+        self.yaw = yaw.to_radians();
+        self.pitch = pitch.to_radians();
     }
 
     /// World-space ray (origin on the near plane, unit direction) through an NDC point.
@@ -147,6 +192,26 @@ mod tests {
         assert!(dir.distance(expected) < 1e-4);
         let to_target = (cam.target.as_dvec3() - origin).normalize();
         assert!(to_target.distance(expected) < 1e-4);
+    }
+
+    #[test]
+    fn ortho_keeps_target_centred_and_rays_parallel() {
+        let cam = OrbitCamera { ortho: true, ..OrbitCamera::default() };
+        let p = cam.view_proj(1.5).project_point3(cam.target);
+        assert!(p.x.abs() < 1e-5 && p.y.abs() < 1e-5 && p.z > 0.0 && p.z < 1.0);
+        let (_, d0) = cam.ray(1.5, Vec2::ZERO);
+        let (_, d1) = cam.ray(1.5, Vec2::new(0.8, -0.6));
+        assert!(d0.distance(d1) < 1e-4, "ortho rays are parallel");
+    }
+
+    #[test]
+    fn standard_views_look_along_the_axes() {
+        let mut cam = OrbitCamera::default();
+        cam.set_view(StdView::Front);
+        let d = (cam.target - cam.eye()).normalize();
+        assert!(d.distance(Vec3::Y) < 1e-4, "front looks along +Y: {d}");
+        cam.set_view(StdView::Top);
+        assert!((cam.target - cam.eye()).normalize().z < -0.99);
     }
 
     #[test]

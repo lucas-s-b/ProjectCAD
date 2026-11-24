@@ -13,6 +13,7 @@ ProjectCAD is a CAD program for 2D drafting with constraints, parametric 3D part
 - [Import and export](#import-and-export)
 - [Plugins](#plugins)
 - [Settings, themes and command search](#settings-themes-and-command-search)
+- [Grab, rotate and scale](#grab-rotate-and-scale)
 - [Keyboard and mouse](#keyboard-and-mouse)
 - [More documentation](#more-documentation)
 
@@ -215,32 +216,65 @@ More: [PLUGINS.md](PLUGINS.md) (developer guide, the Rust client and the example
 
 ## Settings, themes and command search
 
-Use this section to change how the app looks.
+Use this section to change how the app looks and how it is controlled.
 
-1. Theme: open **View** and click **Dark theme** or **Light theme**. Accent colour: click one of `Accent: Blue`, `Accent: Green`, `Accent: Orange` or `Accent: Purple`. The 2D and 3D canvases keep their own colours.
-2. Layout: see [The window](#the-window); **Reset layout** restores the default.
-3. Theme, accent and layout are saved in the settings file (see [Install and run](#install-and-run)) when they change. They are never saved in a project.
-4. Command search: press Ctrl+K. A window opens with a search field. Type part of a name; the best eight matches are listed. Press Enter to run the first match, or click a match. Esc closes the window. The search runs over the named widgets on screen (buttons, fields, tabs), and choosing one clicks that widget.
+1. Open the Settings window: click **Settings** at the right end of the menu bar, choose **File > Settings...**, or press Ctrl+, (Ctrl+Comma). It has four pages:
+   - **General**: snap states at startup, autosave interval (default 5 minutes, 0 turns it off), how many recent files are kept, and the arrow-key nudge distance.
+   - **Interface**: theme, accent colour (four presets or any colour), UI scale (75 % to 200 %), animations and their duration, smooth camera transitions, hover highlight in 2D, the 2D and 3D grids, the axis triad and a frame-time readout in the status bar.
+   - **Navigation**: the control preset, which mouse drag orbits, pans and zooms, the orbit, pan and zoom speeds, inverted wheel zoom, inverted vertical orbit, and fly keys.
+   - **Controls**: every keyboard shortcut. Click a key to change it, then press the new key (Esc cancels). **+** adds another key, **×** unbinds the action, right-click removes one key, and **↺** goes back to the preset's keys. A key bound to two actions shows a ⚠ sign. Type in **Filter** to find an action or a key.
+2. Control presets set both the shortcuts and the mouse:
+   - **ProjectCAD** (default): right drag orbits, middle drag pans; G / R / S grab, rotate and scale; letters pick tools (Q select, L line, C circle, B rectangle, A arc, P polyline, T text, D dimension, W wall, O offset, Shift+T trim).
+   - **Blender**: middle drag orbits, Shift+middle pans, Ctrl+middle zooms; G / R / S with X / Y / Z; A selects all, Alt+A deselects, X or Delete deletes, Shift+D duplicates, Home fits, F3 opens command search, 1 / 3 / 7 front / right / top (Ctrl for the opposite side), 5 toggles orthographic.
+   - **Godot**: middle drag orbits, Shift+middle pans; hold the right button and fly with W A S D (Q / E down / up, Shift faster); Q / W / E switch the gizmo between move and rotate, all, move only and rotate only; R scales; F focuses the selection.
+   - **Roblox Studio**: right drag orbits, middle drag pans, fly with the right button held; Ctrl+1 / Ctrl+2 / Ctrl+4 switch the gizmo, Ctrl+3 scales; F focuses the selection.
+   Choosing a preset replaces your own shortcut changes.
+3. Theme and accent are also in the **View** menu. Layout: see [The window](#the-window); **Reset layout** restores the default.
+4. All settings are saved in the settings file (see [Install and run](#install-and-run)) when they change. They are never saved in a project. Autosaves go to the `autosave` folder beside the settings file; they never touch the project file.
+5. **File > Open recent** lists the last opened or saved projects.
+6. Command search: press Ctrl+K. A window opens with a search field. Type part of a name; the best eight matches are listed. Press Enter to run the first match, or click a match. Esc closes the window. The search runs over the named widgets on screen (buttons, fields, tabs), and choosing one clicks that widget.
 
 ![Light theme with command search](images/command-search.png)
 
-Limits: command search finds only what is on screen (no menu items), and ranks by a simple fuzzy match.
+Limits: command search finds only what is on screen (no menu items), and ranks by a simple fuzzy match. Fly keys and drag zoom work in the 3D view only.
 
-More: [ROADMAP.md](ROADMAP.md) (batch D).
+## Grab, rotate and scale
+
+Use this to move the selection with the mouse without dragging, as in Blender.
+
+1. Select entities in the 2D view, or select solids or a free component in the 3D view.
+2. Press G (grab), R (rotate) or S (scale). Move the mouse; no button needs to be held. A line at the top of the view shows the value.
+3. Press X, Y or Z to lock the motion to that axis (press it again to unlock). In the 3D view, Shift+X / Y / Z moves in the plane across that axis.
+4. Type a number for an exact value: a distance in the document units (along the locked axis, or X when none is locked), an angle in degrees, or a scale factor. Backspace deletes a digit; - flips the sign.
+5. Hold Ctrl to snap: grid steps, 15 degree steps or 0.1 scale steps.
+6. Press Enter or click to confirm (one undo step). Press Esc or right-click to cancel.
+
+Limits: solids (Box, Cylinder, Sphere) can only be grabbed; components can be grabbed and rotated, not scaled; sketch shapes rotate and scale only uniformly.
 
 ## Keyboard and mouse
 
-Ctrl is the Control key; on macOS it is Cmd.
+Ctrl is the Control key; on macOS it is Cmd. The table lists the **ProjectCAD** preset; every key can be changed on the Controls page of the Settings window.
 
 | Keys | Does | Where |
 |---|---|---|
-| Ctrl+N / Ctrl+O / Ctrl+S | New / Open / Save | everywhere |
+| Ctrl+N / Ctrl+O / Ctrl+S / Ctrl+Shift+S | New / Open / Save / Save as | everywhere |
 | Ctrl+Z | Undo | everywhere |
 | Ctrl+Y or Ctrl+Shift+Z | Redo | everywhere |
-| Ctrl+D | Duplicate the selection | everywhere |
+| Ctrl+, | Settings | everywhere |
 | Ctrl+K | Command search | everywhere |
+| Ctrl+D | Duplicate the selection | when no text field has focus |
+| Ctrl+A / Ctrl+Shift+A / Ctrl+I | Select all / deselect all / invert the selection | when no text field has focus |
 | Delete | Delete the selection | when no text field has focus |
+| G / R / S | Grab / rotate / scale (see above) | 2D view, 3D view |
+| Arrow keys | Nudge the selection by the nudge distance (Shift: ten times) | 2D view |
+| Arrow keys | Orbit 15 degrees | 3D view |
 | F | Fit the view to the model | when no text field has focus |
+| . (period) | Focus on the selection | when no text field has focus |
+| ` (backtick) | Switch between the 2D and 3D view | when no text field has focus |
+| 1 / 3 / 7 / 0 | Front / right / top / isometric view (Ctrl+1, Ctrl+3, Ctrl+7: back, left, bottom) | when no text field has focus |
+| 5 | Orthographic or perspective | when no text field has focus |
+| Ctrl+Space | Hide or show the toolbar and side panels | when no text field has focus |
+| Q / L / C / B / A / P / T / D / W / O / Shift+T | Tools: select, line, circle, rectangle, arc, polyline, text, dimension, wall, offset, trim | when no text field has focus |
 | F3 | Object snap on/off | when no text field has focus |
 | F9 | Grid snap on/off | when no text field has focus |
 | Esc | Cancel the current tool; close command search | 2D view, 3D view, command search |
@@ -249,12 +283,10 @@ Ctrl is the Control key; on macOS it is Cmd.
 | Shift + click | Add to or remove from the selection | 2D view, 3D view, Objects list |
 | Shift (while turning a ring) | Snap the rotation to 15 degrees | rotate gizmo |
 
-On macOS, Ctrl is Cmd.
-
-| Mouse | 2D view | 3D view |
+| Mouse (ProjectCAD preset) | 2D view | 3D view |
 |---|---|---|
 | Wheel | Zoom | Zoom |
-| Left click | Place a point or select | Select (face, edge or component) |
+| Left click | Place a point or select | Select (face, edge or component); click an axis end of the triad for that view |
 | Left drag | Move the selection (snapped) | Drag a gizmo arrow or ring |
 | Middle drag | Pan | Pan |
 | Right drag | Pan | Orbit |

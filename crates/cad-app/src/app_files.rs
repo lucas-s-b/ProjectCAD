@@ -79,6 +79,13 @@ impl CadApp {
                     let _ = self.import_path(p);
                 }
             }
+            Pending::OpenRecent(i) => {
+                let Some(p) = self.settings.recent.get(i).cloned() else { return };
+                if self.open_path(PathBuf::from(&p)).is_err() {
+                    // A file that is gone leaves the list.
+                    self.settings.recent.retain(|r| *r != p);
+                }
+            }
             Pending::Quit => {
                 self.allow_close = true;
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -94,6 +101,7 @@ impl CadApp {
     pub fn open_path(&mut self, p: PathBuf) -> Result<(), String> {
         match Document::load(&p) {
             Ok(doc) => {
+                self.settings.push_recent(&p);
                 self.reset(doc, Some(p));
                 Ok(())
             }
@@ -355,6 +363,7 @@ impl CadApp {
         match self.doc.save(&p) {
             Ok(()) => {
                 self.saved_rev = self.doc.revision();
+                self.settings.push_recent(&p);
                 self.path = Some(p);
                 self.status = "Saved".into();
                 true

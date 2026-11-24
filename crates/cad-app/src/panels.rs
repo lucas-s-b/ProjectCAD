@@ -3,88 +3,188 @@ use crate::settings::{ACCENTS, Dock, Layout, Theme};
 use crate::widgets as w;
 use crate::{constraints_panel, layers_panel, model_panel, properties_panel};
 use cad_document::{Command, EntityId, Units};
-use eframe::egui::{self, Button, Key, Modifiers};
+use eframe::egui::{self, Button};
 
-#[derive(Clone, Copy)]
-enum Action {
-    New,
-    Open,
-    Import,
-    ImportSvg,
-    Save,
-    Undo,
-    Redo,
-    Delete,
-    Fit,
-    Duplicate,
-}
+use crate::camera::StdView;
+use crate::keymap::Action;
 
-fn run(app: &mut CadApp, ctx: &egui::Context, action: Action) {
+/// Runs a shortcut or menu action.
+pub fn run(app: &mut CadApp, ctx: &egui::Context, action: Action) {
+    use crate::app::Tool;
+    let tool = |app: &mut CadApp, t: Tool| {
+        app.tool = t;
+        app.points.clear();
+        app.op_target = None;
+    };
     match action {
         Action::New => app.request(ctx, Pending::New),
         Action::Open => app.request(ctx, Pending::Open),
-        Action::Import => app.request(ctx, Pending::Import),
-        Action::ImportSvg => app.request(ctx, Pending::ImportSvg),
         Action::Save => {
             app.save();
         }
+        Action::SaveAs => {
+            app.save_as();
+        }
+        Action::Settings => app.settings_open = !app.settings_open,
+        Action::CommandSearch => crate::palette::open(app),
         Action::Undo => app.undo(),
         Action::Redo => app.redo(),
         Action::Delete => app.delete_selection(),
-        Action::Fit => app.fit_active(),
         Action::Duplicate => app.duplicate_selection(),
+        Action::SelectAll => {
+            let ids: Vec<EntityId> = app.doc.entities_in(app.sketch).filter(|e| app.pickable(e)).map(|e| e.id).collect();
+            app.set_selection(ids);
+        }
+        Action::DeselectAll => {
+            app.set_selection([]);
+            crate::assembly_panel::select(app, None);
+        }
+        Action::InvertSelection => {
+            let ids: Vec<EntityId> = app.doc.entities_in(app.sketch).filter(|e| app.pickable(e) && !app.selection.contains(&e.id)).map(|e| e.id).collect();
+            app.set_selection(ids);
+        }
+        Action::Grab => crate::transform::start(app, ctx, crate::transform::Mode::Grab),
+        Action::Rotate => crate::transform::start(app, ctx, crate::transform::Mode::Rotate),
+        Action::Scale => crate::transform::start(app, ctx, crate::transform::Mode::Scale),
+        Action::NudgeLeft | Action::NudgeRight | Action::NudgeUp | Action::NudgeDown => nudge(app, ctx, action),
+        Action::Fit => app.fit_active(),
+        Action::FocusSelection => focus_selection(app),
+        Action::Toggle2D3D => {
+            app.view = if app.view == ViewMode::TwoD { ViewMode::ThreeD } else { ViewMode::TwoD };
+        }
+        Action::ViewFront => std_view(app, StdView::Front),
+        Action::ViewBack => std_view(app, StdView::Back),
+        Action::ViewRight => std_view(app, StdView::Right),
+        Action::ViewLeft => std_view(app, StdView::Left),
+        Action::ViewTop => std_view(app, StdView::Top),
+        Action::ViewBottom => std_view(app, StdView::Bottom),
+        Action::ViewIso => std_view(app, StdView::Iso),
+        Action::ToggleOrtho => {
+            app.view = ViewMode::ThreeD;
+            app.cam3d.ortho = !app.cam3d.ortho;
+        }
+        Action::TogglePanels => app.focus_mode = !app.focus_mode,
+        Action::ToggleOsnap => app.osnap = !app.osnap,
+        Action::ToggleGridSnap => app.grid_snap = !app.grid_snap,
+        Action::ToggleGlyphs => app.show_glyphs = !app.show_glyphs,
+        Action::GizmoAll => app.gizmo_mode = crate::gizmo::GizmoMode::All,
+        Action::GizmoMove => app.gizmo_mode = crate::gizmo::GizmoMode::Move,
+        Action::GizmoRotate => app.gizmo_mode = crate::gizmo::GizmoMode::Rotate,
+        Action::ToolSelect => tool(app, Tool::Select),
+        Action::ToolLine => tool(app, Tool::Line),
+        Action::ToolCircle => tool(app, Tool::Circle),
+        Action::ToolRect => tool(app, Tool::Rect),
+        Action::ToolArc => tool(app, Tool::Arc),
+        Action::ToolPolyline => tool(app, Tool::Polyline),
+        Action::ToolText => tool(app, Tool::Text),
+        Action::ToolDimension => tool(app, Tool::Dimension),
+        Action::ToolWall => tool(app, Tool::Wall),
+        Action::ToolTrim => tool(app, Tool::Trim),
+        Action::ToolOffset => tool(app, Tool::Offset),
+    }
+}
+
+/// Turns the 3D camera to a standard view (switching to 3D), gliding when transitions are on.
+pub fn std_view(app: &mut CadApp, v: StdView) {
+    app.view = ViewMode::ThreeD;
+    crate::navigation::glide(app, |app| app.cam3d.set_view(v));
+}
+
+/// Arrow keys: in 2D they move the selection by the nudge distance (Shift: ten times); in 3D they orbit 15 degrees.
+fn nudge(app: &mut CadApp, ctx: &egui::Context, action: Action) {
+    let dir = match action {
+        Action::NudgeLeft => cad_geometry::DVec2::NEG_X,
+        Action::NudgeRight => cad_geometry::DVec2::X,
+        Action::NudgeUp => cad_geometry::DVec2::Y,
+        _ => cad_geometry::DVec2::NEG_Y,
+    };
+    if app.view == ViewMode::ThreeD {
+        // `OrbitCamera::orbit` turns 0.01 rad per point.
+        let step = 15f32.to_radians() / 0.01;
+        app.cam3d.orbit(-dir.x as f32 * step, -dir.y as f32 * step);
+        return;
+    }
+    if app.selection.is_empty() {
+        return;
+    }
+    let big = if ctx.input(|i| i.modifiers.shift) { 10.0 } else { 1.0 };
+    let d = (dir * app.settings.general.nudge_mm * big).extend(0.0);
+    let cmds: Vec<Command> = app
+        .selection
+        .iter()
+        .filter_map(|id| app.doc.get(*id))
+        .map(|e| {
+            let mut shape = e.shape.clone();
+            shape.translate(d);
+            Command::SetShape { id: e.id, shape }
+        })
+        .collect();
+    let pinned = app.selection.clone();
+    app.exec_pinned(cmds, &pinned);
+}
+
+/// Fits the active view to the selection: entities (2D: sketch coordinates; 3D: world), else the selected
+/// component; everything when nothing is selected.
+fn focus_selection(app: &mut CadApp) {
+    let ents: Vec<_> = app.selection.iter().filter_map(|id| app.doc.get(*id)).cloned().collect();
+    let bounds = match app.view {
+        ViewMode::TwoD => ents.iter().map(|e| e.shape.bbox()).reduce(|(a, b), (c, d)| (a.min(c), b.max(d))),
+        ViewMode::ThreeD => ents
+            .iter()
+            .filter_map(|e| app.entity_bounds(e))
+            .reduce(|(a, b), (c, d)| (a.min(c), b.max(d)))
+            .or_else(|| app.component_sel.and_then(|id| app.model_result()?.component(id)).map(|b| b.bbox())),
+    };
+    let Some((lo, hi)) = bounds else {
+        app.fit_active();
+        return;
+    };
+    crate::navigation::glide(app, |app| match app.view {
+        ViewMode::TwoD => {
+            let pad = (hi - lo).truncate().max(cad_geometry::DVec2::splat(10.0)) * 0.25;
+            let r = app.view_rect;
+            app.cam2d.fit(r, lo.truncate() - pad, hi.truncate() + pad);
+        }
+        ViewMode::ThreeD => app.cam3d.fit(lo, hi),
+    });
+}
+
+/// Writes a copy of a dirty project to `<settings folder>/autosave/<name>.cadproj` every `autosave_min` minutes. The
+/// project file, its path and its saved state are untouched; MCP mode and a missing settings file write nothing.
+pub fn autosave(app: &mut CadApp) {
+    let min = app.settings.general.autosave_min;
+    if min == 0 || app.mcp.is_some() || app.autosaved.elapsed().as_secs() < u64::from(min) * 60 {
+        return;
+    }
+    app.autosaved = std::time::Instant::now();
+    let Some(dir) = app.settings_path.as_deref().and_then(|p| p.parent()).map(|d| d.join("autosave")) else { return };
+    if !app.is_dirty() {
+        return;
+    }
+    let name: String = app.doc.name.chars().map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' }).collect();
+    let p = dir.join(format!("{name}.cadproj"));
+    let r = std::fs::create_dir_all(&dir).map_err(|e| e.to_string()).and_then(|()| app.doc.save(&p).map_err(|e| e.to_string()));
+    match r {
+        Ok(()) => app.status = format!("Autosaved to {}", p.display()),
+        Err(err) => app.status = format!("Autosave failed: {err}"),
     }
 }
 
 pub fn shortcuts(app: &mut CadApp, ctx: &egui::Context) {
-    let plain_keys_ok = !ctx.egui_wants_keyboard_input();
-    let mut actions = Vec::new();
-    let mut toggles = (false, false);
-    let mut open = false;
-    ctx.input_mut(|i| {
-        let ctrl = Modifiers::COMMAND;
-        if i.consume_key(ctrl, Key::K) {
-            open = true;
-        }
-        // Shift variants first: consume_key ignores extra Shift.
-        if i.consume_key(ctrl | Modifiers::SHIFT, Key::Z) || i.consume_key(ctrl, Key::Y) {
-            actions.push(Action::Redo);
-        }
-        if i.consume_key(ctrl, Key::Z) {
-            actions.push(Action::Undo);
-        }
-        if i.consume_key(ctrl, Key::N) {
-            actions.push(Action::New);
-        }
-        if i.consume_key(ctrl, Key::O) {
-            actions.push(Action::Open);
-        }
-        if i.consume_key(ctrl, Key::S) {
-            actions.push(Action::Save);
-        }
-        if i.consume_key(ctrl, Key::D) {
-            actions.push(Action::Duplicate);
-        }
-        if plain_keys_ok && i.consume_key(Modifiers::NONE, Key::F3) {
-            toggles.0 = true;
-        }
-        if plain_keys_ok && i.consume_key(Modifiers::NONE, Key::F9) {
-            toggles.1 = true;
-        }
-        if plain_keys_ok && i.consume_key(Modifiers::NONE, Key::Delete) {
-            actions.push(Action::Delete);
-        }
-        if plain_keys_ok && i.consume_key(Modifiers::NONE, Key::F) {
-            actions.push(Action::Fit);
-        }
-    });
-    if open {
-        crate::palette::open(app);
+    // A running modal, a key being captured in the Controls settings, or fly keys take the keyboard first.
+    if app.modal.is_some() || app.rebind.is_some() || crate::navigation::flying(app, ctx) {
+        return;
     }
-    app.osnap ^= toggles.0;
-    app.grid_snap ^= toggles.1;
-    for a in actions {
+    for a in crate::keymap::consume(&app.settings.controls, ctx) {
         run(app, ctx, a);
+    }
+}
+
+/// A menu entry that runs `action`, showing its first chord.
+fn action_item(app: &mut CadApp, ui: &mut egui::Ui, ctx: &egui::Context, enabled: bool, label: &str, action: Action) {
+    let chord = app.settings.controls.label(action);
+    if menu_item(ui, enabled, label, &chord) {
+        run(app, ctx, action);
     }
 }
 
@@ -101,27 +201,35 @@ pub fn menu_bar(app: &mut CadApp, ui: &mut egui::Ui) {
     egui::Panel::top("menu").show(ui, |ui| {
         egui::MenuBar::new().ui(ui, |ui| {
             w::menu_button(ui, "File", |ui| {
-                if menu_item(ui, true, "New", "Ctrl+N") {
-                    run(app, &ctx, Action::New);
-                }
-                if menu_item(ui, true, "Open...", "Ctrl+O") {
-                    run(app, &ctx, Action::Open);
-                }
+                action_item(app, ui, &ctx, true, "New", Action::New);
+                action_item(app, ui, &ctx, true, "Open...", Action::Open);
+                w::menu_button(ui, "Open recent", |ui| {
+                    if app.settings.recent.is_empty() {
+                        ui.label("No recent projects");
+                    }
+                    for (i, p) in app.settings.recent.clone().iter().enumerate() {
+                        let name = std::path::Path::new(p).file_name().map_or(p.clone(), |n| n.to_string_lossy().into_owned());
+                        if w::add(ui, &format!("Recent: {name}"), Button::new(&name)).on_hover_text(p).clicked() {
+                            app.request(&ctx, Pending::OpenRecent(i));
+                            ui.close();
+                        }
+                    }
+                    ui.separator();
+                    if menu_item(ui, !app.settings.recent.is_empty(), "Clear recent", "") {
+                        app.settings.recent.clear();
+                    }
+                });
                 if menu_item(ui, true, "Import SVG...", "") {
-                    run(app, &ctx, Action::ImportSvg);
+                    app.request(&ctx, Pending::ImportSvg);
                 }
                 if menu_item(ui, true, "Import DXF...", "") {
-                    run(app, &ctx, Action::Import);
+                    app.request(&ctx, Pending::Import);
                 }
                 if menu_item(ui, true, "Import STL/OBJ mesh...", "") {
                     app.import_mesh_dialog();
                 }
-                if menu_item(ui, true, "Save", "Ctrl+S") {
-                    run(app, &ctx, Action::Save);
-                }
-                if menu_item(ui, true, "Save As...", "") {
-                    app.save_as();
-                }
+                action_item(app, ui, &ctx, true, "Save", Action::Save);
+                action_item(app, ui, &ctx, true, "Save As...", Action::SaveAs);
                 if menu_item(ui, true, "Export SVG...", "") {
                     app.export_dialog("svg");
                 }
@@ -152,17 +260,23 @@ pub fn menu_bar(app: &mut CadApp, ui: &mut egui::Ui) {
                 if menu_item(ui, true, "Export BOM CSV...", "") {
                     app.export_dialog("csv");
                 }
+                ui.separator();
+                action_item(app, ui, &ctx, true, "Settings...", Action::Settings);
             });
             w::menu_button(ui, "Edit", |ui| {
-                if menu_item(ui, app.history.can_undo(), "Undo", "Ctrl+Z") {
-                    run(app, &ctx, Action::Undo);
-                }
-                if menu_item(ui, app.history.can_redo(), "Redo", "Ctrl+Y") {
-                    run(app, &ctx, Action::Redo);
-                }
-                if menu_item(ui, !app.selection.is_empty(), "Delete", "Del") {
-                    run(app, &ctx, Action::Delete);
-                }
+                action_item(app, ui, &ctx, app.history.can_undo(), "Undo", Action::Undo);
+                action_item(app, ui, &ctx, app.history.can_redo(), "Redo", Action::Redo);
+                ui.separator();
+                let some = !app.selection.is_empty();
+                action_item(app, ui, &ctx, some, "Delete", Action::Delete);
+                action_item(app, ui, &ctx, some, "Duplicate", Action::Duplicate);
+                action_item(app, ui, &ctx, true, "Select all", Action::SelectAll);
+                action_item(app, ui, &ctx, true, "Deselect all", Action::DeselectAll);
+                action_item(app, ui, &ctx, true, "Invert selection", Action::InvertSelection);
+                ui.separator();
+                action_item(app, ui, &ctx, true, "Grab", Action::Grab);
+                action_item(app, ui, &ctx, true, "Rotate", Action::Rotate);
+                action_item(app, ui, &ctx, true, "Scale", Action::Scale);
             });
             w::menu_button(ui, "View", |ui| {
                 if menu_item(ui, true, "2D", "") {
@@ -171,9 +285,24 @@ pub fn menu_bar(app: &mut CadApp, ui: &mut egui::Ui) {
                 if menu_item(ui, true, "3D", "") {
                     app.view = ViewMode::ThreeD;
                 }
-                if menu_item(ui, true, "Fit", "F") {
-                    run(app, &ctx, Action::Fit);
-                }
+                action_item(app, ui, &ctx, true, "Fit", Action::Fit);
+                action_item(app, ui, &ctx, true, "Focus selection", Action::FocusSelection);
+                w::menu_button(ui, "Standard views", |ui| {
+                    for (label, a) in [
+                        ("Front", Action::ViewFront),
+                        ("Back", Action::ViewBack),
+                        ("Right", Action::ViewRight),
+                        ("Left", Action::ViewLeft),
+                        ("Top", Action::ViewTop),
+                        ("Bottom", Action::ViewBottom),
+                        ("Isometric", Action::ViewIso),
+                    ] {
+                        action_item(app, ui, &ctx, true, label, a);
+                    }
+                });
+                let ortho = if app.cam3d.ortho { "Perspective" } else { "Orthographic" };
+                action_item(app, ui, &ctx, true, ortho, Action::ToggleOrtho);
+                action_item(app, ui, &ctx, true, if app.focus_mode { "Show panels" } else { "Hide panels" }, Action::TogglePanels);
                 w::checkbox(ui, &mut app.show_glyphs, "Constraint glyphs");
                 ui.separator();
                 // Each entry closes the menu like `menu_item`, so a script reopens "View" before the next one.
@@ -213,6 +342,13 @@ pub fn menu_bar(app: &mut CadApp, ui: &mut egui::Ui) {
                     app.layout_gen += 1;
                 }
             });
+            w::menu_button(ui, "Help", |ui| {
+                if menu_item(ui, true, "Keyboard shortcuts", "") {
+                    app.settings_open = true;
+                    app.settings_page = crate::settings_window::Page::Controls;
+                }
+                ui.label(format!("ProjectCAD {}", env!("CARGO_PKG_VERSION")));
+            });
             w::menu_button(ui, "Plugins", |ui| {
                 for m in app.plugins.clone() {
                     if menu_item(ui, app.plugin.is_none(), &format!("Plugin: {}", m.name), "") {
@@ -238,6 +374,10 @@ pub fn menu_bar(app: &mut CadApp, ui: &mut egui::Ui) {
                 }
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if w::add(ui, "Open settings", Button::selectable(app.settings_open, "Settings")).clicked() {
+                    app.settings_open = !app.settings_open;
+                }
+                ui.separator();
                 // Picking a panel shows its slot if it was hidden.
                 for tab in [SideTab::Assembly, SideTab::Model, SideTab::Sketch] {
                     if w::selectable_value(ui, &mut app.side_tab, tab, tab.name()).clicked() {
@@ -352,6 +492,14 @@ pub fn status_bar(app: &mut CadApp, ui: &mut egui::Ui) {
             let (s, c) = (app.doc.settings(), app.cursor_world);
             ui.label(format!("X {}  Y {} {}", s.format_length(c.x), s.format_length(c.y), s.units.suffix()));
             ui.separator();
+            if app.settings.ui.frame_time {
+                ui.label(format!("{:.1} ms", app.frame_avg));
+                ui.separator();
+            }
+            if app.view == ViewMode::ThreeD && app.cam3d.ortho {
+                ui.label("Ortho");
+                ui.separator();
+            }
             ui.label(format!("Entities: {}", app.doc.len()));
             ui.label(format!("Selected: {}", app.selection.len()));
             ui.separator();

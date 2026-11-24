@@ -17,24 +17,32 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     app.view_rect = rect;
     app.snap = None;
 
-    navigate(app, ui, &resp, rect);
+    // A running Grab / Rotate / Scale takes the pointer and keys; the view only draws.
+    let modal = crate::transform::update(app, ui, rect);
+    if !modal {
+        crate::navigation::input_2d(app, ui, &resp, rect);
+    }
     if let Some(p) = resp.hover_pos() {
         app.cursor_world = app.cam2d.screen_to_world(rect, p);
     }
-    if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-        app.points.clear();
-        app.op_target = None;
-        app.pick_face = PickFace::Off;
-        app.tool = Tool::Select;
-    }
     let mut cursor = app.cursor_world;
-    match app.tool {
-        Tool::Select => select(app, ui, &resp, rect),
-        Tool::Trim | Tool::Extend | Tool::Offset | Tool::Fillet | Tool::Chamfer | Tool::Split => {
-            view2d_edit::edit_tool(app, ui, &resp, rect)
+    if !modal {
+        if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            app.points.clear();
+            app.op_target = None;
+            app.pick_face = PickFace::Off;
+            app.tool = Tool::Select;
         }
-        _ => cursor = view2d_tools::draw_tool(app, ui, &resp, rect),
+        match app.tool {
+            Tool::Select => select(app, ui, &resp, rect),
+            Tool::Trim | Tool::Extend | Tool::Offset | Tool::Fillet | Tool::Chamfer | Tool::Split => {
+                view2d_edit::edit_tool(app, ui, &resp, rect)
+            }
+            _ => cursor = view2d_tools::draw_tool(app, ui, &resp, rect),
+        }
     }
+    let hovering = !modal && app.settings.ui.hover_highlight && app.drag.is_none() && matches!(app.tool, Tool::Select | Tool::Trim | Tool::Extend | Tool::Offset | Tool::Fillet | Tool::Chamfer | Tool::Split);
+    app.hover = if hovering { resp.hover_pos().and_then(|p| pick(app, rect, p)) } else { None };
 
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, 0.0, Color32::from_gray(24));
@@ -49,8 +57,16 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
         }
         let [r, g, b] = if e.construction { CONSTRUCTION_RGB } else { app.color(e) };
         let marked = app.selection.contains(&e.id) || app.op_target.is_some_and(|(id, _)| id == e.id);
-        let color = if marked { SELECTED } else { Color32::from_rgb(r, g, b) };
-        let stroke = Stroke::new(stroke_width(app, e, marked), color);
+        let hovered = !marked && app.hover == Some(e.id);
+        let color = if marked {
+            SELECTED
+        } else if hovered {
+            // Half way to white: brighter on any layer colour.
+            Color32::from_rgb(r / 2 + 128, g / 2 + 128, b / 2 + 128)
+        } else {
+            Color32::from_rgb(r, g, b)
+        };
+        let stroke = Stroke::new(stroke_width(app, e, marked) + if hovered { 1.0 } else { 0.0 }, color);
         let dash = if e.construction { CONSTRUCTION_DASH.to_vec() } else { dash_pixels(app, e) };
         draw_styled(app, &painter, rect, &app.display_shape(e), stroke, &dash);
     }
@@ -60,6 +76,7 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     view2d_tools::draw_preview(app, &painter, rect, cursor);
     view2d_tools::draw_marker(app, &painter, rect);
     view2d_edit::draw_hint(app, &painter, rect);
+    crate::transform::paint(app, &painter, rect);
     let name = app.doc.sketch(app.sketch).map_or("?", |s| s.name.as_str());
     painter.text(
         rect.right_top() + egui::vec2(-8.0, 8.0),
@@ -82,23 +99,6 @@ fn draw_reference(app: &CadApp, painter: &egui::Painter, rect: egui::Rect) {
     for (_, body) in &model.bodies {
         for [a, b] in body.feature_edges() {
             painter.line_segment([project(a), project(b)], stroke);
-        }
-    }
-}
-
-fn navigate(app: &mut CadApp, ui: &egui::Ui, resp: &egui::Response, rect: egui::Rect) {
-    if resp.dragged_by(PointerButton::Middle) || resp.dragged_by(PointerButton::Secondary) {
-        let d = resp.drag_delta();
-        let zoom = app.cam2d.zoom;
-        app.cam2d.center.x -= f64::from(d.x) / zoom;
-        app.cam2d.center.y += f64::from(d.y) / zoom;
-    }
-    if resp.hovered()
-        && let Some(cursor) = resp.hover_pos()
-    {
-        let scroll = ui.input(|i| i.smooth_scroll_delta().y);
-        if scroll != 0.0 {
-            app.cam2d.zoom_at(rect, cursor, f64::from(scroll * 0.002).exp());
         }
     }
 }
@@ -223,13 +223,15 @@ fn draw_grid(app: &CadApp, painter: &egui::Painter, rect: egui::Rect) {
     let lo = cam.screen_to_world(rect, rect.left_bottom());
     let hi = cam.screen_to_world(rect, rect.right_top());
     let grid = Stroke::new(1.0, Color32::from_gray(48));
-    let mut x = (lo.x / step).floor() * step;
+    // Off: no lines, the loops start past their end; the axes stay.
+    let on = app.settings.ui.grid_2d;
+    let mut x = if on { (lo.x / step).floor() * step } else { f64::INFINITY };
     while x <= hi.x {
         let (a, b) = (cam.world_to_screen(rect, DVec2::new(x, lo.y)), cam.world_to_screen(rect, DVec2::new(x, hi.y)));
         painter.line_segment([a, b], grid);
         x += step;
     }
-    let mut y = (lo.y / step).floor() * step;
+    let mut y = if on { (lo.y / step).floor() * step } else { f64::INFINITY };
     while y <= hi.y {
         let (a, b) = (cam.world_to_screen(rect, DVec2::new(lo.x, y)), cam.world_to_screen(rect, DVec2::new(hi.x, y)));
         painter.line_segment([a, b], grid);

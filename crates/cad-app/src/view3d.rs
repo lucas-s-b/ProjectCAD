@@ -105,7 +105,8 @@ fn build_scene(app: &CadApp) -> Scene {
             }
         };
         let grey = [0.3, 0.3, 0.3];
-        for i in -10..=10 {
+        let n = if app.settings.ui.grid_3d { 10 } else { -11 };
+        for i in -n..=n {
             let t = f64::from(i) * 10.0;
             fixed(DVec3::new(t, -100.0, 0.0), DVec3::new(t, 100.0, 0.0), grey);
             fixed(DVec3::new(-100.0, t, 0.0), DVec3::new(100.0, t, 0.0), grey);
@@ -181,7 +182,10 @@ fn build_scene(app: &CadApp) -> Scene {
         let meshed = id.is_some() && (mesh.is_some_and(|m| Some(m.body) == id) || study.is_some_and(|s| Some(s.body) == id));
         let selected = comp.is_some() && comp == app.component_sel;
         let shift = comp.and_then(|c| offsets.get(&c)).copied().unwrap_or(DVec3::ZERO);
-        let held = if selected { gizmo_motion } else { DAffine3::IDENTITY };
+        let held = match comp {
+            Some(c) if selected => crate::transform::component_motion(app, c).unwrap_or(gizmo_motion),
+            _ => DAffine3::IDENTITY,
+        };
         let turn = comp.and_then(|c| moves.and_then(|m| m.get(&c))).copied().unwrap_or(DAffine3::IDENTITY);
         let at = |p: DVec3| (DAffine3::from_translation(shift) * held * turn).transform_point3(p);
         let mesh = &body.mesh;
@@ -357,32 +361,27 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     crate::motion_panel::tick(app, ui.ctx());
     let aspect = rect.width() / rect.height().max(1.0);
 
-    if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+    // A running Grab / Rotate / Scale takes the pointer and keys; the view only draws.
+    let modal = crate::transform::update(app, ui, rect);
+    if !modal && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
         app.pick_face = PickFace::Off;
         app.pick_edges = None;
         if app.gizmo.take().is_some_and(|g| matches!(g.kind, GizmoKind::Joint { .. })) {
             app.joint_drag = None;
         }
     }
-    if app.pick_edges.is_some() && !ui.ctx().egui_wants_keyboard_input() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+    if !modal && app.pick_edges.is_some() && !ui.ctx().egui_wants_keyboard_input() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
         crate::edge_pick::finish(app);
     }
-    if resp.dragged_by(PointerButton::Secondary) {
-        let d = resp.drag_delta();
-        app.cam3d.orbit(d.x, d.y);
+    if !modal {
+        crate::navigation::input_3d(app, ui, &resp, rect);
+        crate::gizmo::input(app, ui, &resp, rect);
     }
-    if resp.dragged_by(PointerButton::Middle) {
-        let d = resp.drag_delta();
-        app.cam3d.pan(d.x, d.y, rect.height());
-    }
-    if resp.hovered() {
-        let scroll = ui.input(|i| i.smooth_scroll_delta().y);
-        if scroll != 0.0 {
-            app.cam3d.zoom((-scroll * 0.002).exp());
-        }
-    }
-    crate::gizmo::input(app, ui, &resp, rect);
-    if resp.clicked_by(PointerButton::Primary)
+    let triad_click = resp.clicked_by(PointerButton::Primary).then(|| resp.interact_pointer_pos()).flatten().and_then(|p| triad_hit(app, rect, p));
+    if let Some(v) = triad_click.filter(|_| !modal) {
+        crate::panels::std_view(app, v);
+    } else if !modal
+        && resp.clicked_by(PointerButton::Primary)
         && let Some(pos) = resp.interact_pointer_pos()
     {
         let (origin, dir) = ray(app, rect, pos);
@@ -420,7 +419,7 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
 
     let stamp = (app.doc.revision(), app.model.as_ref().map_or(u64::MAX, |(r, _)| *r), app.sel_rev, app.section.clip());
     // The inspector buffer exists whenever one entity is selected; it only previews once it differs.
-    let preview = app.drag.is_some() || app.pick_edges.is_some() || app.gizmo.is_some()
+    let preview = app.drag.is_some() || app.pick_edges.is_some() || app.gizmo.is_some() || app.modal.is_some()
         || app.inspector.as_ref().is_some_and(|(id, s)| app.doc.get(*id).is_none_or(|e| e.shape != *s));
     let geometry = if preview || app.gpu_stamp != Some(stamp) {
         // While previewing the stamp stays unset, so the final state is uploaded afterwards.
@@ -461,6 +460,10 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     if let Some(rep) = crate::study_panel::shown(app) {
         crate::study_panel::paint_legend(app, rep, &ui.painter_at(rect), rect);
     }
+    if app.settings.ui.triad {
+        paint_triad(app, &ui.painter_at(rect), rect, resp.hover_pos());
+    }
+    crate::transform::paint(app, &ui.painter_at(rect), rect);
     ui.painter_at(rect).text(
         rect.left_top() + egui::vec2(8.0, 8.0),
         egui::Align2::LEFT_TOP,
@@ -476,6 +479,62 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
             egui::FontId::proportional(13.0),
             egui::Color32::from_gray(200),
         );
+    }
+}
+
+/// The axis triad in the bottom-right corner: its centre and, per axis end, (screen point, axis, positive end, depth
+/// towards the viewer), farthest first so nearer ends paint over farther ones.
+fn triad(app: &CadApp, rect: egui::Rect) -> (egui::Pos2, Vec<(egui::Pos2, usize, bool, f32)>) {
+    const LEN: f32 = 30.0;
+    let c = rect.right_bottom() + egui::vec2(-56.0, -56.0);
+    let cam = &app.cam3d;
+    let forward = (cam.target - cam.eye()).normalize();
+    let right = forward.cross(glam::Vec3::Z).normalize_or(glam::Vec3::X);
+    let up = right.cross(forward);
+    let mut ends: Vec<(egui::Pos2, usize, bool, f32)> = (0..3)
+        .flat_map(|i| {
+            let d = glam::Vec3::AXES[i];
+            [(d, true), (-d, false)].map(|(v, pos)| (c + egui::vec2(v.dot(right), -v.dot(up)) * LEN, i, pos, -v.dot(forward)))
+        })
+        .collect();
+    ends.sort_by(|a, b| a.3.total_cmp(&b.3));
+    (c, ends)
+}
+
+/// The standard view of the triad end under `p`: +X right, -X left, +Y back, -Y front, +Z top, -Z bottom.
+fn triad_hit(app: &CadApp, rect: egui::Rect, p: egui::Pos2) -> Option<crate::camera::StdView> {
+    use crate::camera::StdView;
+    if !app.settings.ui.triad {
+        return None;
+    }
+    let (_, ends) = triad(app, rect);
+    let (_, axis, positive, _) = ends.into_iter().rev().find(|(q, ..)| q.distance(p) <= 9.0)?;
+    Some(match (axis, positive) {
+        (0, true) => StdView::Right,
+        (0, false) => StdView::Left,
+        (1, true) => StdView::Back,
+        (1, false) => StdView::Front,
+        (_, true) => StdView::Top,
+        (_, false) => StdView::Bottom,
+    })
+}
+
+fn paint_triad(app: &CadApp, painter: &egui::Painter, rect: egui::Rect, hover: Option<egui::Pos2>) {
+    use egui::{Color32, Stroke};
+    const COLORS: [Color32; 3] = [Color32::from_rgb(230, 70, 70), Color32::from_rgb(90, 200, 90), Color32::from_rgb(90, 130, 255)];
+    let (c, ends) = triad(app, rect);
+    painter.circle_filled(c, 44.0, Color32::from_black_alpha(40));
+    for (p, axis, positive, _) in ends {
+        let hot = hover.is_some_and(|h| h.distance(p) <= 9.0);
+        let col = if hot { Color32::WHITE } else { COLORS[axis] };
+        if positive {
+            painter.line_segment([c, p], Stroke::new(2.0, col));
+            painter.circle_filled(p, 8.0, col);
+            painter.text(p, egui::Align2::CENTER_CENTER, ["X", "Y", "Z"][axis], egui::FontId::proportional(11.0), Color32::BLACK);
+        } else {
+            painter.circle_filled(p, 5.0, col.gamma_multiply(0.5));
+            painter.circle_stroke(p, 5.0, Stroke::new(1.0, col));
+        }
     }
 }
 

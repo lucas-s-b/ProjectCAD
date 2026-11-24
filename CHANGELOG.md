@@ -2,6 +2,23 @@
 
 All notable changes to ProjectCAD. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- Settings window (File > Settings, Ctrl+Comma, or the Settings button): General, Interface, Navigation and Controls pages
+- Rebindable keyboard shortcuts with conflict warnings, and control presets modelled on ProjectCAD, Blender, Godot and Roblox Studio (shortcuts and mouse navigation)
+- Configurable mouse navigation: orbit, pan and drag-zoom gestures, speeds, inverted zoom and orbit, fly keys (W A S D Q E while the orbit button is held)
+- Blender-style modal Grab / Rotate / Scale (G / R / S) with X / Y / Z axis lock, plane lock, typed values, Ctrl snapping, Enter/click to confirm and Esc/right-click to cancel
+- Standard views (front, back, right, left, top, bottom, isometric), orthographic projection, focus on selection, and a clickable axis triad in the 3D view
+- Smooth camera transitions for fit, focus and standard views; UI animation speed and UI scale settings
+- Select all, deselect all, invert selection, arrow-key nudge, focus mode (hide panels), gizmo move/rotate modes
+- File > Open recent, autosave to the settings folder, hover highlight in the 2D view, grid and frame-time toggles
+
+### Changed
+- Sharper look: smaller corner radii, short shadows, accent-coloured hover outlines and no grow-on-hover (sizes and spacing unchanged)
+- Menu entries show the shortcut currently bound to them
+- Ctrl+D (duplicate) no longer runs while a text field has the keyboard
+
 ## [0.2.0] - 2026-11-23
 
 ### Added
