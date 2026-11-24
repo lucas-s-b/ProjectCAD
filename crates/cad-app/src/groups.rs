@@ -75,7 +75,7 @@ pub fn metadata(app: &mut CadApp, ui: &mut egui::Ui) {
     let Some(id) = (app.selection.len() == 1).then(|| app.selection.iter().next().copied()).flatten() else { return };
     let Some(rows) = app.doc.get(id).map(|e| e.meta.clone()) else { return };
     ui.group(|ui| {
-        ui.label("Metadata");
+        ui.label(crate::i18n::tr("Metadata"));
         for (key, value) in rows {
             ui.horizontal(|ui| {
                 if w::button(ui, "x").clicked() {

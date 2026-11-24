@@ -99,7 +99,7 @@ pub fn arrange_group(app: &mut CadApp, ui: &mut egui::Ui) {
         return;
     }
     ui.group(|ui| {
-        ui.label("Arrange");
+        ui.label(crate::i18n::tr("Arrange"));
         let modes = [
             ("Align left", AlignMode::Left),
             ("Align right", AlignMode::Right),

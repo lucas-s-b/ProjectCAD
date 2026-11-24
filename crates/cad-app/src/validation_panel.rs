@@ -8,7 +8,7 @@ use std::time::Instant;
 
 pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     ui.separator();
-    ui.heading("Validation report");
+    ui.heading(crate::i18n::tr("Validation report"));
     ui.small("Studies you run stay approximate. These fixed cases run the same mesher, solver, mass properties and loop solver against analytic results; a case within its tolerance is validated against it.");
     if w::add_enabled(ui, app.jobs.running().is_none(), "Run benchmarks", egui::Button::new("Run benchmarks")).clicked() {
         app.jobs.start(ui.ctx(), JobKind::Validation, None, || {

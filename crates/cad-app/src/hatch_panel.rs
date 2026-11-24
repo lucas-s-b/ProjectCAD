@@ -34,7 +34,7 @@ pub fn hatch_group(app: &mut CadApp, ui: &mut egui::Ui) {
     let Some(id) = (app.selection.len() == 1).then(|| app.selection.iter().next().copied()).flatten() else { return };
     let Some((boundary, layer)) = app.doc.get(id).filter(|e| !e.construction).and_then(|e| Some((hatch_boundary(&e.shape)?, e.layer))) else { return };
     ui.group(|ui| {
-        ui.label("Hatch");
+        ui.label(crate::i18n::tr("Hatch"));
         ui.horizontal(|ui| {
             w::add(ui, "Hatch angle", egui::DragValue::new(&mut app.hatch_angle_deg).speed(0.5));
             w::add(ui, "Hatch spacing", egui::DragValue::new(&mut app.hatch_spacing).speed(0.1).range(0.0..=f64::MAX));

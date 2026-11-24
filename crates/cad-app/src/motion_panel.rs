@@ -42,7 +42,7 @@ fn summary(run: &StudyRun) -> String {
 
 pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     ui.separator();
-    ui.heading("Motion study");
+    ui.heading(crate::i18n::tr("Motion study"));
     let joints: Vec<(JointId, String)> =
         app.doc.joints().filter(|j| j.kind != JointKind::Fixed && !j.closes_loop).map(|j| (j.id, format!("Drive: Joint {}", j.id))).collect();
     let Some(first) = joints.first().map(|(id, _)| *id) else {
@@ -66,14 +66,14 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
                 w::selectable_value(ui, &mut study.joint, *id, t);
             }
         });
-        ui.label("from");
+        ui.label(crate::i18n::tr("from"));
         w::add(ui, "Motion start", TextEdit::singleline(&mut study.start).desired_width(60.0));
-        ui.label("to");
+        ui.label(crate::i18n::tr("to"));
         w::add(ui, "Motion end", TextEdit::singleline(&mut study.end).desired_width(60.0));
     });
     ui.horizontal_wrapped(|ui| {
         w::add(ui, "Motion steps", egui::DragValue::new(&mut study.steps).range(1..=MAX_STEPS));
-        ui.label("steps");
+        ui.label(crate::i18n::tr("steps"));
     });
     ui.horizontal_wrapped(|ui| {
         w::combo(ui, "Trace component", egui::ComboBox::from_id_salt("motion_trace").selected_text(trace_text), |ui| {

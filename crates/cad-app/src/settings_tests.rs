@@ -13,6 +13,8 @@ fn sample() -> Settings {
             c
         },
         recent: vec!["C:/a.cadproj".into()],
+        language: crate::i18n::Language::French,
+        tutorial_done: true,
     }
 }
 

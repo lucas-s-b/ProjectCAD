@@ -4,7 +4,7 @@ use crate::widgets as w;
 use eframe::egui::{self, TextEdit};
 
 pub fn controls(app: &mut CadApp, ui: &mut egui::Ui) {
-    ui.heading("Section");
+    ui.heading(crate::i18n::tr("Section"));
     w::checkbox(ui, &mut app.section.on, "Section view");
     ui.horizontal(|ui| {
         let axis = egui::ComboBox::from_id_salt("Section axis").selected_text(["X", "Y", "Z"][app.section.axis]).width(50.0);
@@ -13,9 +13,9 @@ pub fn controls(app: &mut CadApp, ui: &mut egui::Ui) {
                 w::selectable_value(ui, &mut app.section.axis, i, n);
             }
         });
-        ui.label("at");
+        ui.label(crate::i18n::tr("at"));
         w::add(ui, "Section offset", TextEdit::singleline(&mut app.section.offset).desired_width(60.0));
-        ui.label("mm");
+        ui.label(crate::i18n::tr("mm"));
     });
     w::checkbox(ui, &mut app.section.flip, "Flip section");
     ui.small("display only; caps on feature bodies, not on Box/Cylinder/Sphere; picks still hit hidden parts");

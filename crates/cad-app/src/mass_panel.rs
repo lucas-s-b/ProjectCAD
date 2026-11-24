@@ -45,7 +45,7 @@ pub fn bodies(app: &mut CadApp, ui: &mut egui::Ui) {
     if rep.bodies.is_empty() {
         return;
     }
-    ui.heading("Mass properties");
+    ui.heading(crate::i18n::tr("Mass properties"));
     let s = *app.doc.settings();
     for (id, row) in &rep.bodies {
         let name = app.doc.feature(*id).map_or_else(String::new, |f| f.name.clone());
@@ -57,10 +57,10 @@ pub fn bodies(app: &mut CadApp, ui: &mut egui::Ui) {
 /// Assembly tab: the assembly total in full, then one short block per component, then the marker toggle.
 pub fn assembly(app: &mut CadApp, ui: &mut egui::Ui) {
     ui.separator();
-    ui.heading("Mass properties");
+    ui.heading(crate::i18n::tr("Mass properties"));
     let Some(rep) = app.mass.clone() else { return };
     let Some(total) = &rep.assembly else {
-        ui.label("No components");
+        ui.label(crate::i18n::tr("No components"));
         return;
     };
     let s = *app.doc.settings();

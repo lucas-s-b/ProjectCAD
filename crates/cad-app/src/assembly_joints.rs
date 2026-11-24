@@ -14,7 +14,7 @@ pub(crate) fn name(app: &CadApp, id: ComponentId) -> String {
 
 pub fn joints(app: &mut CadApp, ui: &mut egui::Ui) {
     ui.separator();
-    ui.heading("Joints");
+    ui.heading(crate::i18n::tr("Joints"));
     add_controls(app, ui);
     list(app, ui);
     editor(app, ui);
@@ -143,9 +143,9 @@ fn editor(app: &mut CadApp, ui: &mut egui::Ui) {
             // An empty field means no limit.
             let (mut min, mut max) = (buffer.min.clone().unwrap_or_default(), buffer.max.clone().unwrap_or_default());
             ui.horizontal_wrapped(|ui| {
-                ui.label("Limits");
+                ui.label(crate::i18n::tr("Limits"));
                 field(ui, "Joint min", &mut min);
-                ui.label("to");
+                ui.label(crate::i18n::tr("to"));
                 field(ui, "Joint max", &mut max);
             });
             let some = |s: String| (!s.trim().is_empty()).then_some(s);
@@ -238,7 +238,7 @@ fn drag(app: &mut CadApp, ui: &mut egui::Ui) {
     let range = if angle { -180.0..=180.0 } else { -100.0..=100.0 };
     let (slider, typed) = ui
         .horizontal_wrapped(|ui| {
-            ui.label("Drag");
+            ui.label(crate::i18n::tr("Drag"));
             let s = w::add(ui, "Joint drag", egui::Slider::new(&mut shown, range).show_value(false));
             let t = w::add(ui, "Joint drag value", egui::DragValue::new(&mut shown).speed(if angle { 1.0 } else { 0.5 }));
             ui.label(if angle { "deg" } else { "mm" });
@@ -290,7 +290,7 @@ fn frame_from_face(app: &CadApp, joint: JointId, parent: bool) -> Result<Frame, 
 /// Toggle, slider and factor of the exploded view, trail lines, and the steps (each moves one component).
 pub fn explode(app: &mut CadApp, ui: &mut egui::Ui) {
     ui.separator();
-    ui.heading("Explode steps");
+    ui.heading(crate::i18n::tr("Explode steps"));
     let mut changed = false;
     ui.horizontal_wrapped(|ui| {
         changed |= w::checkbox(ui, &mut app.explode_on, "Exploded view").changed();

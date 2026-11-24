@@ -62,7 +62,7 @@ pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
         return;
     }
     ui.separator();
-    ui.heading("Static study");
+    ui.heading(crate::i18n::tr("Static study"));
     let count = app.doc.studies().len();
     app.study_sel = app.study_sel.min(count.saturating_sub(1));
     let (mut new, mut delete) = (false, false);
@@ -129,7 +129,7 @@ fn editor(app: &mut CadApp, ui: &mut egui::Ui, labels: &[(FeatureId, String)]) {
     let (mut drop_fixed, mut drop_load) = (None, None);
     let Some((_, _, buf)) = app.study_edit.as_mut() else { return };
     ui.horizontal_wrapped(|ui| {
-        ui.label("Body");
+        ui.label(crate::i18n::tr("Body"));
         let current = labels.iter().find(|(id, _)| *id == buf.body).map_or_else(String::new, |(_, t)| t.clone());
         w::combo(ui, "Study body", egui::ComboBox::from_id_salt("study_body").selected_text(current).width(140.0), |ui| {
             for (id, text) in labels {
@@ -139,12 +139,12 @@ fn editor(app: &mut CadApp, ui: &mut egui::Ui, labels: &[(FeatureId, String)]) {
     });
     let field = |ui: &mut egui::Ui, label: &str, text: &mut String| -> bool { w::add(ui, label, TextEdit::singleline(text).id_salt(("study", index, label)).desired_width(70.0)).lost_focus() };
     ui.horizontal_wrapped(|ui| {
-        ui.label("Element size");
+        ui.label(crate::i18n::tr("Element size"));
         commit |= field(ui, "Study element size", &mut buf.h);
     });
     let mut material_clicked = None;
     ui.horizontal_wrapped(|ui| {
-        ui.label("Material");
+        ui.label(crate::i18n::tr("Material"));
         w::combo(ui, "Study material", egui::ComboBox::from_id_salt("study_material").selected_text(buf.material.clone()), |ui| {
             for m in MATERIALS {
                 if w::selectable(ui, buf.material == m.name, m.name).clicked() {
@@ -166,13 +166,13 @@ fn editor(app: &mut CadApp, ui: &mut egui::Ui, labels: &[(FeatureId, String)]) {
         commit = true;
     }
     ui.horizontal_wrapped(|ui| {
-        ui.label("E (MPa)");
+        ui.label(crate::i18n::tr("E (MPa)"));
         commit |= field(ui, "Young's modulus", &mut buf.young);
-        ui.label("Poisson");
+        ui.label(crate::i18n::tr("Poisson"));
         commit |= field(ui, "Poisson's ratio", &mut buf.poisson);
     });
     ui.horizontal_wrapped(|ui| {
-        ui.label("Yield (MPa)");
+        ui.label(crate::i18n::tr("Yield (MPa)"));
         commit |= field(ui, "Yield strength", &mut buf.yield_strength);
     });
     ui.horizontal_wrapped(|ui| {
@@ -201,7 +201,7 @@ fn editor(app: &mut CadApp, ui: &mut egui::Ui, labels: &[(FeatureId, String)]) {
         });
     }
     ui.horizontal_wrapped(|ui| {
-        ui.label("Face");
+        ui.label(crate::i18n::tr("Face"));
         let current = app.study_face.and_then(|f| faces.iter().find(|(i, _)| *i == f)).map_or_else(|| "Pick a face".to_string(), |(_, t)| t.clone());
         w::combo(ui, "Study face", egui::ComboBox::from_id_salt("study_face").selected_text(current), |ui| {
             for (f, text) in &faces {
@@ -211,14 +211,14 @@ fn editor(app: &mut CadApp, ui: &mut egui::Ui, labels: &[(FeatureId, String)]) {
         fix = w::add_enabled(ui, picked.is_some(), "Fix face", egui::Button::new("Fix face")).clicked();
     });
     ui.horizontal_wrapped(|ui| {
-        ui.label("Force (N)");
+        ui.label(crate::i18n::tr("Force (N)"));
         for (label, text) in ["Force X", "Force Y", "Force Z"].into_iter().zip(app.study_force.iter_mut()) {
             w::add(ui, label, TextEdit::singleline(text).desired_width(50.0));
         }
         force = w::add_enabled(ui, picked.is_some(), "Add force", egui::Button::new("Add force")).clicked();
     });
     ui.horizontal_wrapped(|ui| {
-        ui.label("Pressure (MPa)");
+        ui.label(crate::i18n::tr("Pressure (MPa)"));
         w::add(ui, "Pressure", TextEdit::singleline(&mut app.study_pressure).desired_width(70.0));
         pressure = w::add_enabled(ui, picked.is_some(), "Add pressure", egui::Button::new("Add pressure")).clicked();
     });

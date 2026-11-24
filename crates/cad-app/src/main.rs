@@ -1,3 +1,6 @@
+// Release builds on Windows are GUI programs: no console window opens with the app. Piped stdin/stdout (the MCP
+// mode) still work, since a parent that pipes them hands the handles over.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod analysis_worker;
 mod app;
 mod app_files;
@@ -24,6 +27,7 @@ mod keymap;
 mod navigation;
 mod glyphs;
 mod groups;
+mod i18n;
 mod floor_panel;
 mod hatch_panel;
 mod mcp;
@@ -44,6 +48,7 @@ mod scene_mesh;
 mod settings;
 mod settings_window;
 mod transform;
+mod tutorial;
 mod properties_panel;
 mod toolbar;
 mod view2d;

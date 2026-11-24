@@ -68,15 +68,15 @@ fn new_controls(app: &mut CadApp, ui: &mut egui::Ui) {
     let bodies = app.body_ids();
     ui.add_enabled_ui(!profile.is_empty(), |ui| {
         ui.horizontal(|ui| {
-            ui.label("Distance");
+            ui.label(crate::i18n::tr("Distance"));
             w::add(ui, "Distance", TextEdit::singleline(&mut app.feat_distance).desired_width(80.0));
         });
         ui.horizontal(|ui| {
-            ui.label("Taper");
+            ui.label(crate::i18n::tr("Taper"));
             w::add(ui, "Taper", TextEdit::singleline(&mut app.feat_taper).desired_width(80.0));
         });
         ui.horizontal(|ui| {
-            ui.label("Operation");
+            ui.label(crate::i18n::tr("Operation"));
             op_combo(ui, "feat_op", &mut app.feat_op);
         });
         if w::button(ui, "Extrude").clicked() {
@@ -84,11 +84,11 @@ fn new_controls(app: &mut CadApp, ui: &mut egui::Ui) {
             add_feature(app, "Extrude", FeatureKind::Extrude { profile: profile.clone(), distance, offset: "0".into(), taper, op, flip, target });
         }
         ui.horizontal(|ui| {
-            ui.label("Angle");
+            ui.label(crate::i18n::tr("Angle"));
             w::add(ui, "Angle", TextEdit::singleline(&mut app.feat_angle).desired_width(80.0));
         });
         ui.horizontal(|ui| {
-            ui.label("Axis");
+            ui.label(crate::i18n::tr("Axis"));
             axis_combo(ui, "feat_axis", &mut app.feat_axis);
         });
         if w::button(ui, "Revolve").clicked() {
@@ -97,7 +97,7 @@ fn new_controls(app: &mut CadApp, ui: &mut egui::Ui) {
         }
         w::checkbox(ui, &mut app.feat_flip, "Flip");
         ui.horizontal(|ui| {
-            ui.label("Target");
+            ui.label(crate::i18n::tr("Target"));
             target_combo(ui, "feat_target", &mut app.feat_target, &bodies);
         });
     });
@@ -111,7 +111,7 @@ fn new_controls(app: &mut CadApp, ui: &mut egui::Ui) {
 fn blend_controls(app: &mut CadApp, ui: &mut egui::Ui, has_body: bool) {
     ui.add_enabled_ui(has_body, |ui| {
         ui.horizontal(|ui| {
-            ui.label("Size");
+            ui.label(crate::i18n::tr("Size"));
             w::add(ui, "Size", TextEdit::singleline(&mut app.blend_size).desired_width(80.0));
         });
         if w::button(ui, "Fillet edges").clicked() {
@@ -182,7 +182,7 @@ fn editor(app: &mut CadApp, ui: &mut egui::Ui) {
     });
     let Some((_, buffer)) = app.feature_edit.as_mut() else { return };
     ui.separator();
-    ui.label("Selected feature");
+    ui.label(crate::i18n::tr("Selected feature"));
     let blend = match buffer.kind {
         FeatureKind::Fillet { .. } => Some(false),
         FeatureKind::Chamfer { .. } => Some(true),

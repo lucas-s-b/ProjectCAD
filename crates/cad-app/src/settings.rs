@@ -149,6 +149,10 @@ pub struct Settings {
     pub controls: crate::keymap::Controls,
     /// Recently opened or saved projects, newest first.
     pub recent: Vec<String>,
+    /// Language of the menus, panels and dialogs.
+    pub language: crate::i18n::Language,
+    /// The first-run tutorial was finished or skipped.
+    pub tutorial_done: bool,
 }
 
 impl Default for Settings {
@@ -161,6 +165,8 @@ impl Default for Settings {
             general: General::default(),
             controls: Default::default(),
             recent: Vec::new(),
+            language: Default::default(),
+            tutorial_done: false,
         }
     }
 }
@@ -281,6 +287,13 @@ pub fn sync(app: &mut crate::app::CadApp, ctx: &egui::Context) {
             ctx.set_zoom_factor(zoom);
         }
         app.theme_applied = Some(key);
+    }
+    if app.lang_applied != Some(app.settings.language) {
+        let lang = app.settings.language;
+        if !crate::i18n::apply(ctx, lang) {
+            app.status = format!("No system font found for {}; install one to read it", lang.native_name());
+        }
+        app.lang_applied = Some(lang);
     }
     if app.settings != app.settings_saved && !ctx.input(|i| i.pointer.any_down()) {
         if app.settings.ui.grid_3d != app.settings_saved.ui.grid_3d {

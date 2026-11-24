@@ -41,9 +41,9 @@ See the [user guide](docs/USER_GUIDE.md) for how to use all of this, and [Keyboa
 
 Download the archive for your system from the [GitHub Releases page](https://github.com/lucas-s-b/ProjectCAD/releases):
 
-- `ProjectCAD-v0.2.0-windows-x86_64.zip`
-- `ProjectCAD-v0.2.0-linux-x86_64.zip`
-- `ProjectCAD-v0.2.0-macos-arm64.zip`
+- `ProjectCAD-v0.3.0-windows-x86_64.zip`
+- `ProjectCAD-v0.3.0-linux-x86_64.zip`
+- `ProjectCAD-v0.3.0-macos-arm64.zip`
 
 Each archive holds `cad-app` (`cad-app.exe` on Windows), `LICENSE` and `README.md`. Unzip it and run the program.
 

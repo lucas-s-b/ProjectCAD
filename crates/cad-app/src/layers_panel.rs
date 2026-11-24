@@ -5,7 +5,7 @@ use crate::widgets as w;
 use eframe::egui::{self, Button};
 
 pub fn layers_section(app: &mut CadApp, ui: &mut egui::Ui) {
-    ui.heading("Layers");
+    ui.heading(crate::i18n::tr("Layers"));
     let layers: Vec<Layer> = app.doc.layers().cloned().collect();
     for l in layers {
         ui.horizontal(|ui| {
@@ -55,7 +55,7 @@ pub fn layers_section(app: &mut CadApp, ui: &mut egui::Ui) {
     if let Some(cur) = app.doc.layer(app.layer).cloned() {
         let key = |field: u64| (u64::from(cur.id) << 8) | field;
         ui.horizontal(|ui| {
-            ui.label("Type");
+            ui.label(crate::i18n::tr("Type"));
             let mut line_type = cur.line_type;
             w::combo(ui, "Type", egui::ComboBox::from_id_salt("line_type").selected_text(line_type.name()), |ui| {
                 for t in LineType::ALL {
@@ -67,7 +67,7 @@ pub fn layers_section(app: &mut CadApp, ui: &mut egui::Ui) {
             }
         });
         ui.horizontal(|ui| {
-            ui.label("Weight");
+            ui.label(crate::i18n::tr("Weight"));
             let mut line_weight = cur.line_weight;
             w::add(ui, "Weight", egui::DragValue::new(&mut line_weight).speed(0.01).range(MIN_LINE_WEIGHT..=MAX_LINE_WEIGHT));
             if line_weight != cur.line_weight {
