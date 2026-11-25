@@ -6,6 +6,6 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-cad-geometry = { version = "0.3.0", path = "../cad-geometry" }
-cad-modeler = { version = "0.3.0", path = "../cad-modeler" }
+cad-geometry = { version = "0.3.1", path = "../cad-geometry" }
+cad-modeler = { version = "0.3.1", path = "../cad-modeler" }
 earcutr = "0.4.3"

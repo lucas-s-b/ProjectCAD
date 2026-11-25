@@ -4,6 +4,11 @@ All notable changes to ProjectCAD. The format follows [Keep a Changelog](https:/
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-25
+
+### Fixed
+- Windows: an error at start-up or a crash no longer closes the app without a word (0.3.0 has no console window); it is shown in a message box and saved to `%APPDATA%\ProjectCAD\crash.log`
+
 ## [0.3.0] - 2026-11-24
 
 ### Added
@@ -93,6 +98,7 @@ All notable changes to ProjectCAD. The format follows [Keep a Changelog](https:/
 - A first part of Phase 3: parameters with units and expressions, B-Rep kernel, extrude and revolve with booleans, feature history, sketches on planes and faces, fillet, chamfer, sweep, loft, shell, patterns, mirror, and STL and OBJ export
 - MIT license, CI and release workflows
 
+[0.3.1]: https://github.com/lucas-s-b/ProjectCAD/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/lucas-s-b/ProjectCAD/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/lucas-s-b/ProjectCAD/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/lucas-s-b/ProjectCAD/releases/tag/v0.1.0

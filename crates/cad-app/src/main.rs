@@ -76,5 +76,53 @@ fn main() -> eframe::Result {
         }
     }
     let options = eframe::NativeOptions { renderer: eframe::Renderer::Wgpu, depth_buffer: 32, viewport, ..Default::default() };
-    eframe::run_native("ProjectCAD", options, Box::new(move |cc| Ok(Box::new(CadApp::new(cc, mcp)))))
+    let run = || eframe::run_native("ProjectCAD", options, Box::new(move |cc| Ok(Box::new(CadApp::new(cc, mcp)))));
+    if mcp {
+        return run();
+    }
+    // The app has no console (GUI subsystem), so a start-up error or a panic that ends the app would vanish: report
+    // them in crash.log and a message box. Panics the app catches itself (rebuild, studies) are not reported.
+    let default = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        default(info);
+        if std::thread::current().name() == Some("main") {
+            *LAST_PANIC.lock().unwrap_or_else(|e| e.into_inner()) =
+                Some(format!("{info}\n\n{}", std::backtrace::Backtrace::force_capture()));
+        }
+    }));
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(run)) {
+        Ok(Err(err)) => {
+            report_crash(&format!("ProjectCAD could not start: {err}"));
+            Err(err)
+        }
+        Ok(ok) => ok,
+        Err(payload) => {
+            let text = LAST_PANIC.lock().unwrap_or_else(|e| e.into_inner()).take().unwrap_or_default();
+            report_crash(&format!("ProjectCAD crashed: {text}"));
+            std::panic::resume_unwind(payload)
+        }
+    }
+}
+
+/// The message and backtrace of the main thread's last panic, for `report_crash`.
+static LAST_PANIC: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+fn report_crash(text: &str) {
+    let log = settings::path(false).and_then(|p| Some(p.parent()?.join("crash.log")));
+    let mut shown = text.to_string();
+    if let Some(log) = &log {
+        let _ = std::fs::create_dir_all(log.parent().unwrap_or(log));
+        let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+        let entry = format!("--- {stamp} (unix time), version {}\n{text}\n", env!("CARGO_PKG_VERSION"));
+        let written = std::fs::OpenOptions::new().create(true).append(true).open(log).and_then(|mut f| {
+            use std::io::Write;
+            f.write_all(entry.as_bytes())
+        });
+        if written.is_ok() {
+            // The backtrace is long: the box keeps the first lines and points to the file.
+            shown = text.lines().take(12).collect::<Vec<_>>().join("\n");
+            shown.push_str(&format!("\n\nDetails were saved to {}", log.display()));
+        }
+    }
+    rfd::MessageDialog::new().set_level(rfd::MessageLevel::Error).set_title("ProjectCAD").set_description(shown).show();
 }
