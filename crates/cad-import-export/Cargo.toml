@@ -6,10 +6,10 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-cad-arch = { version = "0.3.0", path = "../cad-arch" }
-cad-document = { version = "0.3.0", path = "../cad-document" }
-cad-geometry = { version = "0.3.0", path = "../cad-geometry" }
-cad-modeler = { version = "0.3.0", path = "../cad-modeler" }
+cad-arch = { version = "0.3.1", path = "../cad-arch" }
+cad-document = { version = "0.3.1", path = "../cad-document" }
+cad-geometry = { version = "0.3.1", path = "../cad-geometry" }
+cad-modeler = { version = "0.3.1", path = "../cad-modeler" }
 roxmltree = "0.21.2"
 serde_json = "1.0.154"
 

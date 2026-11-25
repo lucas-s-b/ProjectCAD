@@ -6,13 +6,13 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-cad-analysis = { version = "0.3.0", path = "../cad-analysis" }
-cad-arch = { version = "0.3.0", path = "../cad-arch" }
-cad-constraints = { version = "0.3.0", path = "../cad-constraints" }
-cad-geometry = { version = "0.3.0", path = "../cad-geometry" }
-cad-mech = { version = "0.3.0", path = "../cad-mech" }
-cad-modeler = { version = "0.3.0", path = "../cad-modeler" }
-cad-params = { version = "0.3.0", path = "../cad-params" }
+cad-analysis = { version = "0.3.1", path = "../cad-analysis" }
+cad-arch = { version = "0.3.1", path = "../cad-arch" }
+cad-constraints = { version = "0.3.1", path = "../cad-constraints" }
+cad-geometry = { version = "0.3.1", path = "../cad-geometry" }
+cad-mech = { version = "0.3.1", path = "../cad-mech" }
+cad-modeler = { version = "0.3.1", path = "../cad-modeler" }
+cad-params = { version = "0.3.1", path = "../cad-params" }
 rayon = "1.12"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
